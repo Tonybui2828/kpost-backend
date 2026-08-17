@@ -9,7 +9,7 @@ import {
 
 export default function InboxPage() {
   const [messages, setMessages] = useState([]);
-  const [chatHistory, setChatHistory] = useState([]);
+  const [chatHistory, setChatHistory] = useState<any[]>([]);
   const [selectedMsg, setSelectedMsg] = useState<any>(null);
   const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
