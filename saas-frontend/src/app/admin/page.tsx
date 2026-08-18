@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 
 export default function AdminPage() {
+  // 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG (Cấu hình trên Coolify)
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
   // --- STATE DỮ LIỆU ---
   const [stats, setStats] = useState<any>(null);
   const [settings, setSettings] = useState({ 
@@ -25,11 +28,12 @@ export default function AdminPage() {
   const fetchAdminData = async () => {
     try {
       setLoading(true);
+      // Sử dụng API_URL thay vì localhost cứng
       const [statsRes, settingsRes, vouchersRes, usersRes] = await Promise.all([
-        axios.get("http://localhost:3001/admin/stats"),
-        axios.get("http://localhost:3001/admin/settings"),
-        axios.get("http://localhost:3001/admin/vouchers"),
-        axios.get("http://localhost:3001/admin/users-list"),
+        axios.get(`${API_URL}/admin/stats`),
+        axios.get(`${API_URL}/admin/settings`),
+        axios.get(`${API_URL}/admin/vouchers`),
+        axios.get(`${API_URL}/admin/users-list`),
       ]);
       setStats(statsRes.data);
       setSettings(settingsRes.data);
@@ -50,9 +54,9 @@ export default function AdminPage() {
         return alert("Vui lòng nhập đầy đủ mã và giá trị giảm lớn hơn 0!");
     }
     try {
-      await axios.post("http://localhost:3001/admin/vouchers", newVoucher);
+      await axios.post(`${API_URL}/admin/vouchers`, newVoucher);
       setNewVoucher({ code: "", discount: 0, type: "fixed" });
-      const res = await axios.get("http://localhost:3001/admin/vouchers");
+      const res = await axios.get(`${API_URL}/admin/vouchers`);
       setVouchers(res.data);
       alert("✅ Đã tạo voucher mới thành công!");
     } catch (error) { alert("❌ Lỗi khi tạo voucher"); }
@@ -61,8 +65,8 @@ export default function AdminPage() {
   const handleDeleteVoucher = async (id: string) => {
     if (!confirm("Bạn có chắc chắn muốn xóa voucher này không?")) return;
     try {
-        await axios.delete(`http://localhost:3001/admin/vouchers/${id}`);
-        const res = await axios.get("http://localhost:3001/admin/vouchers");
+        await axios.delete(`${API_URL}/admin/vouchers/${id}`);
+        const res = await axios.get(`${API_URL}/admin/vouchers`);
         setVouchers(res.data);
     } catch (e) { alert("Lỗi khi xóa!"); }
   };
@@ -70,7 +74,7 @@ export default function AdminPage() {
   // --- CẬP NHẬT CẤU HÌNH LOGO/WEBSITE ---
   const handleUpdateSettings = async () => {
     try {
-      await axios.patch("http://localhost:3001/admin/settings", settings);
+      await axios.patch(`${API_URL}/admin/settings`, settings);
       alert("✅ Đã cập nhật cấu hình thành công!");
     } catch (error) { alert("❌ Lỗi khi lưu cấu hình."); }
   };
@@ -91,12 +95,12 @@ export default function AdminPage() {
         <span className="bg-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">Admin Control</span>
       </div>
 
-      {/* --- PHẦN 1: THỐNG KÊ --- */}
+      {/* --- PHẦN 1: THỐNG KÊ (ĐÃ FIX undefined) --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 text-black">
-        <StatCard icon={<DollarSign size={20}/>} label="Doanh thu" value={`${stats?.totalRevenue?.toLocaleString()}đ`} color="text-green-600" />
-        <StatCard icon={<Activity size={20}/>} label="Tăng trưởng" value={stats?.growthRate} color="text-blue-600" />
-        <StatCard icon={<Users size={20}/>} label="Người dùng" value={stats?.totalUsers} color="text-purple-600" />
-        <StatCard icon={<Bell size={20}/>} label="Tháng này" value={`${stats?.thisMonthRevenue?.toLocaleString()}đ`} color="text-orange-600" />
+        <StatCard icon={<DollarSign size={20}/>} label="Doanh thu" value={`${(stats?.totalRevenue || 0).toLocaleString()}đ`} color="text-green-600" />
+        <StatCard icon={<Activity size={20}/>} label="Tăng trưởng" value={stats?.growthRate || "0%"} color="text-blue-600" />
+        <StatCard icon={<Users size={20}/>} label="Người dùng" value={stats?.totalUsers || 0} color="text-purple-600" />
+        <StatCard icon={<Bell size={20}/>} label="Tháng này" value={`${(stats?.thisMonthRevenue || 0).toLocaleString()}đ`} color="text-orange-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black mb-8">
@@ -117,7 +121,7 @@ export default function AdminPage() {
 
         <div className="lg:col-span-2 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <AdminToolCard title="Thông báo gia hạn" desc="Quét tự động các Shop sắp hết hạn" icon={<RefreshCcw className="text-orange-500"/>} action={async () => { await axios.post("http://localhost:3001/admin/check-renewal"); alert("Đã gửi thông báo!"); }} />
+                <AdminToolCard title="Thông báo gia hạn" desc="Quét tự động các Shop sắp hết hạn" icon={<RefreshCcw className="text-orange-500"/>} action={async () => { await axios.post(`${API_URL}/admin/check-renewal`); alert("Đã gửi thông báo!"); }} />
                 <AdminToolCard title="Đăng bài hệ thống" desc="Gửi tin tức đến toàn bộ người dùng" icon={<Globe className="text-blue-500"/>} action={() => alert("Sắp ra mắt")} />
             </div>
             <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm flex flex-col items-center justify-center">
@@ -132,67 +136,30 @@ export default function AdminPage() {
 
       {/* --- PHẦN 3: VOUCHER & KHÁCH HÀNG --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black">
-        
-        {/* KHỐI QUẢN LÝ VOUCHER (ĐÃ SỬA GIAO DIỆN NHẬP) */}
         <div className="bg-white p-6 rounded-[32px] shadow-xl border border-blue-50">
             <h2 className="font-bold mb-6 flex items-center gap-2 text-blue-600 uppercase text-xs tracking-widest">
                 <Ticket size={16}/> Kho Voucher Giảm giá
             </h2>
-            
-            {/* FORM NHẬP VOUCHER MỚI */}
             <div className="bg-slate-50 p-5 rounded-[28px] border-2 border-dashed border-blue-100 space-y-4 mb-6">
-                <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 ml-2">MÃ VOUCHER</label>
-                    <input 
-                        placeholder="VD: GIAM20K" 
-                        className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 text-center uppercase shadow-sm" 
-                        value={newVoucher.code} 
-                        onChange={e => setNewVoucher({...newVoucher, code: e.target.value.toUpperCase()})} 
-                    />
-                </div>
-                
+                <input placeholder="VD: GIAM20K" className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 text-center uppercase shadow-sm" value={newVoucher.code} onChange={e => setNewVoucher({...newVoucher, code: e.target.value.toUpperCase()})} />
                 <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-2">GIÁ TRỊ GIẢM</label>
-                        <input 
-                            type="number" 
-                            placeholder="Số..." 
-                            className="w-full p-4 bg-white rounded-2xl border outline-none font-bold shadow-sm" 
-                            value={newVoucher.discount} 
-                            onChange={e => setNewVoucher({...newVoucher, discount: Number(e.target.value)})} 
-                        />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-2">ĐƠN VỊ</label>
-                        <select 
-                            className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 cursor-pointer shadow-sm"
-                            value={newVoucher.type}
-                            onChange={e => setNewVoucher({...newVoucher, type: e.target.value})}
-                        >
-                            <option value="fixed">Tiền (VND)</option>
-                            <option value="percent">Phần trăm (%)</option>
-                        </select>
-                    </div>
+                    <input type="number" placeholder="Số..." className="w-full p-4 bg-white rounded-2xl border outline-none font-bold shadow-sm" value={newVoucher.discount} onChange={e => setNewVoucher({...newVoucher, discount: Number(e.target.value)})} />
+                    <select className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 cursor-pointer shadow-sm" value={newVoucher.type} onChange={e => setNewVoucher({...newVoucher, type: e.target.value})} >
+                        <option value="fixed">đ</option>
+                        <option value="percent">%</option>
+                    </select>
                 </div>
-
-                {/* NÚT THÊM - ĐÃ ĐƯỢC ĐƯA RA RIÊNG ĐỂ KHÔNG BỊ MẤT */}
-                <button 
-                    onClick={handleCreateVoucher} 
-                    className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 mt-2"
-                >
+                <button onClick={handleCreateVoucher} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 mt-2">
                     <Plus size={20}/> THÊM VOUCHER MỚI
                 </button>
             </div>
 
-            {/* DANH SÁCH VOUCHER */}
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {vouchers.map((v: any) => (
                     <div key={v.id} className="p-4 bg-white rounded-2xl border-2 border-dashed border-slate-100 flex justify-between items-center">
                         <div>
                             <p className="font-black text-blue-600">{v.code}</p>
-                            <p className="text-[10px] text-slate-400 font-bold">
-                                Giảm {v.type === 'percent' ? `${v.discount}%` : `${v.discount.toLocaleString()}đ`}
-                            </p>
+                            <p className="text-[10px] text-slate-400 font-bold">Giảm {v.type === 'percent' ? `${v.discount}%` : `${v.discount.toLocaleString()}đ`}</p>
                         </div>
                         <button onClick={() => handleDeleteVoucher(v.id)} className="p-2 text-slate-200 hover:text-red-500 transition-colors">
                             <Trash2 size={18}/>
@@ -202,25 +169,20 @@ export default function AdminPage() {
             </div>
         </div>
 
-        {/* DANH SÁCH KHÁCH HÀNG */}
         <div className="lg:col-span-2 bg-white p-6 rounded-[32px] shadow-xl border border-blue-50">
             <h2 className="font-bold mb-6 flex items-center gap-2 text-blue-600 uppercase text-xs tracking-widest">
                 <Users size={16}/> Khách hàng hiện tại
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                 {users.map((u: any) => (
-                    <div key={u.id} className="p-4 bg-slate-50 rounded-[24px] border border-transparent hover:border-blue-100 transition-all flex items-center gap-4">
-                        <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 border shadow-sm">
-                            {u.name?.charAt(0) || "U"}
-                        </div>
+                    <div key={u.id} className="p-4 bg-slate-50 rounded-[24px] border border-transparent hover:border-blue-100 transition-all flex items-center gap-4 shadow-sm">
+                        <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 border shadow-sm">{u.name?.charAt(0) || "U"}</div>
                         <div className="flex-1 min-w-0">
                             <h3 className="font-black text-slate-800 text-sm truncate">{u.name || "Khách hàng"}</h3>
                             <p className="text-[10px] text-slate-400 truncate">{u.email}</p>
                         </div>
                         <div className="text-right">
-                            <span className={`text-[8px] px-2 py-1 rounded-full font-black uppercase ${u.workspaces[0]?.workspace?.plan === 'free' ? 'bg-slate-200 text-slate-500' : 'bg-green-100 text-green-600'}`}>
-                                {u.workspaces[0]?.workspace?.plan || "Free"}
-                            </span>
+                            <span className={`text-[8px] px-2 py-1 rounded-full font-black uppercase ${u.workspaces[0]?.workspace?.plan === 'free' ? 'bg-slate-200 text-slate-500' : 'bg-green-100 text-green-600'}`}>{u.workspaces[0]?.workspace?.plan || "Free"}</span>
                         </div>
                     </div>
                 ))}
@@ -245,13 +207,13 @@ function StatCard({ icon, label, value, color }: any) {
 }
 
 function AdminToolCard({ title, desc, icon, action }: any) {
-    return (
-        <button onClick={action} className="bg-white p-6 rounded-[32px] border hover:border-blue-500 transition-all flex items-start gap-4 text-left shadow-sm group active:scale-95 w-full">
-            <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors">{icon}</div>
-            <div>
-                <h3 className="font-black text-slate-800 text-sm">{title}</h3>
-                <p className="text-[10px] text-slate-400 mt-1">{desc}</p>
-            </div>
-        </button>
-    );
+  return (
+      <button onClick={action} className="bg-white p-6 rounded-[32px] border hover:border-blue-500 transition-all flex items-start gap-4 text-left shadow-sm group active:scale-95 w-full">
+          <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors">{icon}</div>
+          <div>
+              <h3 className="font-black text-slate-800 text-sm">{title}</h3>
+              <p className="text-[10px] text-slate-400 mt-1">{desc}</p>
+          </div>
+      </button>
+  );
 }

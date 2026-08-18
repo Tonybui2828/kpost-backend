@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 // Kết nối Socket đến Backend cổng 3001
-const socket = io("http://localhost:3001");
+const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
 
 const tabs = [
   { id: "account", label: "Tài khoản & Login", icon: <User size={18} /> },

@@ -11,7 +11,7 @@ import axios from "axios";
 import { io } from "socket.io-client"; // Đảm bảo đã chạy: npm install socket.io-client
 
 // Kết nối đến Backend Socket
-const socket = io("http://localhost:3001");
+const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
 
 const menuItems = [
   { name: "Tổng quan", icon: <LayoutDashboard size={20} />, href: "/dashboard" },

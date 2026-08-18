@@ -8,22 +8,25 @@ import {
 } from "lucide-react";
 
 export default function InboxPage() {
-  const [messages, setMessages] = useState([]);
+  // Lấy URL API từ biến môi trường (đã cấu hình trên Coolify)
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+  // --- SỬA LỖI TYPESCRIPT TẠI ĐÂY ---
+  const [messages, setMessages] = useState<any[]>([]);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [orderItems, setOrderItems] = useState<any[]>([]); 
+  
   const [selectedMsg, setSelectedMsg] = useState<any>(null);
   const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false); // Thêm state loading cho AI
+  const [aiLoading, setAiLoading] = useState(false);
 
-  // --- NEW STATE: THÔNG TIN KHÁCH HÀNG ---
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
-
   const [showOrderModal, setShowOrderModal] = useState(false);
-  const [products, setProducts] = useState([]); 
-  const [orderItems, setOrderItems] = useState<any[]>([]); 
   const [searchTerm, setSearchTerm] = useState("");
   
   const workspaceId = "workspace-01";
@@ -31,7 +34,6 @@ export default function InboxPage() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
 
-  // Tự động điền tên khách từ tin nhắn khi mở Modal
   useEffect(() => {
     if (showOrderModal && selectedMsg) {
       setCustomerName(selectedMsg.senderName);
@@ -41,8 +43,8 @@ export default function InboxPage() {
   const fetchConversations = async () => {
     setLoading(true);
     try {
-      await axios.post("http://localhost:3001/social/sync-inbox", { workspaceId });
-      const res = await axios.get(`http://localhost:3001/social/inbox?workspaceId=${workspaceId}`);
+      await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
+      const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
       setMessages(res.data || []);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
@@ -50,9 +52,9 @@ export default function InboxPage() {
   const fetchChatHistory = async (msg: any) => {
     setSelectedMsg(msg);
     try {
-      const res = await axios.get(`http://localhost:3001/social/chat-history?senderId=${msg.senderId}&workspaceId=${workspaceId}`);
+      const res = await axios.get(`${API_URL}/social/chat-history?senderId=${msg.senderId}&workspaceId=${workspaceId}`);
       setChatHistory(res.data || []);
-      const prodRes = await axios.get(`http://localhost:3001/products?workspaceId=${workspaceId}`);
+      const prodRes = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
       setProducts(prodRes.data || []);
     } catch (e) { console.error(e); }
   };
@@ -75,7 +77,7 @@ export default function InboxPage() {
     if (!selectedMsg || !replyText.trim()) return;
     setSending(true);
     try {
-      await axios.post("http://localhost:3001/social/reply", {
+      await axios.post(`${API_URL}/social/reply`, {
         workspaceId, senderId: selectedMsg.senderId, text: replyText, pageName: selectedMsg.pageName,
         type: selectedMsg.type, platformId: selectedMsg.platformId
       });
@@ -86,11 +88,8 @@ export default function InboxPage() {
     } finally { setSending(false); }
   };
 
-  // --- HÀM AI TỰ ĐIỀN THÔNG TIN (MỚI THÊM) ---
   const handleAiFill = async () => {
     if (chatHistory.length === 0) return;
-    
-    // SỬA TẠI ĐÂY: Lọc tất cả tin nhắn KHÔNG PHẢI của Admin (outbound)
     const fullChatText = chatHistory
       .filter(c => c.type !== 'outbound') 
       .map(c => c.content)
@@ -103,20 +102,13 @@ export default function InboxPage() {
 
     setAiLoading(true);
     try {
-      const res = await axios.post("http://localhost:3001/social/extract-info", {
+      const res = await axios.post(`${API_URL}/social/extract-info`, {
         text: fullChatText
       });
-
       if (res.data) {
-        // Cập nhật State và kiểm tra dữ liệu trả về
         if (res.data.phone) setCustomerPhone(res.data.phone);
         if (res.data.address) setCustomerAddress(res.data.address);
-        
-        if (!res.data.phone && !res.data.address) {
-            alert("AI không tìm thấy SĐT hoặc địa chỉ trong đoạn chat.");
-        } else {
-            alert("AI đã bóc tách thông tin thành công! ✨");
-        }
+        alert("AI đã bóc tách thông tin thành công! ✨");
       }
     } catch (e) {
       alert("Lỗi kết nối AI.");
@@ -125,14 +117,13 @@ export default function InboxPage() {
     }
   };
 
-  // --- HÀM CHỐT ĐƠN ---
   const submitOrder = async () => {
     if (orderItems.length === 0) return alert("Giỏ hàng trống!");
     if (!customerPhone || !customerAddress) return alert("Vui lòng nhập SĐT và Địa chỉ để giao hàng!");
 
     setSending(true);
     try {
-      const resOrder = await axios.post("http://localhost:3001/orders", {
+      const resOrder = await axios.post(`${API_URL}/orders`, {
         workspaceId, customerName, customerPhone, customerAddress, items: orderItems
       });
 
@@ -141,7 +132,7 @@ export default function InboxPage() {
       const list = orderItems.map(i => `• ${i.name} (x${i.quantity})`).join('\n');
       const bill = `✅ XÁC NHẬN CHỐT ĐƠN!\n\nMã đơn: #${orderId}\nKhách hàng: ${customerName}\nSĐT: ${customerPhone}\nĐịa chỉ: ${customerAddress}\n\nSản phẩm:\n${list}\n--------------------------\nTổng: ${total}đ\nCảm ơn bạn! ❤️`;
 
-      await axios.post("http://localhost:3001/social/reply", {
+      await axios.post(`${API_URL}/social/reply`, {
         workspaceId, senderId: selectedMsg.senderId, text: bill, pageName: selectedMsg.pageName,
         type: selectedMsg.type, platformId: selectedMsg.platformId
       });
@@ -150,8 +141,6 @@ export default function InboxPage() {
       alert("Đã chốt đơn & gửi hóa đơn thành công! 🚀");
       setShowOrderModal(false);
       setOrderItems([]);
-      setCustomerPhone("");
-      setCustomerAddress("");
     } catch (e: any) {
         alert("THẤT BẠI: " + (e.response?.data?.message || "Lỗi"));
     } finally { setSending(false); }
@@ -250,7 +239,6 @@ export default function InboxPage() {
                         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm mb-6">
                            <div className="flex justify-between items-center mb-4">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Thông tin giao hàng</p>
-                              {/* SỬA NÚT AI TỰ ĐIỀN TẠI ĐÂY */}
                               <button 
                                 onClick={handleAiFill}
                                 disabled={aiLoading}
@@ -262,15 +250,15 @@ export default function InboxPage() {
                            <div className="space-y-3">
                               <div className="relative">
                                 <User className="absolute left-3 top-3 text-slate-300" size={16} />
-                                <input className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold" placeholder="Họ tên khách hàng" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                                <input className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-black" placeholder="Họ tên khách hàng" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                               </div>
                               <div className="relative">
                                 <Phone className="absolute left-3 top-3 text-slate-300" size={16} />
-                                <input className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold" placeholder="Số điện thoại" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                                <input className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-black" placeholder="Số điện thoại" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                               </div>
                               <div className="relative">
                                 <MapPin className="absolute left-3 top-3 text-slate-300" size={16} />
-                                <textarea className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold h-20 resize-none font-sans" placeholder="Địa chỉ giao hàng chi tiết..." value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+                                <textarea className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold h-20 resize-none font-sans text-black" placeholder="Địa chỉ giao hàng chi tiết..." value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
                               </div>
                            </div>
                         </div>
@@ -289,7 +277,7 @@ export default function InboxPage() {
                         </div>
 
                         <div className="mt-6 pt-6 border-t bg-white p-6 rounded-[32px] shadow-lg sticky bottom-0">
-                            <div className="flex justify-between items-end mb-6 font-sans">
+                            <div className="flex justify-between items-end mb-6 font-sans text-black">
                                 <span className="text-xs font-bold text-slate-400">TỔNG THANH TOÁN:</span>
                                 <span className="text-3xl font-black text-blue-600">{orderItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}đ</span>
                             </div>
