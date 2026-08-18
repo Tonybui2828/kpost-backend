@@ -8,10 +8,11 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import axios from "axios";
-import { io } from "socket.io-client"; // Đảm bảo đã chạy: npm install socket.io-client
+import { io } from "socket.io-client";
 
-// Kết nối đến Backend Socket
-const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001");
+// --- 1. KẾT NỐI SOCKET ĐỘNG ---
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const socket = io(API_URL);
 
 const menuItems = [
   { name: "Tổng quan", icon: <LayoutDashboard size={20} />, href: "/dashboard" },
@@ -32,32 +33,30 @@ export default function Sidebar() {
   const [plan, setPlan] = useState("FREE");
   const workspaceId = "workspace-01";
 
-  // --- HÀM LẤY THÔNG TIN GÓI CƯỚC ---
+  // --- 2. SỬA LINK LẤY THÔNG TIN GÓI CƯỚC ---
   const fetchPlan = useCallback(async () => {
     try {
-      const res = await axios.get(`http://localhost:3001/dashboard/stats?workspaceId=${workspaceId}`);
+      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
       if (res.data?.stats?.plan) {
         setPlan(res.data.stats.plan.toUpperCase());
       }
     } catch (e) {
-      console.error("Lỗi cập nhật gói cước");
+      console.error("Lỗi cập nhật gói cước từ API:", API_URL);
     }
   }, [workspaceId]);
 
   useEffect(() => {
-    // 1. Lấy dữ liệu lần đầu khi vào web
     fetchPlan();
 
-    // 2. LẮNG NGHE SỰ KIỆN THANH TOÁN THÀNH CÔNG (REAL-TIME)
     socket.on("paymentSuccess", (data) => {
       console.log("🚀 Sidebar nhận tín hiệu nâng cấp gói!");
-      fetchPlan(); // Cập nhật ngay lập tức huy hiệu trên Sidebar
+      fetchPlan(); 
     });
 
     return () => {
       socket.off("paymentSuccess");
     };
-  }, [fetchPlan, pathname]); // Cập nhật lại khi chuyển trang hoặc có tín hiệu socket
+  }, [fetchPlan, pathname]);
 
   return (
     <div className="w-64 bg-white h-screen border-r border-slate-200 flex flex-col fixed left-0 top-0 z-[100] font-sans">
@@ -69,7 +68,7 @@ export default function Sidebar() {
         SaaS AI
       </div>
 
-      {/* --- HUY HIỆU GÓI CƯỚC REAL-TIME --- */}
+      {/* HUY HIỆU GÓI CƯỚC */}
       <div className="px-6 mb-6 mt-2">
         <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 font-black text-[10px] uppercase italic tracking-widest transition-all duration-700 shadow-sm ${
             plan === 'DIAMOND' ? 'bg-purple-600 text-white border-purple-400 shadow-purple-200' :
@@ -87,7 +86,7 @@ export default function Sidebar() {
       </div>
 
       {/* Danh sách Menu */}
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto text-slate-700">
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto text-slate-700 custom-scrollbar">
         {menuItems.map((item) => (
           <Link
             key={item.name}
@@ -104,7 +103,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Nút Đăng xuất ở cuối */}
+      {/* Nút Đăng xuất */}
       <div className="p-4 border-t border-slate-100">
         <button className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 font-black uppercase tracking-widest hover:text-red-600 transition-colors text-[10px]">
           <LogOut size={18} />

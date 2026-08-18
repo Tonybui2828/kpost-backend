@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 export default function AdminPage() {
-  // 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG (Cấu hình trên Coolify)
+  // 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   // --- STATE DỮ LIỆU ---
@@ -19,8 +19,8 @@ export default function AdminPage() {
     logoUrl: "", 
     announcement: "" 
   });
-  const [vouchers, setVouchers] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [vouchers, setVouchers] = useState<any[]>([]); // Sửa lỗi build
+  const [users, setUsers] = useState<any[]>([]); // Sửa lỗi build
   const [newVoucher, setNewVoucher] = useState({ code: "", discount: 0, type: "fixed" });
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +28,6 @@ export default function AdminPage() {
   const fetchAdminData = async () => {
     try {
       setLoading(true);
-      // Sử dụng API_URL thay vì localhost cứng
       const [statsRes, settingsRes, vouchersRes, usersRes] = await Promise.all([
         axios.get(`${API_URL}/admin/stats`),
         axios.get(`${API_URL}/admin/settings`),
@@ -37,8 +36,8 @@ export default function AdminPage() {
       ]);
       setStats(statsRes.data);
       setSettings(settingsRes.data);
-      setVouchers(vouchersRes.data);
-      setUsers(usersRes.data);
+      setVouchers(vouchersRes.data || []);
+      setUsers(usersRes.data || []);
     } catch (error) {
       console.error("Lỗi tải dữ liệu admin:", error);
     } finally {
@@ -48,26 +47,26 @@ export default function AdminPage() {
 
   useEffect(() => { fetchAdminData(); }, []);
 
-  // --- XỬ LÝ VOUCHER (TẠO/XÓA) ---
+  // --- XỬ LÝ VOUCHER ---
   const handleCreateVoucher = async () => {
     if (!newVoucher.code || newVoucher.discount <= 0) {
-        return alert("Vui lòng nhập đầy đủ mã và giá trị giảm lớn hơn 0!");
+        return alert("Vui lòng nhập đầy đủ mã và giá trị giảm!");
     }
     try {
       await axios.post(`${API_URL}/admin/vouchers`, newVoucher);
       setNewVoucher({ code: "", discount: 0, type: "fixed" });
       const res = await axios.get(`${API_URL}/admin/vouchers`);
-      setVouchers(res.data);
-      alert("✅ Đã tạo voucher mới thành công!");
+      setVouchers(res.data || []);
+      alert("✅ Đã tạo voucher mới!");
     } catch (error) { alert("❌ Lỗi khi tạo voucher"); }
   };
 
   const handleDeleteVoucher = async (id: string) => {
-    if (!confirm("Bạn có chắc chắn muốn xóa voucher này không?")) return;
+    if (!confirm("Xóa voucher này?")) return;
     try {
         await axios.delete(`${API_URL}/admin/vouchers/${id}`);
         const res = await axios.get(`${API_URL}/admin/vouchers`);
-        setVouchers(res.data);
+        setVouchers(res.data || []);
     } catch (e) { alert("Lỗi khi xóa!"); }
   };
 
@@ -76,7 +75,10 @@ export default function AdminPage() {
     try {
       await axios.patch(`${API_URL}/admin/settings`, settings);
       alert("✅ Đã cập nhật cấu hình thành công!");
-    } catch (error) { alert("❌ Lỗi khi lưu cấu hình."); }
+    } catch (error: any) { 
+      console.error("Lỗi chi tiết:", error.response?.data);
+      alert("❌ Lỗi khi lưu: " + (error.response?.data?.message || "Kiểm tra lại Backend")); 
+    }
   };
 
   if (loading) return (
@@ -95,7 +97,7 @@ export default function AdminPage() {
         <span className="bg-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">Admin Control</span>
       </div>
 
-      {/* --- PHẦN 1: THỐNG KÊ (ĐÃ FIX undefined) --- */}
+      {/* --- PHẦN 1: THỐNG KÊ --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 text-black">
         <StatCard icon={<DollarSign size={20}/>} label="Doanh thu" value={`${(stats?.totalRevenue || 0).toLocaleString()}đ`} color="text-green-600" />
         <StatCard icon={<Activity size={20}/>} label="Tăng trưởng" value={stats?.growthRate || "0%"} color="text-blue-600" />
@@ -141,9 +143,9 @@ export default function AdminPage() {
                 <Ticket size={16}/> Kho Voucher Giảm giá
             </h2>
             <div className="bg-slate-50 p-5 rounded-[28px] border-2 border-dashed border-blue-100 space-y-4 mb-6">
-                <input placeholder="VD: GIAM20K" className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 text-center uppercase shadow-sm" value={newVoucher.code} onChange={e => setNewVoucher({...newVoucher, code: e.target.value.toUpperCase()})} />
+                <input placeholder="MÃ GIẢM GIÁ" className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 text-center uppercase" value={newVoucher.code} onChange={e => setNewVoucher({...newVoucher, code: e.target.value.toUpperCase()})} />
                 <div className="grid grid-cols-2 gap-2">
-                    <input type="number" placeholder="Số..." className="w-full p-4 bg-white rounded-2xl border outline-none font-bold shadow-sm" value={newVoucher.discount} onChange={e => setNewVoucher({...newVoucher, discount: Number(e.target.value)})} />
+                    <input type="number" placeholder="Số..." className="w-full p-4 bg-white rounded-2xl border outline-none font-bold" value={newVoucher.discount} onChange={e => setNewVoucher({...newVoucher, discount: Number(e.target.value)})} />
                     <select className="w-full p-4 bg-white rounded-2xl border outline-none font-black text-blue-600 cursor-pointer shadow-sm" value={newVoucher.type} onChange={e => setNewVoucher({...newVoucher, type: e.target.value})} >
                         <option value="fixed">đ</option>
                         <option value="percent">%</option>
@@ -156,7 +158,7 @@ export default function AdminPage() {
 
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {vouchers.map((v: any) => (
-                    <div key={v.id} className="p-4 bg-white rounded-2xl border-2 border-dashed border-slate-100 flex justify-between items-center">
+                    <div key={v.id} className="p-4 bg-white rounded-2xl border-2 border-dashed border-slate-100 flex justify-between items-center shadow-sm">
                         <div>
                             <p className="font-black text-blue-600">{v.code}</p>
                             <p className="text-[10px] text-slate-400 font-bold">Giảm {v.type === 'percent' ? `${v.discount}%` : `${v.discount.toLocaleString()}đ`}</p>
@@ -173,9 +175,9 @@ export default function AdminPage() {
             <h2 className="font-bold mb-6 flex items-center gap-2 text-blue-600 uppercase text-xs tracking-widest">
                 <Users size={16}/> Khách hàng hiện tại
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar text-black">
                 {users.map((u: any) => (
-                    <div key={u.id} className="p-4 bg-slate-50 rounded-[24px] border border-transparent hover:border-blue-100 transition-all flex items-center gap-4 shadow-sm">
+                    <div key={u.id} className="p-4 bg-slate-50 rounded-[24px] border border-transparent hover:border-blue-100 transition-all flex items-center gap-4">
                         <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 border shadow-sm">{u.name?.charAt(0) || "U"}</div>
                         <div className="flex-1 min-w-0">
                             <h3 className="font-black text-slate-800 text-sm truncate">{u.name || "Khách hàng"}</h3>
@@ -193,7 +195,7 @@ export default function AdminPage() {
   );
 }
 
-// CÁC COMPONENT PHỤ
+// CÁC COMPONENT PHỤ GIỮ NGUYÊN
 function StatCard({ icon, label, value, color }: any) {
     return (
         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
@@ -211,8 +213,8 @@ function AdminToolCard({ title, desc, icon, action }: any) {
       <button onClick={action} className="bg-white p-6 rounded-[32px] border hover:border-blue-500 transition-all flex items-start gap-4 text-left shadow-sm group active:scale-95 w-full">
           <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors">{icon}</div>
           <div>
-              <h3 className="font-black text-slate-800 text-sm">{title}</h3>
-              <p className="text-[10px] text-slate-400 mt-1">{desc}</p>
+              <h3 className="font-black text-slate-800 text-sm uppercase tracking-tighter">{title}</h3>
+              <p className="text-[10px] text-slate-400 mt-1 font-medium">{desc}</p>
           </div>
       </button>
   );

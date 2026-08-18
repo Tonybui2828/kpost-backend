@@ -7,7 +7,10 @@ import {
 } from 'lucide-react';
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState([]); 
+  // --- 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG ---
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+  const [orders, setOrders] = useState<any[]>([]); // Thêm <any[]> để hết lỗi build
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
@@ -18,10 +21,11 @@ export default function OrdersPage() {
 
   const workspaceId = "workspace-01"; 
 
+  // --- 2. SỬA LINK LẤY ĐƠN HÀNG ---
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:3001/orders?workspaceId=${workspaceId}`);
+      const res = await axios.get(`${API_URL}/orders?workspaceId=${workspaceId}`);
       setOrders(res.data || []);
     } catch (e) {
       console.error("Lỗi lấy đơn hàng:", e);
@@ -34,7 +38,6 @@ export default function OrdersPage() {
     fetchOrders();
   }, []);
 
-  // --- HÀM MỞ MODAL SỬA ---
   const handleEditClick = (order: any) => {
     setEditingOrder(order);
     setEditForm({
@@ -46,10 +49,10 @@ export default function OrdersPage() {
     setIsEditModalOpen(true);
   };
 
-  // --- HÀM LƯU THAY ĐỔI XUỐNG DATABASE ---
+  // --- 3. SỬA LINK CẬP NHẬT ĐƠN HÀNG ---
   const handleUpdateOrder = async () => {
     try {
-      await axios.patch(`http://localhost:3001/orders/${editingOrder.id}`, {
+      await axios.patch(`${API_URL}/orders/${editingOrder.id}`, {
         customerName: editForm.name,
         customerPhone: editForm.phone,
         customerAddress: editForm.address,
@@ -57,25 +60,27 @@ export default function OrdersPage() {
       });
       alert("✅ Đã cập nhật thông tin đơn hàng!");
       setIsEditModalOpen(false);
-      fetchOrders(); // Tải lại danh sách
+      fetchOrders(); 
     } catch (e) {
       alert("❌ Lỗi khi cập nhật đơn hàng.");
     }
   };
 
+  // --- 4. SỬA LINK XÓA ĐƠN ---
   const handleDeleteOrder = async (orderId: string) => {
     if (!confirm("Bạn có chắc chắn muốn xóa đơn hàng này?")) return;
     try {
-      await axios.delete(`http://localhost:3001/orders/${orderId}`);
-      setOrders(orders.filter((o: any) => o.id !== orderId));
+      await axios.delete(`${API_URL}/orders/${orderId}`);
+      setOrders(prev => prev.filter((o: any) => o.id !== orderId));
     } catch (error) {
       alert("❌ Lỗi xóa đơn.");
     }
   };
 
+  // --- 5. SỬA LINK GIAO HÀNG VIETTELPOST ---
   const handleShipOrder = async (orderId: string) => {
     try {
-      await axios.post(`http://localhost:3001/orders/${orderId}/ship`);
+      await axios.post(`${API_URL}/orders/${orderId}/ship`);
       alert("✅ Đã đẩy đơn sang ViettelPost thành công!");
       fetchOrders(); 
     } catch (error: any) {
@@ -91,12 +96,12 @@ export default function OrdersPage() {
   return (
     <div className="p-8 text-slate-800 font-sans relative">
       
-      {/* --- MODAL CHỈNH SỬA THÔNG TIN (DÀNH CHO ĐƠN LỖI ĐỊA CHỈ) --- */}
+      {/* --- MODAL CHỈNH SỬA THÔNG TIN --- */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
             <div className="bg-white rounded-[40px] p-10 max-w-lg w-full shadow-2xl animate-in zoom-in duration-300 text-black">
                 <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-2xl font-black italic uppercase flex items-center gap-3">
+                    <h2 className="text-2xl font-black italic uppercase flex items-center gap-3 text-black">
                         <Edit3 className="text-blue-600" /> Chỉnh sửa thông tin
                     </h2>
                     <button onClick={() => setIsEditModalOpen(false)} className="text-slate-300 hover:text-red-500"><X size={32} /></button>
@@ -105,25 +110,25 @@ export default function OrdersPage() {
                 <div className="space-y-5">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Họ tên khách</label>
-                        <div className="relative">
+                        <div className="relative text-black">
                             <User className="absolute left-4 top-4 text-slate-300" size={18} />
-                            <input className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all" value={editForm.name} onChange={(e)=>setEditForm({...editForm, name: e.target.value})} />
+                            <input className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all text-black" value={editForm.name} onChange={(e)=>setEditForm({...editForm, name: e.target.value})} />
                         </div>
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Số điện thoại</label>
-                        <div className="relative">
+                        <div className="relative text-black">
                             <Phone className="absolute left-4 top-4 text-slate-300" size={18} />
-                            <input className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all" value={editForm.phone} onChange={(e)=>setEditForm({...editForm, phone: e.target.value})} />
+                            <input className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all text-black" value={editForm.phone} onChange={(e)=>setEditForm({...editForm, phone: e.target.value})} />
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Địa chỉ giao hàng (Rút gọn để tránh lỗi 204)</label>
+                    <div className="space-y-2 text-black">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Địa chỉ giao hàng</label>
                         <div className="relative">
                             <MapPin className="absolute left-4 top-4 text-slate-300" size={18} />
-                            <textarea rows={3} className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all resize-none" value={editForm.address} onChange={(e)=>setEditForm({...editForm, address: e.target.value})} />
+                            <textarea rows={3} className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-blue-500 transition-all resize-none text-black" value={editForm.address} onChange={(e)=>setEditForm({...editForm, address: e.target.value})} />
                         </div>
                     </div>
                 </div>
@@ -180,16 +185,12 @@ export default function OrdersPage() {
                   <div className="flex justify-end items-center gap-2">
                     {order.status === 'confirmed' ? (
                       <>
-                        {/* NÚT CHỈNH SỬA */}
                         <button 
                           onClick={() => handleEditClick(order)}
                           className="p-3 bg-white border border-slate-100 text-slate-400 hover:text-blue-600 hover:border-blue-200 rounded-2xl transition-all shadow-sm"
-                          title="Sửa thông tin"
                         >
                           <Edit3 size={18} />
                         </button>
-                        
-                        {/* NÚT GIAO HÀNG */}
                         <button 
                           onClick={() => handleShipOrder(order.id)}
                           className="bg-blue-600 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase italic shadow-lg shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-2"
@@ -203,8 +204,7 @@ export default function OrdersPage() {
                             <p className="text-sm font-black text-slate-900">{order.shippingCode || "Đang xử lý..."}</p>
                         </div>
                     )}
-                    
-                    <button onClick={() => handleDeleteOrder(order.id)} className="p-3 text-slate-200 hover:text-red-500 rounded-2xl transition-all"><Trash2 size={20} /></button>
+                    <button onClick={() => handleDeleteOrder(order.id)} className="p-3 text-slate-200 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
                   </div>
                 </td>
               </tr>

@@ -8,7 +8,10 @@ import { createClient } from "@supabase/supabase-js";
 const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_publishable__cTnEl5USBaraE6p6P0WDw_Q37Hmye7");
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState([]);
+  // --- 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG ---
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+  const [products, setProducts] = useState<any[]>([]); // Thêm <any[]> để hết lỗi build
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -20,16 +23,16 @@ export default function ProductsPage() {
 
   const workspaceId = "workspace-01";
 
+  // --- 2. SỬA LINK LẤY SẢN PHẨM ---
   const fetchProducts = async () => {
     try {
-      const res = await axios.get(`http://localhost:3001/products?workspaceId=${workspaceId}`);
+      const res = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
       setProducts(res.data || []);
     } catch (error) { console.error("Lỗi lấy sản phẩm:", error); }
   };
 
   useEffect(() => { fetchProducts(); }, []);
 
-  // HÀM XỬ LÝ UPLOAD (Hỗ trợ cả Ảnh và Video)
   const handleUploadMedia = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -53,16 +56,17 @@ export default function ProductsPage() {
     setUploading(false);
   };
 
+  // --- 3. SỬA LINK LƯU / CẬP NHẬT ---
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       const payload = { ...newProduct, price: Number(newProduct.price), totalStock: Number(newProduct.totalStock), workspaceId };
       if (editingId) {
-        await axios.patch(`http://localhost:3001/products/${editingId}`, payload);
+        await axios.patch(`${API_URL}/products/${editingId}`, payload);
         alert("Đã cập nhật sản phẩm!");
       } else {
-        await axios.post("http://localhost:3001/products", payload);
+        await axios.post(`${API_URL}/products`, payload);
         alert("Đã thêm vào kho!");
       }
       setNewProduct({ name: "", description: "", price: "", skuInternal: "", totalStock: "", imageUrl: "", productUrl: "" });
@@ -74,9 +78,10 @@ export default function ProductsPage() {
     } finally { setLoading(false); }
   };
 
+  // --- 4. SỬA LINK XÓA ---
   const handleDelete = async (id: string) => {
     if (confirm("Xóa sản phẩm này?")) {
-      await axios.delete(`http://localhost:3001/products/${id}`);
+      await axios.delete(`${API_URL}/products/${id}`);
       fetchProducts();
     }
   };
@@ -91,7 +96,6 @@ export default function ProductsPage() {
     setShowForm(true);
   };
 
-  // Hàm kiểm tra xem link có phải là video không
   const isVideo = (url: string) => url?.match(/\.(mp4|mov|avi|wmv)$/i);
 
   return (
@@ -114,7 +118,7 @@ export default function ProductsPage() {
                   {isVideo(newProduct.imageUrl) ? (
                     <video src={newProduct.imageUrl} className="w-full h-full object-cover rounded-2xl" controls />
                   ) : (
-                    <img src={newProduct.imageUrl} className="w-full h-full object-cover rounded-2xl" />
+                    <img src={newProduct.imageUrl} alt="Product" className="w-full h-full object-cover rounded-2xl" />
                   )}
                   <button type="button" onClick={() => setNewProduct({...newProduct, imageUrl: ""})} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><X size={14}/></button>
                 </div>
@@ -127,13 +131,13 @@ export default function ProductsPage() {
               )}
             </div>
             <div className="space-y-4">
-              <input placeholder="Tên sản phẩm" className="w-full p-4 bg-slate-50 rounded-xl border outline-none focus:border-blue-500" required value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})}/>
+              <input placeholder="Tên sản phẩm" className="w-full p-4 bg-slate-50 rounded-xl border outline-none focus:border-blue-500 text-black" required value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})}/>
               <input placeholder="Link mua hàng (URL)" className="w-full p-4 bg-slate-50 rounded-xl border outline-none text-blue-600" value={newProduct.productUrl} onChange={e => setNewProduct({...newProduct, productUrl: e.target.value})}/>
               <div className="flex gap-4 text-black">
-                <input type="number" placeholder="Giá" className="w-1/2 p-4 bg-slate-50 rounded-xl border outline-none text-black" required value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})}/>
-                <input placeholder="Mã SKU" className="w-1/2 p-4 bg-slate-50 rounded-xl border outline-none font-mono" required value={newProduct.skuInternal} onChange={e => setNewProduct({...newProduct, skuInternal: e.target.value})}/>
+                <input type="number" placeholder="Giá" className="w-1/2 p-4 bg-slate-50 rounded-xl border outline-none text-black font-bold" required value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})}/>
+                <input placeholder="Mã SKU" className="w-1/2 p-4 bg-slate-50 rounded-xl border outline-none font-mono text-black" required value={newProduct.skuInternal} onChange={e => setNewProduct({...newProduct, skuInternal: e.target.value})}/>
               </div>
-              <input type="number" placeholder="Số lượng" className="w-full p-4 bg-slate-50 rounded-xl border outline-none" required value={newProduct.totalStock} onChange={e => setNewProduct({...newProduct, totalStock: e.target.value})}/>
+              <input type="number" placeholder="Số lượng tồn kho" className="w-full p-4 bg-slate-50 rounded-xl border outline-none text-black" required value={newProduct.totalStock} onChange={e => setNewProduct({...newProduct, totalStock: e.target.value})}/>
               <button className={`w-full text-white font-black py-4 rounded-xl transition-all shadow-lg ${editingId ? 'bg-orange-500' : 'bg-blue-600'}`}>
                 {loading ? <Loader2 className="animate-spin mx-auto" /> : editingId ? "CẬP NHẬT THAY ĐỔI" : "LƯU VÀO KHO"}
               </button>
@@ -157,9 +161,9 @@ export default function ProductsPage() {
                      <video src={p.imageUrl} className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <img src={p.imageUrl} className="w-full h-full object-cover" />
+                  <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
                 )
-              ) : <div className="flex items-center justify-center h-full text-slate-400">Trống</div>}
+              ) : <div className="flex items-center justify-center h-full text-slate-400 font-bold">KHÔNG CÓ ẢNH</div>}
             </div>
             <div className="p-6">
               <h3 className="font-bold text-lg text-slate-800 uppercase truncate">{p.name}</h3>
