@@ -23,7 +23,7 @@ const tabs = [
 ];
 
 export default function SettingsPage() {
-  // --- 2. LẤY URL API TỪ BIẾN MÔI TRƯỜNG ---
+  // --- 2. KHAI BÁO URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   const [activeTab, setActiveTab] = useState("account");
@@ -49,7 +49,7 @@ export default function SettingsPage() {
     if (showQR && paymentStatus === "pending") {
         interval = setInterval(async () => {
             try {
-                // --- 3. SỬA LINK KIỂM TRA GIAO DỊCH ---
+                // --- 3. ĐÃ SỬA: SỬ DỤNG ${API_URL} THAY CHO LOCALHOST ---
                 const res = await axios.get(`${API_URL}/social/check-transaction/${paymentInfo.memo}`);
                 if (res.data && res.data.status === "success") {
                     setPaymentStatus("success");
@@ -70,7 +70,7 @@ export default function SettingsPage() {
     const amount = priceMap[plan.name];
 
     try {
-      // --- 4. SỬA LINK TẠO GIAO DỊCH ---
+      // --- 4. ĐÃ SỬA: SỬ DỤNG ${API_URL} THAY CHO LOCALHOST ---
       const res = await axios.post(`${API_URL}/social/create-transaction`, {
         workspaceId, planName: plan.name, amount: amount
       });
@@ -91,32 +91,28 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
-      
+      {/* MODAL THANH TOÁN */}
       {showQR && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4 text-black">
             <div className="bg-white rounded-[50px] p-10 max-w-md w-full text-center shadow-2xl relative border border-white/20">
-                
                 {paymentStatus === "pending" ? (
                     <div className="animate-in fade-in zoom-in duration-300">
                         <button onClick={() => setShowQR(false)} className="absolute top-8 right-8 text-slate-300 hover:text-red-500 transition-colors">
                             <X size={32} />
                         </button>
-                        
                         <div className="mb-6">
-                            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg shadow-blue-200">
+                            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg">
                                 <Smartphone size={32} />
                             </div>
                             <h3 className="text-2xl font-black italic uppercase tracking-tighter text-black">Quét mã nâng cấp</h3>
                             <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Gói {paymentInfo.plan} • {paymentInfo.amount.toLocaleString()}đ</p>
                         </div>
-
                         <div className="bg-white p-6 rounded-[40px] mb-8 border-2 border-slate-100 shadow-sm relative group">
                             <img src={paymentInfo.qr} className="w-full rounded-3xl" alt="VietQR" />
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-[40px] flex items-center justify-center text-black">
-                                <p className="bg-white px-4 py-2 rounded-full text-[10px] font-black shadow-xl">QUÉT QUA APP NGÂN HÀNG</p>
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-[40px] flex items-center justify-center text-black font-black uppercase text-[10px]">
+                                <span className="bg-white px-4 py-2 rounded-full shadow-xl">Quét qua App ngân hàng</span>
                             </div>
                         </div>
-
                         <div className="space-y-4">
                             <div className="bg-blue-600 p-5 rounded-3xl text-white relative group cursor-pointer active:scale-95 transition-all shadow-xl shadow-blue-100" onClick={() => {navigator.clipboard.writeText(paymentInfo.memo); alert("Đã copy nội dung!");}}>
                                 <p className="text-[10px] font-black uppercase opacity-60 tracking-[0.2em] mb-1">Nội dung chuyển khoản</p>
@@ -124,22 +120,22 @@ export default function SettingsPage() {
                                     {paymentInfo.memo} <Copy size={18} className="group-hover:rotate-12 transition-transform" />
                                 </p>
                             </div>
-                            <div className="flex items-center justify-center gap-2 text-[11px] text-blue-600 font-black uppercase tracking-widest animate-pulse mt-4 font-sans">
+                            <div className="flex items-center justify-center gap-2 text-[11px] text-blue-600 font-black uppercase tracking-widest animate-pulse mt-4">
                                 <Loader2 size={14} className="animate-spin" />
-                                Hệ thống đang kiểm tra tiền về...
+                                Hệ thống AI đang quét tiền về...
                             </div>
                         </div>
                     </div>
                 ) : (
                     <div className="py-6 animate-in zoom-in-50 duration-500 text-black">
-                        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center text-white mx-auto mb-6 shadow-2xl shadow-green-200 animate-bounce">
+                        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center text-white mx-auto mb-6 shadow-2xl animate-bounce">
                             <PartyPopper size={48} />
                         </div>
                         <h3 className="text-4xl font-black text-slate-900 italic uppercase mb-2 tracking-tighter">THÀNH CÔNG!</h3>
                         <p className="text-sm text-slate-500 font-bold mb-10 px-4 leading-relaxed">
                             Cảm ơn bạn! Gói <span className="text-blue-600 font-black">{paymentInfo.plan}</span> đã được kích hoạt hoàn toàn tự động.
                         </p>
-                        <button onClick={() => window.location.reload()} className="w-full py-5 bg-blue-600 text-white rounded-[28px] font-black uppercase italic text-lg flex items-center justify-center gap-3 shadow-2xl active:scale-95">
+                        <button onClick={() => window.location.reload()} className="w-full py-5 bg-blue-600 text-white rounded-[28px] font-black uppercase italic text-lg flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-2xl active:scale-95">
                             <Rocket size={24} /> Bắt đầu ngay 🚀
                         </button>
                     </div>
@@ -148,11 +144,12 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* GIAO DIỆN CHÍNH */}
       <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10">
         <div className="w-full lg:w-72 space-y-2">
            <div className="mb-10 px-4">
-              <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter">SETTINGS</h1>
-              <p className="text-xs font-bold text-slate-400 uppercase mt-1 tracking-widest">Control Center</p>
+              <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">Settings</h1>
+              <p className="text-[10px] font-black text-slate-400 uppercase mt-1 tracking-widest opacity-60">Control Center</p>
            </div>
            {tabs.map((tab) => (
              <button
@@ -212,11 +209,11 @@ function BillingTab({ onUpgrade }: any) {
 function AccountTab() {
     return (
         <div className="space-y-10 animate-in fade-in">
-            <h2 className="text-2xl font-black text-slate-900 italic uppercase">Thông tin định danh</h2>
+            <h2 className="text-2xl font-black text-slate-900 italic uppercase text-black">Thông tin định danh</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Họ và tên</label>
-                    <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-black" defaultValue="Bùi Văn Kỳ" />
+                    <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-black border border-transparent focus:border-blue-200 transition-all" defaultValue="Bùi Văn Kỳ" />
                 </div>
                 <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Email liên hệ</label>
@@ -237,7 +234,7 @@ function AccountTab() {
     )
 }
 
-function SecurityTab() { return <div className="p-10 text-center text-black"><Lock size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Tính năng bảo mật đang kích hoạt...</p></div> }
-function VoucherTab() { return <div className="p-10 text-center text-black"><Gift size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Bạn chưa có mã giảm giá nào.</p></div> }
-function GuideTab() { return <div className="p-10 text-center text-black"><BookOpen size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Tài liệu đang cập nhật...</p></div> }
-function TermsTab() { return <div className="bg-red-50 p-8 rounded-[40px] border border-red-100 text-black"><h2 className="text-xl font-black mb-4 uppercase italic text-red-600">Điều khoản</h2><p className="text-sm font-bold text-red-900/60 leading-relaxed italic">Nội dung điều khoản sử dụng...</p></div> }
+function SecurityTab() { return <div className="p-10 text-center text-black"><Lock size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Bảo mật tài khoản đang trực tuyến...</p></div> }
+function VoucherTab() { return <div className="p-10 text-center text-black"><Gift size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Kho Voucher đang được đồng bộ...</p></div> }
+function GuideTab() { return <div className="p-10 text-center text-black"><BookOpen size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Đang tải tài liệu hướng dẫn...</p></div> }
+function TermsTab() { return <div className="bg-red-50 p-8 rounded-[40px] border border-red-100 text-black"><h2 className="text-xl font-black mb-4 uppercase italic text-red-600 text-black">Điều khoản sử dụng</h2><p className="text-sm font-bold text-red-900/60 leading-relaxed italic text-black font-sans">1. Không hoàn tiền sau khi đã kích hoạt gói.<br/>2. Cam kết bảo mật dữ liệu khách hàng 100%.</p></div> }
