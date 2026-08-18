@@ -12,11 +12,20 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "strict": false,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "exclude": ["node_modules", "dist", "saas-frontend"]
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "saas-frontend",
+    "**/*.spec.ts"
+  ]
 }
