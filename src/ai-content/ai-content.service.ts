@@ -20,12 +20,7 @@ export class AiContentService {
   // ==========================================
   async analyzeGrowth(stats: any) {
     try {
-      const prompt = `
-        Bạn là một chuyên gia cố vấn tăng trưởng doanh thu. 
-        Dữ liệu shop: Doanh thu ${stats.totalRevenue}đ, ${stats.totalOrders} đơn, ${stats.totalMessages} tin nhắn.
-        Hãy phân tích ngắn gọn và đưa ra 3 lời khuyên thực chiến để shop bùng nổ doanh số.
-        Trả về JSON: { "analysis": "...", "suggestions": ["...", "...", "..."] }
-      `;
+      const prompt = `Bạn là một chuyên gia cố vấn tăng trưởng doanh thu. Dữ liệu shop: Doanh thu ${stats.totalRevenue}đ, ${stats.totalOrders} đơn, ${stats.totalMessages} tin nhắn. Hãy phân tích ngắn gọn và đưa ra 3 lời khuyên thực chiến để shop bùng nổ doanh số. Trả về JSON: { "analysis": "...", "suggestions": ["...", "...", "..."] }`;
       const res = await this.openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
@@ -38,64 +33,57 @@ export class AiContentService {
   }
 
   // ==========================================
-  // 2. AI AUTOPILOT - TRỢ LÝ CHỐT ĐƠN (PROMPT CHUẨN THƯƠNG MẠI)
+  // 2. AI AUTOPILOT - TRỢ LÝ CHỐT ĐƠN (CHỈNH SỬA PROMPT CHỐT NHANH)
   // ==========================================
-  async suggestReply(msg: string, wsId: string, history: any[] = []) {
+  async suggestReply(msg: string, wsId: string) {
     try {
-      // 1. Lấy danh sách sản phẩm thật
       const products = await this.prisma.product.findMany({
         where: { workspaceId: wsId },
         select: { name: true, price: true }
       });
 
-      const productContext = products.map(p => 
-        `- ${p.name}: ${p.price?.toLocaleString()}đ`
-      ).join('\n');
+      const productContext = products.map(p => `- ${p.name}: ${p.price?.toLocaleString()}đ`).join('\n');
 
-      // 2. Chuyển đổi lịch sử chat
-      const chatHistory = history.map(h => ({
-        role: h.type === 'outbound' ? 'assistant' : 'user',
-        content: h.content
-      }));
-
-      // 3. SYSTEM PROMPT
       const systemPrompt = `
-        Bạn là "Mai" - nhân viên chốt đơn của shop. Lễ phép, ngắn gọn, dùng "Dạ", "ạ" và icon 😍, 🚀.
-        SẢN PHẨM:
+        Bạn là Mai - nhân viên chốt đơn của shop. Xưng hô: "Em" và "Anh/Chị".
+        
+        DANH SÁCH SẢN PHẨM:
         ${productContext}
 
-        QUY TẮC:
-        1. KHÔNG hỏi lại thông tin khách đã gửi (Họ tên, SĐT, Địa chỉ).
-        2. Phí ship: 1 cái là 30k, 2 cái trở lên FREESHIP.
-        3. Đủ 5 thông tin [Tên, SĐT, Địa chỉ, Tên SP, Số lượng] thì XUẤT HÓA ĐƠN ngay theo mẫu:
-        
-        "Dạ em chốt đơn thành công rồi ạ! ❤️
+        NHIỆM VỤ CỰC KỲ QUAN TRỌNG:
+        1. ĐỌC KỸ TIN NHẮN: Nếu khách gửi Họ tên, SĐT, Địa chỉ trong tin nhắn này, hãy BÓC TÁCH ngay. KHÔNG ĐƯỢC HỎI LẠI những gì khách đã ghi.
+        2. CHỐT ĐƠN NGAY: Nếu tin nhắn khách đã chứa đủ thông tin giao hàng và tên sản phẩm -> XUẤT HÓA ĐƠN LUÔN, không hỏi han linh tinh.
+        3. QUY TẮC SHIP: Mua 1 cái ship 30k. Mua từ 2 cái trở lên FREESHIP.
+        4. THIẾU GÌ HỎI NẤY: Chỉ hỏi duy nhất những thông tin còn thiếu. Ngắn gọn, lễ phép.
+
+        MẪU HÓA ĐƠN CHỐT ĐƠN (Gửi ngay khi đủ thông tin):
+        "Dạ em xác nhận chốt đơn cho mình thành công rồi ạ! ❤️
         ---
-        📦 THÔNG TIN:
-        - Khách: [Tên]
-        - SĐT: [SĐT]
+        📦 THÔNG TIN ĐƠN HÀNG:
+        - Khách hàng: [Tên khách]
+        - Số điện thoại: [SĐT]
         - Địa chỉ: [Địa chỉ]
-        - SP: [Tên SP]
-        - SL: [Số lượng]
-        - Ship: [30k/Free]
+        - Sản phẩm: [Tên SP]
+        - Số lượng: [Số lượng]
+        - Phí ship: [30k hoặc MIỄN PHÍ]
         ---
-        💰 TỔNG: [Tiền]đ
-        🚀 Cảm ơn Anh/Chị!"
+        💰 TỔNG THANH TOÁN: [Tổng tiền]đ
+        
+        Cảm ơn Anh/Chị! Chờ nhận hàng của em nhé 🚀"
       `;
 
       const res = await this.openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt }, 
-          ...chatHistory.slice(-5), 
           { role: "user", content: msg }
         ],
-        temperature: 0.2,
+        temperature: 0.2, 
       });
 
       return res.choices[0].message.content;
     } catch (error) {
-      return "Dạ em chào Anh/Chị, em giúp gì được cho mình ạ? 😍";
+      return "Dạ em chào Anh/Chị, em có thể giúp gì cho mình không ạ? 😍";
     }
   }
 
@@ -119,11 +107,7 @@ export class AiContentService {
       const responseImg = await axios.get(imageUrl, { responseType: 'arraybuffer' });
       const imageFile = await OpenAI.toFile(Buffer.from(responseImg.data), 'source.png');
       const aiResponse = await this.openai.images.edit({
-        model: "dall-e-2",
-        image: imageFile,
-        prompt: technicalPrompt,
-        n: 1,
-        size: "1024x1024",
+        model: "dall-e-2", image: imageFile, prompt: technicalPrompt, n: 1, size: "1024x1024",
       });
       return this.saveToSupabase(aiResponse.data[0]?.url || "");
     } catch (error) { throw new Error(error.message); }
@@ -134,19 +118,12 @@ export class AiContentService {
       const technicalPrompt = await this.getOptimizedPrompt(prompt);
       const res = await this.openai.images.generate({ model: "dall-e-3", prompt: technicalPrompt, n: 1, size: "1024x1024" });
       return this.saveToSupabase(res.data[0].url || "");
-    } catch (error) { 
-      return { url: `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` }; 
-    }
+    } catch (error) { return { url: `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` }; }
   }
 
   async generatePost(topic: string, userId: string, workspaceId: string) {
-    const res = await this.openai.chat.completions.create({ 
-      model: "gpt-4o-mini", 
-      messages: [{ role: "user", content: topic }] 
-    });
-    return this.prisma.post.create({ 
-      data: { content: res.choices[0].message.content || '', workspaceId, status: 'draft', userId: userId || null } 
-    });
+    const res = await this.openai.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "user", content: topic }] });
+    return this.prisma.post.create({ data: { content: res.choices[0].message.content || '', workspaceId, status: 'draft', userId: userId || null } });
   }
 
   private async saveToSupabase(rawData: string) {
