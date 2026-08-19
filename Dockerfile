@@ -26,7 +26,7 @@ COPY . .
 
 # Khởi tạo Prisma và Build dự án
 RUN npx prisma generate
-RUN npm run build
+RUN rm -rf dist && npm run build
 
 EXPOSE 3001
 
