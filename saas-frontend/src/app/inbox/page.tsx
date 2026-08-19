@@ -4,7 +4,7 @@ import axios from "axios";
 import { 
   MessageSquare, RefreshCw, Send, Loader2, Sparkles, 
   ShoppingCart, X, Package, CheckCircle, User, CheckCircle2,
-  Trash2, Plus, Minus, Search, MapPin, Phone
+  Trash2, Plus, Minus, Search, MapPin, Phone, Flag
 } from "lucide-react";
 
 export default function InboxPage() {
@@ -39,18 +39,15 @@ export default function InboxPage() {
     }
   }, [showOrderModal, selectedMsg]);
 
-  // --- 2. SỬA LINK ĐỒNG BỘ & LẤY TIN NHẮN (FIX LỖI 404) ---
+  // --- 2. ĐỒNG BỘ & LẤY TIN NHẮN ---
   const fetchConversations = async () => {
     setLoading(true);
     try {
-      // Gọi lệnh đồng bộ qua /social
       await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
-      // Lấy tin nhắn qua /social/inbox (Đảm bảo Backend đã có route này)
       const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
       setMessages(res.data || []);
     } catch (e) { 
         console.error("Lỗi Inbox:", e);
-        alert("Không thể tải danh sách tin nhắn. Hãy kiểm tra Backend!");
     } finally { setLoading(false); }
   };
 
@@ -144,25 +141,34 @@ export default function InboxPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-8 text-black">
         <h1 className="text-3xl font-black flex items-center gap-3 italic text-black uppercase tracking-tighter">
             <div className="bg-blue-600 p-2 rounded-lg text-white shadow-lg"><MessageSquare size={28} /></div>
             CRM Smart Inbox
         </h1>
         <button onClick={fetchConversations} className="bg-white px-6 py-3 rounded-2xl shadow-sm border font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-slate-500">
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Làm mới
+          <RefreshCw size={16} className={loading ? "animate-spin text-blue-600" : ""} /> Làm mới
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black font-medium">
+        {/* DANH SÁCH HỘI THOẠI BÊN TRÁI */}
         <div className="lg:col-span-1 bg-white rounded-[40px] shadow-sm border border-slate-100 h-[75vh] flex flex-col overflow-hidden">
            <div className="p-6 border-b bg-slate-50/50 font-black text-slate-400 text-[10px] uppercase tracking-widest">Hội thoại</div>
            <div className="flex-1 overflow-y-auto custom-scrollbar">
               {messages.map((msg: any) => (
                 <div key={msg.id} onClick={() => fetchChatHistory(msg)} className={`p-6 border-b cursor-pointer transition-all border-l-4 ${selectedMsg?.senderId === msg.senderId ? 'bg-blue-50 border-l-blue-600 shadow-inner' : 'hover:bg-slate-50'}`}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-black text-sm text-slate-800">{msg.senderName}</span>
-                    <span className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase ${msg.type === 'comment' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>{msg.type}</span>
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-black text-sm text-slate-800 truncate pr-2">{msg.senderName}</span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                        {/* HIỂN THỊ TÊN PAGE */}
+                        <span className="text-[8px] font-black bg-slate-800 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1">
+                            <Flag size={8} /> {msg.pageName || "Trang"}
+                        </span>
+                        <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full uppercase ${msg.type === 'comment' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                            {msg.type}
+                        </span>
+                    </div>
                   </div>
                   <p className="text-sm text-slate-500 truncate italic">"{msg.content}"</p>
                 </div>
@@ -170,13 +176,17 @@ export default function InboxPage() {
            </div>
         </div>
 
+        {/* CHI TIẾT TIN NHẮN BÊN PHẢI */}
         <div className="lg:col-span-2 bg-white rounded-[40px] shadow-xl border border-slate-100 flex flex-col h-[75vh] overflow-hidden relative text-black">
             {selectedMsg ? (
               <>
                 <div className="p-6 border-b bg-slate-50/50 flex justify-between items-center">
                    <div className="flex items-center gap-3 text-black">
                       <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">{selectedMsg.senderName[0]}</div>
-                      <p className="font-black text-black">{selectedMsg.senderName}</p>
+                      <div>
+                        <p className="font-black text-black leading-tight">{selectedMsg.senderName}</p>
+                        <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-1">Nguồn: {selectedMsg.pageName}</p>
+                      </div>
                    </div>
                    <button onClick={() => setShowOrderModal(true)} className="bg-green-600 text-white px-6 py-2 rounded-full text-[10px] font-black flex items-center gap-2 hover:bg-green-700 shadow-lg transition-all active:scale-95">
                         <ShoppingCart size={14} /> TẠO ĐƠN NHANH
@@ -194,7 +204,7 @@ export default function InboxPage() {
 
                 <div className="p-8 border-t bg-white">
                    <div className="flex gap-4">
-                      <input className="flex-1 p-4 bg-slate-100 rounded-xl outline-none text-slate-900 font-bold" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Nhập tin nhắn..." onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
+                      <input className="flex-1 p-4 bg-slate-100 rounded-xl outline-none text-slate-900 font-bold" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Nhập tin nhắn phản hồi..." onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
                       <button onClick={handleSend} disabled={sending} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-800 transition-all shadow-md">
                         {sending ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />} GỬI
                       </button>
@@ -202,9 +212,10 @@ export default function InboxPage() {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu</div>
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu quản lý</div>
             )}
 
+            {/* MODAL CHI TIẾT ĐƠN HÀNG */}
             {showOrderModal && (
               <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300 text-black">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50">
@@ -216,12 +227,12 @@ export default function InboxPage() {
                     <div className="w-full lg:w-1/2 p-6 border-r flex flex-col overflow-hidden">
                         <div className="relative mb-4">
                             <Search className="absolute left-3 top-3 text-slate-300" size={18} />
-                            <input className="w-full p-3 pl-10 bg-slate-100 rounded-xl outline-none text-sm font-bold text-black" placeholder="Tìm tên sản phẩm..." onChange={(e) => setSearchTerm(e.target.value.toLowerCase())} />
+                            <input className="w-full p-3 pl-10 bg-slate-100 rounded-xl outline-none text-sm font-bold text-black border focus:border-blue-400" placeholder="Tìm sản phẩm..." onChange={(e) => setSearchTerm(e.target.value.toLowerCase())} />
                         </div>
                         <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                             {products.filter(p => p.name.toLowerCase().includes(searchTerm)).map((p: any) => (
                                 <div key={p.id} onClick={() => addToCart(p)} className="p-4 border rounded-2xl hover:border-blue-500 hover:bg-blue-50 cursor-pointer flex justify-between items-center transition-all bg-white shadow-sm group">
-                                    <div className="text-black font-medium">
+                                    <div>
                                         <p className="text-sm font-bold text-black">{p.name}</p>
                                         <p className="text-xs text-blue-600 font-black">{Number(p.price).toLocaleString()}đ</p>
                                     </div>
@@ -240,7 +251,7 @@ export default function InboxPage() {
                               </button>
                            </div>
                            <div className="space-y-3">
-                                <input className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none text-sm font-bold text-black" placeholder="Họ tên khách hàng" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                                <input className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none text-sm font-bold text-black" placeholder="Họ tên" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                                 <input className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none text-sm font-bold text-black" placeholder="Số điện thoại" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                                 <textarea className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none text-sm font-bold h-20 text-black" placeholder="Địa chỉ giao hàng..." value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
                            </div>
@@ -250,19 +261,16 @@ export default function InboxPage() {
                         <div className="flex-1 space-y-3">
                             {orderItems.map((item) => (
                                 <div key={item.productId} className="bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center text-black">
-                                    <div>
-                                        <p className="text-sm font-bold text-black">{item.name}</p>
-                                        <p className="text-xs text-blue-600 font-black">x{item.quantity} - {Number(item.price * item.quantity).toLocaleString()}đ</p>
-                                    </div>
+                                    <div><p className="text-sm font-bold text-black">{item.name}</p><p className="text-xs text-blue-600 font-black">x{item.quantity}</p></div>
                                     <button onClick={() => removeFromCart(item.productId)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
                                 </div>
                             ))}
                         </div>
 
                         <div className="mt-6 pt-6 border-t bg-white p-6 rounded-[32px] shadow-lg sticky bottom-0">
-                            <div className="flex justify-between items-center mb-6 text-black">
+                            <div className="flex justify-between items-center mb-6">
                                 <span className="text-xs font-bold text-slate-400 uppercase">Tổng cộng:</span>
-                                <span className="text-2xl font-black text-blue-600">{orderItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}đ</span>
+                                <span className="text-2xl font-black text-blue-600 font-sans">{orderItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}đ</span>
                             </div>
                             <button onClick={submitOrder} disabled={sending || orderItems.length === 0} className="w-full bg-blue-600 text-white font-black py-5 rounded-[24px] shadow-xl hover:bg-blue-700 transition-all flex justify-center items-center gap-3">
                                 {sending ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />} XÁC NHẬN CHỐT ĐƠN 🚀

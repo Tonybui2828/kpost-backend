@@ -157,32 +157,85 @@ export class SocialController {
       const entry = body.entry?.[0];
       if (!entry) return 'NO_ENTRY';
 
-      const pageId = entry.id; 
+      const pageId = entry.id; // ID của Fanpage nhận tin nhắn
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
+      // --- BƯỚC 1: XÁC ĐỊNH CHỦ SỞ HỮU FANPAGE TRONG HỆ THỐNG ---
+      const account = await this.prisma.socialAccount.findFirst({
+        where: { platformId: pageId },
+      });
+
+      if (!account) {
+        console.log(`[Webhook] Fanpage ${pageId} chưa được kết nối vào hệ thống Kpost.`);
+        return 'ACCOUNT_NOT_FOUND';
+      }
+
+      // --- BƯỚC 2: XỬ LÝ TIN NHẮN INBOX ---
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
+        // Lưu tin nhắn vào đúng kho dữ liệu của khách hàng (workspaceId)
         const savedMsg = await this.prisma.inboxMessage.upsert({
           where: { platformId: messaging.message.mid },
           update: { content: text },
-          create: { workspaceId: "workspace-01", platform: 'facebook', type: 'inbox', senderName: "Khách mới", senderId, content: text, platformId: messaging.message.mid }
+          create: { 
+            workspaceId: account.workspaceId, // <--- Lấy động từ Database
+            platform: 'facebook', 
+            type: 'inbox', 
+            senderName: "Khách từ Fanpage", 
+            senderId, 
+            content: text, 
+            platformId: messaging.message.mid,
+            pageName: account.accountName
+          }
         });
+
+        // Bắn tín hiệu lên giao diện web của khách
         this.chatGateway.sendMessageToUI(savedMsg);
-        await this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid);
+
+        // KIỂM TRA: Chỉ tự động trả lời nếu khách đã BẬT nút Autopilot
+        if (account.isAiAutoReply) {
+          console.log(`🤖 [AI ON] Đang trả lời khách cho workspace: ${account.workspaceId}`);
+          await this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid);
+        } else {
+          console.log(`👤 [AI OFF] Khách tắt tự động trả lời, chỉ lưu log tin nhắn.`);
+        }
       }
 
+      // --- BƯỚC 3: XỬ LÝ BÌNH LUẬN (COMMENT) ---
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
         const senderId = changes.value.from.id;
+
+        // Tránh AI tự trả lời chính nó
         if (senderId !== pageId) {
-          await this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId);
+          // Lưu bình luận vào Database (Vẫn lấy đúng workspaceId của khách)
+          await this.prisma.inboxMessage.create({
+            data: {
+              workspaceId: account.workspaceId,
+              platform: 'facebook',
+              type: 'comment',
+              senderName: changes.value.from.name || "Người dùng FB",
+              senderId,
+              content: commentText,
+              platformId: commentId,
+              pageName: account.accountName
+            }
+          });
+
+          // Nếu BẬT AI thì mới tự trả lời bình luận
+          if (account.isAiAutoReply) {
+            await this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId);
+          }
         }
       }
-    } catch (e) { console.log("⚠️ Webhook Error:", e.message); }
+
+    } catch (e) { 
+      console.log("⚠️ Webhook Error:", e.message); 
+    }
     return 'EVENT_RECEIVED';
   }
 
