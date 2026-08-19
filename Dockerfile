@@ -1,6 +1,6 @@
 FROM node:22-slim
 
-# Cài đặt unzip (BẮT BUỘC để Puppeteer cài chrome) và các thư viện hệ thống
+# Cài đặt các thư viện hệ thống cần thiết
 RUN apt-get update && apt-get install -y \
     unzip \
     curl \
@@ -9,26 +9,28 @@ RUN apt-get update && apt-get install -y \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
     libasound2 \
-    libxss1 \
-    libgbm1 \
     && rm -rf /var/lib/apt/lists/*
+
+# BIẾN NÀY ĐỂ BỎ QUA LỖI CÀI ĐẶT PUPPETEER
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# Copy file cấu hình trước
+# Chỉ copy file package trước để tối ưu tốc độ build
 COPY package*.json ./
 
-# Cài đặt thư viện (Lần này sẽ giải nén Chrome thành công vì đã có unzip)
-RUN npm install
+# Cài đặt thư viện (Bỏ qua các script tự chạy gây lỗi)
+RUN npm install --ignore-scripts
 
-# Copy toàn bộ mã nguồn
+# Copy toàn bộ mã nguồn (trừ những thứ trong .dockerignore)
 COPY . .
 
-# Khởi tạo Prisma và Build dự án
+# Cấp quyền và chạy Prisma
 RUN npx prisma generate
-RUN npm run build --if-present
+
+# Build dự án
+RUN npm run build
 
 EXPOSE 3001
 
-# Lệnh khởi chạy
 CMD ["npm", "run", "start:prod"]
