@@ -15,7 +15,7 @@ export class SocialController {
     private readonly chatGateway: ChatGateway,
     private readonly aiService: AiContentService,
     private readonly paymentService: PaymentService,
-    private readonly automatorService: AutomatorService // Đã tiêm AutomatorService
+    private readonly automatorService: AutomatorService
   ) {}
 
   // ==========================================
@@ -44,7 +44,34 @@ export class SocialController {
   @Delete('accounts/:id') async deleteAccount(@Param('id') id: string) { return this.prisma.socialAccount.delete({ where: { id } }); }
 
   // ==========================================
-  // 2. CHIẾN DỊCH HỘI NHÓM & ĐĂNG BÀI
+  // 2. MỚI BỔ SUNG: ĐỒNG BỘ & LẤY TIN NHẮN (FIX LỖI 404 TRÌNH DUYỆT)
+  // ==========================================
+  
+  @Post('sync-inbox')
+  async syncInbox(@Body() body: { workspaceId: string }) {
+    // Gọi hàm quét tin nhắn từ FacebookService
+    return this.facebookService.syncAllMessages(body.workspaceId);
+  }
+
+  @Get('inbox')
+  async getInbox(@Query('workspaceId') workspaceId: string) {
+    // Lấy toàn bộ tin nhắn từ database để hiện lên Frontend
+    return this.prisma.inboxMessage.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  @Get('chat-history')
+  async getChatHistory(@Query('senderId') senderId: string, @Query('workspaceId') workspaceId: string) {
+    return this.prisma.inboxMessage.findMany({
+      where: { senderId, workspaceId },
+      orderBy: { createdAt: 'asc' }
+    });
+  }
+
+  // ==========================================
+  // 3. CHIẾN DỊCH HỘI NHÓM & ĐĂNG BÀI
   // ==========================================
   @Post('facebook/post-groups')
   async postToGroups(@Body() body: any) {
@@ -80,7 +107,7 @@ export class SocialController {
   @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
 
   // ==========================================
-  // 3. THANH TOÁN TỰ ĐỘNG
+  // 4. THANH TOÁN TỰ ĐỘNG
   // ==========================================
   @Post('create-transaction')
   async createTransaction(@Body() body: any) {
@@ -114,7 +141,7 @@ export class SocialController {
   }
 
   // ==========================================
-  // 4. WEBHOOK FACEBOOK & AI AUTOPILOT (KẾT NỐI CHỐT ĐƠN TỰ ĐỘNG)
+  // 5. WEBHOOK FACEBOOK & AI AUTOPILOT
   // ==========================================
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
@@ -134,41 +161,33 @@ export class SocialController {
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
-      // --- A. XỬ LÝ TIN NHẮN INBOX ---
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
-        // 1. Lưu tin nhắn vào UI
         const savedMsg = await this.prisma.inboxMessage.upsert({
           where: { platformId: messaging.message.mid },
           update: { content: text },
           create: { workspaceId: "workspace-01", platform: 'facebook', type: 'inbox', senderName: "Khách mới", senderId, content: text, platformId: messaging.message.mid }
         });
         this.chatGateway.sendMessageToUI(savedMsg);
-
-        // 2. GỌI AUTOMATOR (AI sẽ soạn tin và tự động lưu đơn nếu đủ thông tin)
         await this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid);
       }
 
-      // --- B. XỬ LÝ BÌNH LUẬN (COMMENT) ---
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
         const senderId = changes.value.from.id;
-
         if (senderId !== pageId) {
-          // AI trả lời bình luận và tự bóc tách đơn hàng
           await this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId);
         }
       }
-
     } catch (e) { console.log("⚠️ Webhook Error:", e.message); }
     return 'EVENT_RECEIVED';
   }
 
   // ==========================================
-  // 5. CÁC TIỆN ÍCH AI KHÁC
+  // 6. CÁC TIỆN ÍCH AI & REPLY
   // ==========================================
   @Post('extract-info')
   async extractInfo(@Body() body: { text: string }) {

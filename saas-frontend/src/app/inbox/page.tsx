@@ -11,7 +11,6 @@ export default function InboxPage() {
   // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- 2. SỬA LỖI TYPESCRIPT (Thêm <any[]>) ---
   const [messages, setMessages] = useState<any[]>([]);
   const [chatHistory, setChatHistory] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]); 
@@ -40,14 +39,19 @@ export default function InboxPage() {
     }
   }, [showOrderModal, selectedMsg]);
 
-  // --- 3. SỬA CÁC LINK API ---
+  // --- 2. SỬA LINK ĐỒNG BỘ & LẤY TIN NHẮN (FIX LỖI 404) ---
   const fetchConversations = async () => {
     setLoading(true);
     try {
+      // Gọi lệnh đồng bộ qua /social
       await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
-     const res = await axios.get(`${API_URL}/inbox?workspaceId=${workspaceId}`);
+      // Lấy tin nhắn qua /social/inbox (Đảm bảo Backend đã có route này)
+      const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
       setMessages(res.data || []);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e) { 
+        console.error("Lỗi Inbox:", e);
+        alert("Không thể tải danh sách tin nhắn. Hãy kiểm tra Backend!");
+    } finally { setLoading(false); }
   };
 
   const fetchChatHistory = async (msg: any) => {
@@ -96,32 +100,22 @@ export default function InboxPage() {
       .map(c => c.content)
       .join("\n");
 
-    if (!fullChatText.trim()) {
-        alert("Không có tin nhắn nào từ khách để bóc tách.");
-        return;
-    }
+    if (!fullChatText.trim()) return alert("Không có tin nhắn khách.");
 
     setAiLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/social/extract-info`, {
-        text: fullChatText
-      });
-
+      const res = await axios.post(`${API_URL}/social/extract-info`, { text: fullChatText });
       if (res.data) {
         if (res.data.phone) setCustomerPhone(res.data.phone);
         if (res.data.address) setCustomerAddress(res.data.address);
-        alert("AI đã bóc tách thông tin thành công! ✨");
+        alert("AI đã bóc tách thông tin! ✨");
       }
-    } catch (e) {
-      alert("Lỗi kết nối AI.");
-    } finally {
-      setAiLoading(false);
-    }
+    } catch (e) { alert("Lỗi kết nối AI."); } finally { setAiLoading(false); }
   };
 
   const submitOrder = async () => {
     if (orderItems.length === 0) return alert("Giỏ hàng trống!");
-    if (!customerPhone || !customerAddress) return alert("Vui lòng nhập SĐT và Địa chỉ để giao hàng!");
+    if (!customerPhone || !customerAddress) return alert("Vui lòng nhập SĐT và Địa chỉ!");
 
     setSending(true);
     try {
@@ -163,7 +157,7 @@ export default function InboxPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black font-medium">
         <div className="lg:col-span-1 bg-white rounded-[40px] shadow-sm border border-slate-100 h-[75vh] flex flex-col overflow-hidden">
            <div className="p-6 border-b bg-slate-50/50 font-black text-slate-400 text-[10px] uppercase tracking-widest">Hội thoại</div>
-           <div className="flex-1 overflow-y-auto">
+           <div className="flex-1 overflow-y-auto custom-scrollbar">
               {messages.map((msg: any) => (
                 <div key={msg.id} onClick={() => fetchChatHistory(msg)} className={`p-6 border-b cursor-pointer transition-all border-l-4 ${selectedMsg?.senderId === msg.senderId ? 'bg-blue-50 border-l-blue-600 shadow-inner' : 'hover:bg-slate-50'}`}>
                   <div className="flex justify-between items-center mb-1">
@@ -189,7 +183,7 @@ export default function InboxPage() {
                    </button>
                 </div>
                 
-                <div className="flex-1 p-8 overflow-y-auto bg-slate-50/20 flex flex-col gap-4">
+                <div className="flex-1 p-8 overflow-y-auto bg-slate-50/20 flex flex-col gap-4 custom-scrollbar">
                     {chatHistory.map((chat: any, index: number) => (
                       <div key={index} className={`flex ${chat.type === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`p-4 rounded-2xl max-w-[85%] font-bold whitespace-pre-wrap ${chat.type === 'outbound' ? 'bg-blue-600 text-white rounded-tr-none shadow-md' : 'bg-white text-slate-700 border rounded-tl-none shadow-sm'}`}>{chat.content}</div>
@@ -200,7 +194,7 @@ export default function InboxPage() {
 
                 <div className="p-8 border-t bg-white">
                    <div className="flex gap-4">
-                      <input className="flex-1 p-4 bg-slate-100 rounded-xl outline-none text-slate-900 font-bold" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Nhập tin nhắn phản hồi..." onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
+                      <input className="flex-1 p-4 bg-slate-100 rounded-xl outline-none text-slate-900 font-bold" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Nhập tin nhắn..." onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
                       <button onClick={handleSend} disabled={sending} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-800 transition-all shadow-md">
                         {sending ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />} GỬI
                       </button>
@@ -208,7 +202,7 @@ export default function InboxPage() {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu quản lý</div>
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu</div>
             )}
 
             {showOrderModal && (
@@ -241,11 +235,7 @@ export default function InboxPage() {
                         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm mb-6">
                            <div className="flex justify-between items-center mb-4">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Thông tin giao hàng</p>
-                              <button 
-                                onClick={handleAiFill}
-                                disabled={aiLoading}
-                                className="text-[9px] bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-black flex items-center gap-1 hover:bg-blue-600 hover:text-white transition-all active:scale-95 disabled:opacity-50"
-                              >
+                              <button onClick={handleAiFill} disabled={aiLoading} className="text-[9px] bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-black flex items-center gap-1 hover:bg-blue-600 hover:text-white transition-all active:scale-95 disabled:opacity-50">
                                 {aiLoading ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />} AI TỰ ĐIỀN
                               </button>
                            </div>
@@ -270,7 +260,7 @@ export default function InboxPage() {
                         </div>
 
                         <div className="mt-6 pt-6 border-t bg-white p-6 rounded-[32px] shadow-lg sticky bottom-0">
-                            <div className="flex justify-between items-center mb-6">
+                            <div className="flex justify-between items-center mb-6 text-black">
                                 <span className="text-xs font-bold text-slate-400 uppercase">Tổng cộng:</span>
                                 <span className="text-2xl font-black text-blue-600">{orderItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}đ</span>
                             </div>

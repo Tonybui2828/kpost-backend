@@ -7,28 +7,28 @@ export default function CommentsPage() {
   // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- 2. SỬA LỖI TYPESCRIPT (Thêm <any[]>) ---
+  // --- 2. ĐỊNH NGHĨA KIỂU DỮ LIỆU ---
   const [comments, setComments] = useState<any[]>([]);
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
   const workspaceId = "workspace-01";
 
-  // --- 3. SỬA CÁC LINK GỌI API ---
+  // --- 3. SỬA LINK GỌI API CHO ĐÚNG ĐỊA CHỈ BACKEND ---
   const fetchComments = async () => {
     setLoading(true);
     try {
-      // Gọi lệnh đồng bộ sử dụng biến API_URL
+      // Gọi lệnh đồng bộ qua /social/sync-inbox
       await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
       
-      // Lấy dữ liệu tin nhắn/bình luận
+      // Lấy dữ liệu tin nhắn qua /social/inbox (Phải có chữ /social mới hết lỗi 404)
       const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
       
-      console.log("DỮ LIỆU THỰC TẾ TRONG DATABASE:", res.data);
+      console.log("DỮ LIỆU TỪ BACKEND:", res.data);
       setComments(res.data || []);
       
     } catch (e) { 
       console.error("Lỗi kết nối:", e); 
-      alert("Không thể kết nối với máy chủ API!");
+      alert("Lỗi: Không tìm thấy cổng dữ liệu trên máy chủ!");
     } finally { 
       setLoading(false); 
     }
@@ -41,7 +41,7 @@ export default function CommentsPage() {
     if (!text || !text.trim()) return alert("Vui lòng nhập nội dung!");
 
     try {
-      // Gửi phản hồi bình luận sử dụng biến API_URL
+      // Gửi phản hồi qua /social/comment-reply
       await axios.post(`${API_URL}/social/comment-reply`, {
         workspaceId,
         commentId: comment.platformId,
@@ -51,7 +51,7 @@ export default function CommentsPage() {
       alert("Đã gửi phản hồi thành công! ✅");
       setReplyText({ ...replyText, [comment.id]: "" });
     } catch (error) { 
-      alert("Lỗi khi phản hồi! Vui lòng kiểm tra lại kết nối."); 
+      alert("Lỗi khi phản hồi! Kiểm tra lại kết nối mạng."); 
     }
   };
 
@@ -75,24 +75,24 @@ export default function CommentsPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {comments.length === 0 ? (
           <div className="bg-white p-20 text-center rounded-[40px] border-2 border-dashed border-slate-200 shadow-inner">
-            <p className="text-slate-400 font-black uppercase tracking-widest">Hộp thư đang trống</p>
-            <p className="text-slate-300 text-sm mt-2 font-medium italic">Nhấn "Làm mới dữ liệu" để quét tin nhắn mới nhất từ Facebook.</p>
+            <p className="text-slate-400 font-black uppercase tracking-widest text-black">Hộp thư đang trống</p>
+            <p className="text-slate-300 text-sm mt-2 font-medium italic">Hãy nhấn nút "Làm mới" để quét tin nhắn từ Fanpage.</p>
           </div>
         ) : (
           comments.map((comment: any) => (
-            <div key={comment.id} className="bg-white p-8 rounded-[36px] shadow-xl border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div key={comment.id} className="bg-white p-8 rounded-[36px] shadow-xl border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500 text-black">
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center font-black text-xl border">
                     {comment.senderName ? comment.senderName[0] : "?"}
                   </div>
                   <div>
-                    <p className="font-black text-slate-900 text-lg">{comment.senderName}</p>
+                    <p className="font-black text-slate-900 text-lg">{comment.senderName || "Khách hàng"}</p>
                     <div className="flex items-center gap-2 mt-1">
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${comment.type === 'comment' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
                             {comment.type || "Message"}
                         </span>
-                        <span className="text-[9px] text-slate-400 font-bold tracking-widest uppercase opacity-70">Nguồn: {comment.pageName}</span>
+                        <span className="text-[9px] text-slate-400 font-bold tracking-widest uppercase opacity-70">Nguồn: {comment.pageName || "Unknown"}</span>
                     </div>
                   </div>
                 </div>
