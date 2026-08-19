@@ -45,7 +45,7 @@ export default function InboxPage() {
     setLoading(true);
     try {
       await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
-      const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
+     const res = await axios.get(`${API_URL}/inbox?workspaceId=${workspaceId}`);
       setMessages(res.data || []);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
