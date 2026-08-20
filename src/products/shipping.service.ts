@@ -7,20 +7,20 @@ export class ShippingService {
     const createUrl = 'https://partner.viettelpost.vn/v2/order/createOrder';
     const cleanToken = token.replace(/\s/g, '').trim();
 
-    // 1. Kiểm tra Tỉnh/Huyện (Bắt buộc phải có giá trị)
-    if (!order.province || !order.district) {
-      throw new Error("Dữ liệu thiếu Tỉnh hoặc Huyện. Hãy bấm 'Sửa đơn' và chọn lại.");
-    }
-
-    // 2. Làm sạch địa danh cực mạnh (Bỏ hết chữ Tỉnh, Thành phố, Quận, Huyện...)
-    const cleanAddr = (str: string) => {
+    // 1. Chỉnh sửa bảng mã tiếng Việt (VTP thường dùng mã chuẩn cũ)
+    const normalizeName = (str: string) => {
       if (!str) return "";
-      return str.replace(/Tỉnh |Thành phố |Thành Phố |Quận |Huyện |Thị xã |Phường |Xã |Thị trấn /gi, "").trim();
+      return str
+        .replace(/Hoà Bình/g, "Hòa Bình")
+        .replace(/Yên Thuỷ/g, "Yên Thủy")
+        .replace(/Hữu Lợi/g, "Hữu Lợi")
+        .replace(/Tỉnh |Thành phố |Thành Phố |Quận |Huyện |Thị xã |Phường |Xã |Thị trấn /gi, "")
+        .trim();
     };
 
-    const province = cleanAddr(order.province);
-    const district = cleanAddr(order.district);
-    const ward = cleanAddr(order.ward || "");
+    const province = normalizeName(order.province);
+    const district = normalizeName(order.district);
+    const ward = normalizeName(order.ward || "");
 
     const now = new Date();
     const deliveryDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
@@ -32,8 +32,8 @@ export class ShippingService {
       DELIVERY_DATE: deliveryDate,
       SENDER_FULLNAME: "Dropbuy Việt Nam",
       SENDER_PHONE: "0928912828",
-      RECEIVER_FULLNAME: order.customerName || "Khách hàng",
-      RECEIVER_PHONE: order.customerPhone.replace(/[^0-9]/g, '').slice(-10), // Lấy 10 số cuối
+      RECEIVER_FULLNAME: order.customerName,
+      RECEIVER_PHONE: order.customerPhone.replace(/[^0-9]/g, '').slice(-10),
       RECEIVER_ADDRESS: order.customerAddress,
       RECEIVER_PROVINCE: province,
       RECEIVER_DISTRICT: district,
@@ -44,9 +44,12 @@ export class ShippingService {
       PRODUCT_PRICE: Math.round(Number(order.totalAmount || 0)),
       PRODUCT_TYPE: "HH",
       MONEY_COLLECTION: Math.round(Number(order.totalAmount || 0)),
-      ORDER_PAYMENT: 2, 
+      
+      // THAY ĐỔI: Thử để người nhận trả tiền ship (1) để tránh lỗi nếu tài khoản shop hết tiền
+      ORDER_PAYMENT: 1, 
+      
       ORDER_SERVICE: "VCN",
-      TYPE_ORDER: 3, 
+      TYPE_ORDER: 3, // ĐƠN NHÁP
       CHECK_USER: 1,
       LIST_ITEM: [{
         PRODUCT_NAME: "Sản phẩm",
@@ -57,7 +60,10 @@ export class ShippingService {
     };
 
     try {
-      console.log("--- 📦 PAYLOAD GỬI ĐI:", JSON.stringify(payload, null, 2));
+      console.log("--- 📦 KIỂM TRA DỮ LIỆU TRƯỚC KHI GỬI ---");
+      console.log("Mã kho (ShopID):", payload.GROUPADDRESS_ID);
+      console.log("Tuyến đường:", `${payload.RECEIVER_PROVINCE} - ${payload.RECEIVER_DISTRICT} - ${payload.RECEIVER_WARDS}`);
+
       const response = await axios.post(createUrl, payload, {
         headers: { 'Token': cleanToken, 'Content-Type': 'application/json' }
       });
@@ -65,18 +71,20 @@ export class ShippingService {
       if (response.data.status === 200 || response.data.error === false) {
         return response.data;
       } else {
-        // IN LỖI CHI TIẾT TỪ VTP
-        console.error("--- ❌ VTP TỪ CHỐI DỮ LIỆU:", JSON.stringify(response.data, null, 2));
-        throw new Error(`VTP báo lỗi: ${response.data.message}`);
+        // In lỗi thô từ VTP
+        console.error("--- ❌ VTP TỪ CHỐI:", JSON.stringify(response.data, null, 2));
+        throw new Error(response.data.message);
       }
     } catch (error) {
-      // TRÍCH XUẤT NỘI DUNG LỖI TRONG MÃ 400
-      const errorData = error.response?.data;
-      const errorMessage = errorData ? JSON.stringify(errorData) : error.message;
-      console.error("--- ❌ LỖI 400 CHI TIẾT:", errorMessage);
+      const vtpResponse = error.response?.data;
+      console.error("--- ❌ LỖI PHẢN HỒI TỪ VTP:", JSON.stringify(vtpResponse, null, 2));
       
-      // Gửi thông báo lỗi cụ thể về cho web
-      throw new Error(errorData?.message || "Dữ liệu địa chỉ hoặc mã kho không hợp lệ");
+      // Bóc tách lỗi cụ thể để hiện lên màn hình web
+      let msg = "Dữ liệu không hợp lệ";
+      if (vtpResponse?.message) msg = vtpResponse.message;
+      if (vtpResponse?.data && typeof vtpResponse.data === 'string') msg = vtpResponse.data;
+      
+      throw new Error(msg);
     }
   }
 }
