@@ -5,24 +5,23 @@ import axios from 'axios';
 export class ShippingService {
   private readonly logger = new Logger(ShippingService.name);
 
-  // Bộ nhớ đệm danh mục để không phải gọi API VTP liên tục
   private provincesCache: any[] = [];
   private districtsCache = new Map<number, any[]>();
   private wardsCache = new Map<number, any[]>();
 
-  // Hàm chuẩn hóa chuỗi tiếng Việt để so sánh tìm kiếm
+  // Chuẩn hóa chuỗi tiếng Việt để so sánh tìm kiếm ID
   private cleanName(str: string): string {
     if (!str) return '';
     return str
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Bỏ dấu tiếng Việt
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.)\s+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
 
-  // 1. Tự động lấy ID Tỉnh từ tên chữ
+  // 1. Lấy ID Tỉnh
   private async getProvinceId(provinceName: string): Promise<number> {
     if (!provinceName) return 0;
     if (!isNaN(Number(provinceName)) && Number(provinceName) > 0) {
@@ -48,7 +47,7 @@ export class ShippingService {
     }
   }
 
-  // 2. Tự động lấy ID Huyện từ Tỉnh ID & tên Huyện
+  // 2. Lấy ID Huyện
   private async getDistrictId(provinceId: number, districtName: string): Promise<number> {
     if (!provinceId || !districtName) return 0;
     if (!isNaN(Number(districtName)) && Number(districtName) > 0) {
@@ -75,7 +74,7 @@ export class ShippingService {
     }
   }
 
-  // 3. Tự động lấy ID Xã từ Huyện ID & tên Xã
+  // 3. Lấy ID Xã
   private async getWardId(districtId: number, wardName: string): Promise<number> {
     if (!districtId || !wardName) return 0;
     if (!isNaN(Number(wardName)) && Number(wardName) > 0) {
@@ -101,7 +100,7 @@ export class ShippingService {
     }
   }
 
-  // 4. Hàm chính tạo đơn Viettel Post
+  // 4. Tạo đơn sang Viettel Post
   async createVTPOrder(order: any, token: string, shopId: string | number) {
     const createUrl = 'https://partner.viettelpost.vn/v2/order/createOrder';
     const cleanToken = token ? token.replace(/\s/g, '').trim() : '';
@@ -110,7 +109,7 @@ export class ShippingService {
       throw new HttpException('Viettel Post Token không hợp lệ hoặc bị thiếu', HttpStatus.UNAUTHORIZED);
     }
 
-    // Tự động tìm ID số từ tên chữ (ví dụ "Hòa Bình" -> 28, "Yên Thủy" -> 320...)
+    // Tự động tìm ID số từ tên chữ
     const rawProvince = order.provinceId || order.province || order.RECEIVER_PROVINCE || '';
     const rawDistrict = order.districtId || order.district || order.RECEIVER_DISTRICT || '';
     const rawWard = order.wardId || order.ward || order.RECEIVER_WARDS || '';
@@ -121,17 +120,33 @@ export class ShippingService {
 
     if (!receiverProvince || !receiverDistrict) {
       throw new HttpException(
-        `Không thể tìm thấy ID Tỉnh/Huyện trên Viettel Post cho: Tỉnh "${rawProvince}" - Huyện "${rawDistrict}"`,
+        `Không tìm thấy Tỉnh/Huyện tương ứng trên VTP: "${rawProvince}" - "${rawDistrict}"`,
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    // Format ngày giờ: dd/MM/yyyy HH:mm:ss
+    // Xử lý RECEIVER_ADDRESS hợp lệ tuyệt đối với VTP
+    let detailedAddress = (order.customerAddress || order.address || '').trim();
+    
+    // Nếu địa chỉ trống, hoặc ghi là placeholder, hoặc quá ngắn
+    if (!detailedAddress || detailedAddress.length < 5 || detailedAddress.includes('Xem trong đoạn chat')) {
+      const addressParts = [rawWard, rawDistrict, rawProvince]
+        .filter(part => part && String(part).trim().length > 0)
+        .map(part => String(part).trim());
+
+      detailedAddress = addressParts.length > 0 ? addressParts.join(', ') : 'Khu vực trung tâm';
+    }
+
+    // Làm sạch ký tự lạ ở đầu/cuối chuỗi địa chỉ
+    detailedAddress = detailedAddress.replace(/^[,\s\-\.\/]+|[,\s\-\.\/]+$/g, '').trim();
+    if (detailedAddress.length < 5) {
+      detailedAddress = `Khu vực ${detailedAddress}`;
+    }
+
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const deliveryDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
-    // Tiền thu hộ COD và trọng lượng
     const codAmount = Math.round(Number(order.totalAmount || order.codAmount || 0));
     const totalWeight = Math.max(Number(order.weight) || 200, 100);
 
@@ -140,14 +155,14 @@ export class ShippingService {
       GROUPADDRESS_ID: Number(shopId) || 0,
       CUS_ID: 0,
       DELIVERY_DATE: deliveryDate,
-      
+
       SENDER_FULLNAME: order.senderName || "Dropbuy Việt Nam",
       SENDER_PHONE: order.senderPhone || "0928912828",
       SENDER_ADDRESS: order.senderAddress || "Kho hàng",
 
       RECEIVER_FULLNAME: (order.customerName || "Khách Hàng").trim(),
       RECEIVER_PHONE: String(order.customerPhone || "").replace(/[^0-9]/g, '').slice(-10),
-      RECEIVER_ADDRESS: (order.customerAddress || `${rawWard}, ${rawDistrict}, ${rawProvince}`).trim(),
+      RECEIVER_ADDRESS: detailedAddress,
       RECEIVER_PROVINCE: receiverProvince,
       RECEIVER_DISTRICT: receiverDistrict,
       RECEIVER_WARDS: receiverWard || 0,
@@ -164,10 +179,10 @@ export class ShippingService {
       PRODUCT_WIDTH: Number(order.width) || 10,
       PRODUCT_HEIGHT: Number(order.height) || 10,
 
-      ORDER_PAYMENT: codAmount > 0 ? 3 : 1, // 3: Thu COD người nhận, người gửi trả cước
+      ORDER_PAYMENT: codAmount > 0 ? 3 : 1,
       ORDER_SERVICE: order.serviceCode || "VCN",
       ORDER_SERVICE_ADD: "",
-      TYPE_ORDER: 3, // 3: Tạo dạng Đơn Nháp
+      TYPE_ORDER: 3,
       CHECK_USER: 1,
 
       LIST_ITEM: [
@@ -181,7 +196,7 @@ export class ShippingService {
     };
 
     try {
-      this.logger.log(`--- 🚀 ĐẨY ĐƠN SANG VTP: ${payload.ORDER_NUMBER}`);
+      this.logger.log(`--- 🚀 ĐẨY ĐƠN SANG VTP: ${payload.ORDER_NUMBER} - ĐỊA CHỈ: ${detailedAddress}`);
       const response = await axios.post(createUrl, payload, {
         headers: {
           Token: cleanToken,
