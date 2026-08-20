@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query, Delete, Param, Patch } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Delete, Param, Patch, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ShippingService } from './shipping.service';
 
@@ -9,7 +9,7 @@ export class OrdersController {
     private shippingService: ShippingService
   ) {}
 
-  // 1. API TẠO ĐƠN HÀNG - Cập nhật để nhận thêm Tỉnh/Huyện/Xã
+  // 1. API TẠO ĐƠN HÀNG (CHỐT ĐƠN)
   @Post()
   async createOrder(@Body() body: any) {
     const { 
@@ -33,7 +33,6 @@ export class OrdersController {
           customerName,
           customerPhone,
           customerAddress: customerAddress || "Chưa có địa chỉ",
-          // LƯU THÊM CÁC TRƯỜNG ĐỊA CHÍ TÁCH RỜI
           province: province || "", 
           district: district || "",
           ward: ward || "",
@@ -64,46 +63,48 @@ export class OrdersController {
     });
   }
 
-  // 3. API ĐẨY ĐƠN SANG VẬN CHUYỂN 🚛
+  // 3. API ĐẨY ĐƠN SANG VIETTEL POST (DẠNG ĐƠN NHÁP) 🚛
   @Post(':id/ship')
   async shipOrder(@Param('id') id: string) {
     console.log(`--- 🚛 BẮT ĐẦU ĐẨY ĐƠN SANG VTP: ${id} ---`);
     
-    // Lấy đơn hàng kèm đầy đủ thông tin địa chỉ đã lưu
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: { workspace: true }
-    });
-
-    if (!order) throw new Error("Không tìm thấy đơn hàng");
-
-    // Log kiểm tra xem dữ liệu có bị undefined không
-    console.log(`--- Tuyến thực tế: ${order['province']} -> ${order['district']} ---`);
-
-    const vtpToken = (order.workspace as any)?.vtpToken;
-    const vtpShopId = (order.workspace as any)?.vtpShopId;
-
-    if (!vtpToken || !vtpShopId) {
-      throw new Error("Cửa hàng chưa cấu hình Token hoặc Mã kho ViettelPost");
-    }
-
     try {
-      // Gọi ShippingService với object order đã đầy đủ thông tin
+      const order = await this.prisma.order.findUnique({
+        where: { id },
+        include: { workspace: true }
+      });
+
+      if (!order) throw new HttpException("Không tìm thấy đơn hàng", HttpStatus.NOT_FOUND);
+
+      const vtpToken = (order.workspace as any)?.vtpToken;
+      const vtpShopId = (order.workspace as any)?.vtpShopId;
+
+      if (!vtpToken || !vtpShopId) {
+        throw new HttpException("Cửa hàng chưa cấu hình Token hoặc Mã kho ViettelPost", HttpStatus.BAD_REQUEST);
+      }
+
+      // Gọi sang ShippingService để xử lý API ViettelPost
+      // Lưu ý: ShippingService của bạn cần đặt TYPE_ORDER: 3 để vào đơn nháp
       const shipRes = await this.shippingService.createVTPOrder(order, vtpToken, vtpShopId);
       
       const vtpOrderNumber = shipRes.data?.ORDER_NUMBER || shipRes.ORDER_NUMBER;
 
+      // Cập nhật trạng thái trong Database
       return await this.prisma.order.update({
         where: { id },
         data: { 
-          shippingCode: vtpOrderNumber || 'Đang xử lý',
+          shippingCode: vtpOrderNumber || 'VTP_DRAFT',
           status: 'shipping',
           carrierName: 'ViettelPost'
         }
       });
     } catch (error) {
-      console.error("Lỗi VTP chi tiết:", error.message);
-      throw new Error(error.message);
+      console.error("LỖI ĐẨY ĐƠN VTP:", error.message);
+      // Trả về lỗi chi tiết cho Frontend để hiện thông báo thay vì lỗi 500 chung chung
+      throw new HttpException(
+        error.message || "Lỗi hệ thống khi kết nối ViettelPost", 
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
   }
 
@@ -132,14 +133,12 @@ export class OrdersController {
   // 6. API CẬP NHẬT THÔNG TIN ĐƠN HÀNG (SỬA ĐƠN)
   @Patch(':id')
   async updateOrder(@Param('id') id: string, @Body() body: any) {
-    console.log(`--- CẬP NHẬT THÔNG TIN ĐƠN: ${id} ---`);
     return this.prisma.order.update({
       where: { id },
       data: {
         customerName: body.customerName,
         customerPhone: body.customerPhone,
         customerAddress: body.customerAddress,
-        // CẬP NHẬT THÊM CÁC TRƯỜNG ĐỊA CHỈ
         province: body.province,
         district: body.district,
         ward: body.ward,
@@ -148,7 +147,7 @@ export class OrdersController {
     });
   }
 
-  // 7. API XÓA 1 ĐƠN HÀNG
+  // 7. API XÓA ĐƠN HÀNG
   @Delete(':id')
   async deleteOrder(@Param('id') id: string) {
     return this.prisma.order.delete({
