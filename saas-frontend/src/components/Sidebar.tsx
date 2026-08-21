@@ -6,7 +6,7 @@ import {
   Users, ShoppingBag, Truck, Sparkles 
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation"; // Thêm useRouter
 import axios from "axios";
 import { io } from "socket.io-client";
 
@@ -30,10 +30,21 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter(); // Khởi tạo router để chuyển trang
   const [plan, setPlan] = useState("FREE");
   const workspaceId = "workspace-01";
 
-  // --- 2. SỬA LINK LẤY THÔNG TIN GÓI CƯỚC ---
+  // --- HÀM ĐĂNG XUẤT ---
+  const handleLogout = () => {
+    if (confirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?")) {
+      // 1. Xóa toàn bộ dữ liệu đăng nhập trong máy
+      localStorage.clear(); 
+      // 2. Chuyển hướng về trang chủ hoặc trang login
+      window.location.href = "/"; 
+    }
+  };
+
+  // --- LẤY THÔNG TIN GÓI CƯỚC ---
   const fetchPlan = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
@@ -65,7 +76,7 @@ export default function Sidebar() {
         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-100">
             <div className="w-4 h-4 bg-white rounded-sm rotate-45"></div>
         </div>
-        SaaS AI
+        KPOST AI
       </div>
 
       {/* HUY HIỆU GÓI CƯỚC */}
@@ -103,9 +114,12 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Nút Đăng xuất */}
+      {/* Nút Đăng xuất - ĐÃ GẮN LOGIC */}
       <div className="p-4 border-t border-slate-100">
-        <button className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 font-black uppercase tracking-widest hover:text-red-600 transition-colors text-[10px]">
+        <button 
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 font-black uppercase tracking-widest hover:text-red-600 transition-colors text-[10px]"
+        >
           <LogOut size={18} />
           <span>Đăng xuất</span>
         </button>

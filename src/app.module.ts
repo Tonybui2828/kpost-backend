@@ -13,6 +13,7 @@ import { SocialController } from './social/social.controller';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { InboxController } from './inbox/inbox.controller'; 
 import { ShippingController } from './products/shipping.controller'; 
+import { AuthController } from './auth/auth.controller'; // <--- THÊM DÒNG NÀY
 
 // Services
 import { PrismaService } from './prisma.service';
@@ -24,6 +25,7 @@ import { AutomatorService } from './social/automator.service';
 import { AiContentService } from './ai-content/ai-content.service';
 import { ShippingService } from './products/shipping.service'; 
 import { PaymentService } from './products/payment.service'; 
+import { GoogleStrategy } from './auth/google.strategy'; // <--- THÊM DÒNG NÀY
 
 @Module({
   imports: [
@@ -38,7 +40,8 @@ import { PaymentService } from './products/payment.service';
     OrdersController,
     DashboardController,
     InboxController,    
-    ShippingController  
+    ShippingController,
+    AuthController      // <--- ĐĂNG KÝ TẠI ĐÂY
   ],
   providers: [
     PrismaService, 
@@ -49,7 +52,8 @@ import { PaymentService } from './products/payment.service';
     AutomatorService,
     AiContentService,
     ShippingService,
-    PaymentService 
+    PaymentService,
+    GoogleStrategy      // <--- ĐĂNG KÝ TẠI ĐÂY
   ],
 })
 export class AppModule {}

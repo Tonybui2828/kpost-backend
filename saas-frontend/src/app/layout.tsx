@@ -6,7 +6,7 @@ import Sidebar from "../components/Sidebar"; // Import Sidebar quay trở lại
 const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "SaaS AI Marketing All-in-One",
+  title: "Kpost AI Marketing All-in-One",
   description: "Hệ thống tự động hóa marketing thông minh",
 };
 
