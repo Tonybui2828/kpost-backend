@@ -11,14 +11,45 @@ export default function SocialPage() {
   // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- 2. SỬA LỖI TYPESCRIPT (Thêm <any[]>) ---
+  // --- 2. SỬA LỖI TYPESCRIPT & ID ĐỘNG ---
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [newAcc, setNewAcc] = useState({ pageId: "", token: "", name: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const workspaceId = "workspace-01"; 
+  // SỬA TẠI ĐÂY: Lấy ID từ bộ nhớ máy sau khi khách đăng nhập
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+
+  useEffect(() => {
+    const id = localStorage.getItem("workspaceId");
+    if (id) {
+      setWorkspaceId(id);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
+    }
+  }, []);
+
+  // SỬA HÀM FETCH: Đảm bảo chỉ gọi khi đã bốc được workspaceId
+  const fetchAccounts = async () => {
+    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
+    setFetching(true);
+    try {
+      const res = await axios.get(`${API_URL}/social/accounts?workspaceId=${workspaceId}`);
+      setAccounts(res.data || []);
+    } catch (error) {
+      console.error("Lỗi lấy danh sách:", error);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // Tự động tải danh sách khi workspaceId thay đổi
+  useEffect(() => {
+    if (workspaceId) {
+      fetchAccounts();
+    }
+  }, [workspaceId]);
 
   // --- 3. SỬA CÁC LINK GỌI API ---
   const fetchAccounts = async () => {

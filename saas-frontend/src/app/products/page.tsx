@@ -4,14 +4,17 @@ import axios from "axios";
 import { Plus, Package, Tag, Loader2, X, UploadCloud, PenTool, Edit3, Trash2, Film } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-// Khởi tạo Supabase Client
+/// Khởi tạo Supabase Client (Giữ nguyên)
 const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_publishable__cTnEl5USBaraE6p6P0WDw_Q37Hmye7");
 
 export default function ProductsPage() {
   // --- 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  const [products, setProducts] = useState<any[]>([]); // Thêm <any[]> để hết lỗi build
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+  
+  const [products, setProducts] = useState<any[]>([]); 
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -21,7 +24,33 @@ export default function ProductsPage() {
     name: "", description: "", price: "", skuInternal: "", totalStock: "", imageUrl: "", productUrl: ""
   });
 
-  const workspaceId = "workspace-01";
+  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng
+    }
+  }, []);
+
+  // SỬA HÀM FETCH: Đảm bảo chỉ gọi khi đã bốc được workspaceId
+  const fetchProducts = async () => {
+    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
+    try {
+      const res = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
+      setProducts(res.data || []);
+    } catch (error) { console.error("Lỗi lấy sản phẩm:", error); }
+  };
+
+  // Tự động tải sản phẩm khi workspaceId thay đổi
+  useEffect(() => {
+    if (workspaceId) {
+      fetchProducts();
+    }
+  }, [workspaceId]);
+
+  // ... (Các hàm handleUploadMedia, handleSaveProduct, handleDelete giữ nguyên bên dưới)
 
   // --- 2. SỬA LINK LẤY SẢN PHẨM ---
   const fetchProducts = async () => {

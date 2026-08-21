@@ -3,9 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { Truck, Save, ShieldCheck, Info, AlertCircle } from 'lucide-react';
 
 export default function ShippingPage() {
+ export default function ShippingPage() {
   // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -15,7 +18,45 @@ export default function ShippingPage() {
     vtpShopId: '',
   });
 
-  const workspaceId = "workspace-01";
+  // 1. Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng
+    }
+  }, []);
+
+  // 2. SỬA HÀM FETCH: Đảm bảo chỉ gọi khi đã bốc được workspaceId
+  const fetchConfig = async () => {
+    if (!workspaceId) return;
+    try {
+      const response = await fetch(`${API_URL}/orders/shipping-settings/${workspaceId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setConfig({
+            vtpToken: data.vtpToken || '',
+            vtpShopId: data.vtpShopId || '',
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Không thể lấy cấu hình cũ:", error);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // Tự động tải cấu hình khi workspaceId thay đổi
+  useEffect(() => {
+    if (workspaceId) {
+      fetchConfig();
+    }
+  }, [workspaceId]);
+
+  // ... (Hàm handleSave bên dưới nhớ sử dụng biến workspaceId này nhé)
 
   // --- 2. SỬA LINK LẤY CẤU HÌNH ---
   useEffect(() => {

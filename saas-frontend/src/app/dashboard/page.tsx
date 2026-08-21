@@ -6,14 +6,49 @@ import {
   RefreshCw, Loader2, ArrowUpRight,
   DollarSign, Users, Calendar
 } from "lucide-react";
-
 export default function DashboardPage() {
   // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-  const workspaceId = "workspace-01";
-
+  
+  // BIẾN ĐỘNG: Lấy mã ID không gian riêng của khách hàng
+  const [workspaceId, setWorkspaceId] = useState<string>("");
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Lấy ID từ bộ nhớ máy ngay khi vừa mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      // Nếu là khách vãng lai, dùng tạm workspace-01 hoặc để trống
+      setWorkspaceId("workspace-01"); 
+    }
+  }, []);
+
+  // SỬA HÀM FETCH: Đảm bảo chỉ gọi API khi đã bốc được workspaceId
+  const fetchStats = async () => {
+    if (!workspaceId) return; // Đợi cho đến khi lấy được ID từ bộ nhớ máy
+    
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
+      setStats(res.data);
+    } catch (error) {
+      console.error("Lỗi lấy thống kê dashboard:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Gọi fetchStats khi workspaceId đã có giá trị
+  useEffect(() => {
+    if (workspaceId) {
+      fetchStats();
+    }
+  }, [workspaceId]); // <--- Rất quan trọng: Chạy lại khi ID thay đổi
+
+  // ... (phần còn lại của trang Dashboard giữ nguyên)
 
   // ==========================================
   // 2. LOGIC NHẬN TOKEN TỪ GOOGLE LOGIN (MỚI THÊM)

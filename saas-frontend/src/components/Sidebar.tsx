@@ -30,9 +30,43 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter(); // Khởi tạo router để chuyển trang
+  const router = useRouter(); 
   const [plan, setPlan] = useState("FREE");
-  const workspaceId = "workspace-01";
+
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+
+  // Lấy ID thật của khách từ bộ nhớ máy ngay khi mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
+    }
+  }, []);
+
+  // --- HÀM LẤY THÔNG TIN GÓI CƯỚC (Cập nhật để dùng workspaceId động) ---
+  const fetchPlan = useCallback(async () => {
+    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
+    try {
+      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
+      if (res.data?.stats?.plan) {
+        setPlan(res.data.stats.plan.toUpperCase());
+      }
+    } catch (e) {
+      console.error("Lỗi cập nhật gói cước");
+    }
+  }, [workspaceId]);
+
+  // Tự động gọi lấy gói cước khi đã có ID hoặc khi chuyển trang
+  useEffect(() => {
+    if (workspaceId) {
+      fetchPlan();
+    }
+  }, [fetchPlan, workspaceId, pathname]);
+
+  // ... (Các phần socket.on và phần return bên dưới giữ nguyên)
 
   // --- HÀM ĐĂNG XUẤT ---
   const handleLogout = () => {

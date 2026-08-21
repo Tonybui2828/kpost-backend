@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 export default function InboxPage() {
-  // --- 1. LẤY URL API ĐỘNG ---
+ // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   const [messages, setMessages] = useState<any[]>([]);
@@ -28,8 +28,20 @@ export default function InboxPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
-  const workspaceId = "workspace-01";
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
   const chatEndRef = useRef<null | HTMLDivElement>(null);
+
+  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      // Nếu là khách vãng lai/chưa login, dùng tạm id mặc định
+      setWorkspaceId("workspace-01"); 
+    }
+  }, []);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
 

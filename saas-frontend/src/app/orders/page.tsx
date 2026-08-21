@@ -8,11 +8,40 @@ import {
 
 export default function OrdersPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-  const workspaceId = "workspace-01"; 
-
+  
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
   const [orders, setOrders] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+
+  // Lấy ID thật của khách hàng từ bộ nhớ máy ngay khi mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa đăng nhập
+    }
+  }, []);
+
+  // Tự động tải danh sách đơn hàng khi đã xác định được Workspace ID
+  useEffect(() => {
+    if (workspaceId) {
+      fetchOrders();
+    }
+  }, [workspaceId]); // <--- Rất quan trọng: Chạy lại khi ID thay đổi
+
+  const fetchOrders = async () => {
+    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/orders?workspaceId=${workspaceId}`);
+      setMessages(res.data || []);
+    } catch (e) { console.error("Lỗi lấy đơn hàng:", e); } finally { setLoading(false); }
+  };
+
+  // ... (Các hàm handleEdit, handleUpdate, handleShip giữ nguyên) ...
 
   // --- STATE CHỈNH SỬA (ĐÃ THÊM TỈNH/HUYỆN/XÃ) ---
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);

@@ -6,7 +6,43 @@ import { Clock, Calendar, CheckCircle2, LayoutList, Loader2, Trash2, RefreshCw }
 export default function SchedulePage() {
   // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-  const workspaceId = "workspace-01";
+
+  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+  const [posts, setPosts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  useEffect(() => {
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa đăng nhập
+    }
+  }, []);
+
+  // Tự động tải lịch đăng bài khi đã bốc được Workspace ID
+  useEffect(() => {
+    if (workspaceId) {
+      fetchPosts();
+    }
+  }, [workspaceId]); // <--- Chạy lại khi ID thay đổi
+
+  const fetchPosts = async () => {
+    if (!workspaceId) return; 
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/social/scheduled-posts?workspaceId=${workspaceId}`);
+      setPosts(res.data || []);
+    } catch (error) {
+      console.error("Lỗi lấy dữ liệu lịch trình:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ... (Phần còn lại của trang giữ nguyên)
 
   // --- 2. SỬA LỖI TYPESCRIPT (Thêm <any[]>) ---
   const [posts, setPosts] = useState<any[]>([]);

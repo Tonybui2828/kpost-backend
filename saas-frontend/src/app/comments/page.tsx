@@ -7,11 +7,23 @@ export default function CommentsPage() {
   // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- 2. ĐỊNH NGHĨA KIỂU DỮ LIỆU ---
+ // --- 2. ĐỊNH NGHĨA KIỂU DỮ LIỆU & ID ĐỘNG ---
   const [comments, setComments] = useState<any[]>([]);
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
-  const workspaceId = "workspace-01";
+  
+  // Thay đổi ở đây: Lấy ID từ bộ nhớ máy thay vì viết cứng
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+
+  useEffect(() => {
+    // Khi trang web mở ra, bốc cái mã ID riêng của khách hàng này ra
+    const savedId = localStorage.getItem("workspaceId");
+    if (savedId) {
+      setWorkspaceId(savedId);
+    } else {
+      setWorkspaceId("workspace-01"); // Dự phòng nếu khách chưa đăng nhập
+    }
+  }, []);
 
   // --- 3. SỬA LINK GỌI API CHO ĐÚNG ĐỊA CHỈ BACKEND ---
   const fetchComments = async () => {
