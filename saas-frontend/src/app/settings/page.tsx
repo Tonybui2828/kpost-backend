@@ -83,7 +83,7 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
-      {/* MODAL THANH TOÁN (Giữ nguyên) */}
+      {/* MODAL THANH TOÁN */}
       {showQR && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4 text-black">
             <div className="bg-white rounded-[50px] p-10 max-w-md w-full text-center shadow-2xl relative border border-white/20">
@@ -99,8 +99,8 @@ export default function SettingsPage() {
                         </div>
                         <div className="bg-white p-6 rounded-[40px] mb-8 border-2 border-slate-100 shadow-sm relative group">
                             <img src={paymentInfo.qr} className="w-full rounded-3xl" alt="VietQR" />
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-[40px] flex items-center justify-center text-black font-black uppercase text-[10px]">
-                                <span className="bg-white px-4 py-2 rounded-full shadow-xl">Quét qua App ngân hàng</span>
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-[40px] flex items-center justify-center text-black">
+                                <p className="bg-white px-4 py-2 rounded-full text-[10px] font-black shadow-xl">QUÉT QUA APP NGÂN HÀNG</p>
                             </div>
                         </div>
                         <div className="space-y-4">
@@ -161,40 +161,79 @@ export default function SettingsPage() {
   );
 }
 
-// --- TAB TÀI KHOẢN: ĐÃ GẮN LOGIC ĐĂNG NHẬP GOOGLE ---
+// --- TAB TÀI KHOẢN: ĐÃ SỬA LOGIC DỮ LIỆU ĐỘNG ---
 function AccountTab() {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const [user, setUser] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const token = localStorage.getItem("token");
+                if (!token) {
+                    setLoading(false);
+                    return;
+                }
+                const res = await axios.get(`${API_URL}/auth/profile`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setUser(res.data);
+            } catch (e) {
+                console.log("Khách chưa đăng nhập");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchProfile();
+    }, [API_URL]);
 
     const handleGoogleLogin = () => {
-        // Chuyển hướng khách sang cổng đăng nhập Google của Backend trên VPS
         window.location.href = `${API_URL}/auth/google`;
     };
+
+    if (loading) return <div className="p-10 text-center animate-pulse font-black text-slate-300 uppercase">XÁC MINH DANH TÍNH...</div>;
 
     return (
         <div className="space-y-10 animate-in fade-in">
             <h2 className="text-2xl font-black text-slate-900 italic uppercase text-black">Thông tin định danh</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Họ và tên</label>
-                    <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-black border border-transparent focus:border-blue-200 transition-all" defaultValue="Bùi Văn Kỳ" />
+            
+            {!user ? (
+                /* GIAO DIỆN KHI LÀ KHÁCH (ẨN DANH) */
+                <div className="bg-slate-50 p-10 rounded-[35px] text-center border-2 border-dashed border-slate-200">
+                    <p className="text-slate-400 font-black uppercase mb-4 tracking-tighter text-sm">Bạn đang truy cập với tư cách Khách</p>
+                    <p className="text-xs text-slate-500 mb-8 font-medium italic">Vui lòng đăng nhập để đồng bộ dữ liệu và sử dụng trợ lý AI.</p>
+                    <button onClick={handleGoogleLogin} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95">
+                        ĐĂNG NHẬP NGAY
+                    </button>
                 </div>
-                <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Email liên hệ</label>
-                    <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-slate-400" defaultValue="admin@saas-ai.vn" readOnly />
+            ) : (
+                /* GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Họ và tên</label>
+                        <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-black border border-transparent" value={user.name || "Chưa đặt tên"} readOnly />
+                    </div>
+                    <div className="space-y-3 text-black">
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Email liên hệ</label>
+                        <input className="w-full p-5 bg-slate-50 rounded-[20px] outline-none font-bold text-slate-400" value={user.email} readOnly />
+                    </div>
                 </div>
-            </div>
-            <div className="pt-10 border-t border-slate-100 text-black">
-                <h3 className="font-black text-lg mb-6 flex items-center gap-2 italic text-slate-900"><Globe size={20} className="text-blue-600" /> Kết nối đăng nhập nhanh</h3>
-                {/* GẮN ONCLICK VÀO ĐÂY */}
+            )}
+
+            <div className="pt-10 border-t border-slate-100">
+                <h3 className="font-black text-lg mb-6 flex items-center gap-2 italic text-slate-900 text-black"><Globe size={20} className="text-blue-600" /> Kết nối tài khoản Google</h3>
                 <button 
                     onClick={handleGoogleLogin}
                     className="flex items-center justify-between p-6 bg-white border-2 border-slate-100 rounded-[30px] hover:border-blue-500 transition-all group w-full md:w-2/3 text-black font-black"
                 >
                     <div className="flex items-center gap-4">
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/list/google.svg" className="w-6 h-6" alt="Google" /> 
-                        Tiếp tục với Google
+                        {user ? "Đã kết nối tài khoản" : "Tiếp tục với Google"}
                     </div>
-                    <span className="text-[10px] uppercase bg-green-50 text-green-500 px-4 py-1 rounded-full">Bật xác thực</span>
+                    <span className={`text-[10px] uppercase px-4 py-1 rounded-full font-black ${user ? 'bg-green-50 text-green-500' : 'bg-slate-50 text-slate-400'}`}>
+                        {user ? 'Đã bảo mật' : 'Xác thực ngay'}
+                    </span>
                 </button>
             </div>
         </div>

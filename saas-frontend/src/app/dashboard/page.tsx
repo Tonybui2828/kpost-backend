@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { 
   BarChart3, TrendingUp, Package, ShoppingCart, 
-  RefreshCw, Loader2, ArrowUpRight, ArrowDownRight,
+  RefreshCw, Loader2, ArrowUpRight,
   DollarSign, Users, Calendar
 } from "lucide-react";
 
@@ -15,14 +15,39 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- 2. GỌI API THỐNG KÊ DASHBOARD ---
+  // ==========================================
+  // 2. LOGIC NHẬN TOKEN TỪ GOOGLE LOGIN (MỚI THÊM)
+  // ==========================================
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+
+    if (token) {
+        // Lưu token vào máy khách để các trang khác (Settings, Inbox...) có thể dùng
+        localStorage.setItem('token', token);
+        console.log("✅ Đăng nhập thành công, đã lưu Token xác thực!");
+
+        // Xóa đoạn ?token=... trên thanh địa chỉ cho sạch và bảo mật
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
+  // --- 3. GỌI API LẤY DỮ LIỆU (CÓ GỬI KÈM TOKEN XÁC THỰC) ---
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
+      const token = localStorage.getItem("token");
+
+      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`, {
+        headers: {
+            // Gửi kèm token để Backend biết bạn là ai
+            Authorization: token ? `Bearer ${token}` : ""
+        }
+      });
       setStats(res.data);
     } catch (error) {
-      console.error("Lỗi lấy thống kê dashboard:", error);
+      console.error("Lỗi Dashboard:", error);
     } finally {
       setLoading(false);
     }
@@ -41,12 +66,12 @@ export default function DashboardPage() {
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-10">
+      <div className="flex justify-between items-center mb-10 text-black">
         <div>
             <h1 className="text-3xl font-black flex items-center gap-3 text-black italic uppercase tracking-tighter">
                 <BarChart3 className="text-blue-600" size={32} /> Tổng quan kinh doanh
             </h1>
-            <p className="text-slate-400 text-xs font-bold uppercase mt-1 tracking-widest">Dữ liệu cập nhật theo thời gian thực</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase mt-1 tracking-widest ml-12">Dữ liệu đồng bộ từ Fanpage & Kho hàng</p>
         </div>
         <button onClick={fetchStats} className="p-4 bg-white border rounded-2xl hover:bg-slate-50 transition-all shadow-sm group">
             <RefreshCw size={20} className={`group-active:rotate-180 transition-all duration-500 ${loading ? "animate-spin text-blue-600" : "text-slate-400"}`} />
@@ -60,7 +85,7 @@ export default function DashboardPage() {
             value={`${(stats?.todayRevenue || 0).toLocaleString()}đ`} 
             icon={<DollarSign size={20}/>} 
             color="text-emerald-600"
-            sub="Tăng 12% so với hôm qua"
+            sub="Doanh số chốt đơn"
         />
         <StatCard 
             label="Đơn hàng mới" 
@@ -81,14 +106,13 @@ export default function DashboardPage() {
             value={stats?.totalCustomers || 0} 
             icon={<Users size={20}/>} 
             color="text-purple-600"
-            sub="Từ Facebook & Inbox"
+            sub="Phân tích từ Inbox"
         />
       </div>
 
       {/* --- PHẦN BIỂU ĐỒ & LỊCH TRÌNH --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* KHỐI TĂNG TRƯỞNG */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-[40px] shadow-xl border border-slate-100 relative overflow-hidden">
+          <div className="lg:col-span-2 bg-white p-8 rounded-[40px] shadow-xl border border-slate-100 relative overflow-hidden text-black">
                 <div className="flex justify-between items-start mb-8">
                     <div>
                         <h2 className="text-xl font-black text-black uppercase tracking-tighter">Biểu đồ tăng trưởng</h2>
@@ -99,13 +123,11 @@ export default function DashboardPage() {
                     </div>
                 </div>
                 
-                {/* Khu vực placeholder cho biểu đồ */}
                 <div className="h-[250px] w-full bg-slate-50 rounded-3xl border border-dashed border-slate-200 flex items-center justify-center">
-                    <p className="text-slate-300 font-black italic uppercase text-xs">Biểu đồ đang được xử lý dữ liệu...</p>
+                    <p className="text-slate-300 font-black italic uppercase text-xs tracking-widest">Biểu đồ đang xử lý dữ liệu...</p>
                 </div>
           </div>
 
-          {/* KHỐI LỊCH ĐĂNG BÀI NHANH */}
           <div className="bg-white p-8 rounded-[40px] shadow-xl border border-slate-100">
                 <h2 className="text-xl font-black text-black uppercase tracking-tighter mb-6 flex items-center gap-2">
                     <Calendar className="text-blue-600" size={20} /> Lịch đăng bài
@@ -117,8 +139,8 @@ export default function DashboardPage() {
                                 {i}
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm font-bold text-slate-800">Bài viết mẫu #{i}</p>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase">Dự kiến: 12:00 PM</p>
+                                <p className="text-sm font-bold text-slate-800">Post mẫu số #{i}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Dự kiến: 12:00 PM</p>
                             </div>
                         </div>
                     ))}
@@ -132,7 +154,7 @@ export default function DashboardPage() {
   );
 }
 
-// --- COMPONENT CON CHO THẺ THỐNG KÊ ---
+// --- THẺ THỐNG KÊ ---
 function StatCard({ label, value, icon, color, sub }: any) {
   return (
     <div className="bg-white p-7 rounded-[36px] shadow-sm border border-slate-100 hover:shadow-xl transition-all group">
