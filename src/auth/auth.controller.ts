@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Req, UseGuards, Res, HttpStatus, HttpExcep
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs'; // Đảm bảo đã chạy: npm install bcrypt
+import * as bcrypt from 'bcryptjs'; // Sử dụng bcryptjs để ổn định trên VPS
 
 @Controller('auth')
 export class AuthController {
@@ -12,22 +12,19 @@ export class AuthController {
   ) {}
 
   // ==========================================
-  // 1. ĐĂNG KÝ THỦ CÔNG (MỚI BỔ SUNG)
+  // 1. ĐĂNG KÝ THỦ CÔNG
   // ==========================================
   @Post('register')
   async register(@Body() body: any) {
     const { email, password, name } = body;
 
-    // Kiểm tra email tồn tại
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       throw new HttpException('Email này đã được đăng ký!', HttpStatus.BAD_REQUEST);
     }
 
-    // Mã hóa mật khẩu
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Tạo User + Tự động tạo Workspace riêng cho họ (Giống logic Google)
     const user = await this.prisma.user.create({
       data: {
         email,
@@ -52,13 +49,12 @@ export class AuthController {
   }
 
   // ==========================================
-  // 2. ĐĂNG NHẬP THỦ CÔNG (MỚI BỔ SUNG)
+  // 2. ĐĂNG NHẬP THỦ CÔNG
   // ==========================================
   @Post('login')
   async login(@Body() body: any) {
     const { email, password } = body;
 
-    // Tìm user
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { workspaces: { include: { workspace: true } } }
@@ -68,16 +64,12 @@ export class AuthController {
       throw new HttpException('Tài khoản không tồn tại!', HttpStatus.UNAUTHORIZED);
     }
 
-    // So sánh mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new HttpException('Mật khẩu không chính xác!', HttpStatus.UNAUTHORIZED);
     }
 
-    // Lấy ID không gian của người này
     const userWorkspaceId = user.workspaces[0]?.workspaceId || "no-workspace";
-
-    // Tạo Token
     const payload = { email: user.email, sub: user.id, role: user.role, wid: userWorkspaceId };
     const token = this.jwtService.sign(payload);
 
@@ -90,7 +82,45 @@ export class AuthController {
   }
 
   // ==========================================
-  // 3. ĐĂNG NHẬP GOOGLE (GIỮ NGUYÊN LOGIC CỦA BẠN)
+  // 3. ĐỔI MẬT KHẨU (MỚI BỔ SUNG)
+  // ==========================================
+  @Post('change-password')
+  async changePassword(@Req() req, @Body() body: any) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) throw new HttpException('Chưa đăng nhập', HttpStatus.UNAUTHORIZED);
+
+      const token = authHeader.split(' ')[1];
+      const decoded = this.jwtService.verify(token);
+
+      const { old, new: newPass } = body;
+      const user = await this.prisma.user.findUnique({ where: { id: decoded.sub } });
+
+      if (!user || !user.password) {
+        throw new HttpException('Tài khoản này dùng Google, không có mật khẩu để đổi!', HttpStatus.BAD_REQUEST);
+      }
+
+      // Kiểm tra mật khẩu cũ
+      const isMatch = await bcrypt.compare(old, user.password);
+      if (!isMatch) {
+        throw new HttpException('Mật khẩu hiện tại không chính xác', HttpStatus.BAD_REQUEST);
+      }
+
+      // Mã hóa và lưu mật khẩu mới
+      const hashed = await bcrypt.hash(newPass, 10);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashed }
+      });
+
+      return { message: 'Cập nhật mật khẩu thành công!' };
+    } catch (e) {
+      throw new HttpException(e.message || 'Lỗi xử lý đổi mật khẩu', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // ==========================================
+  // 4. ĐĂNG NHẬP GOOGLE
   // ==========================================
   @Get('google')
   @UseGuards(AuthGuard('google'))
@@ -132,12 +162,11 @@ export class AuthController {
     const payload = { email: user.email, sub: user.id, role: user.role, wid: userWorkspaceId };
     const jwtToken = this.jwtService.sign(payload);
 
-    // Chuyển hướng về Frontend kèm Token và wid
     return res.redirect(`https://kpost.vn/dashboard?token=${jwtToken}&wid=${userWorkspaceId}`);
   }
 
   // ==========================================
-  // 4. API LẤY PROFILE (ĐÃ CẬP NHẬT GÓI CƯỚC THẬT)
+  // 5. LẤY THÔNG TIN CÁ NHÂN
   // ==========================================
   @Get('profile')
   async getProfile(@Req() req) {
@@ -158,7 +187,6 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
-        // Trả về plan thật từ database thay vì viết cứng Gold Member
         plan: user.workspaces[0]?.workspace?.plan?.toUpperCase() || "FREE",
         currentWorkspaceId: user.workspaces[0]?.workspaceId
       };

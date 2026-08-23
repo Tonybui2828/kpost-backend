@@ -6,7 +6,7 @@ import {
   User, Lock, Shield, CreditCard, Gift, 
   BookOpen, Scale, Bell, Globe, ChevronRight,
   X, Copy, Smartphone, PartyPopper, Rocket, Loader2, Sparkles, CheckCircle2,
-  Mail, KeyRound, UserPlus, LogIn
+  Mail, KeyRound, UserPlus, LogIn, LogOut
 } from "lucide-react";
 
 // --- 1. KẾT NỐI SOCKET ĐỘNG ---
@@ -295,7 +295,84 @@ function BillingTab({ onUpgrade }: any) {
         </div>
     )
 }
-function SecurityTab() { return <div className="p-10 text-center text-black"><Lock size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Bảo mật đa lớp đang được kích hoạt...</p></div> }
+function SecurityTab() {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const [loading, setLoading] = useState(false);
+    const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (passwords.new !== passwords.confirm) return alert("Mật khẩu mới không khớp!");
+        
+        setLoading(true);
+        try {
+            const token = localStorage.getItem("token");
+            await axios.post(`${API_URL}/auth/change-password`, passwords, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert("✅ Đã đổi mật khẩu thành công!");
+            setPasswords({ old: "", new: "", confirm: "" });
+        } catch (e: any) {
+            alert(e.response?.data?.message || "Lỗi khi đổi mật khẩu!");
+        } finally { setLoading(false); }
+    };
+
+    return (
+        <div className="space-y-10 animate-in fade-in text-black">
+            <h2 className="text-2xl font-black text-slate-900 italic uppercase">Bảo mật tài khoản</h2>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                {/* FORM ĐỔI MẬT KHẨU */}
+                <div className="space-y-6">
+                    <h3 className="font-black text-sm text-blue-600 uppercase tracking-widest flex items-center gap-2">
+                        <KeyRound size={16} /> Đổi mật khẩu mới
+                    </h3>
+                    <form onSubmit={handleChangePassword} className="space-y-4">
+                        <input type="password" placeholder="Mật khẩu hiện tại" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.old} onChange={e => setPasswords({...passwords, old: e.target.value})} required />
+                        <input type="password" placeholder="Mật khẩu mới" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.new} onChange={e => setPasswords({...passwords, new: e.target.value})} required />
+                        <input type="password" placeholder="Xác nhận mật khẩu mới" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.confirm} onChange={e => setPasswords({...passwords, confirm: e.target.value})} required />
+                        <button className="w-full py-4 bg-black text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">
+                            {loading ? <Loader2 className="animate-spin mx-auto" /> : "CẬP NHẬT MẬT KHẨU"}
+                        </button>
+                    </form>
+                </div>
+
+                {/* CÁC TÙY CHỌN BẢO MẬT KHÁC */}
+                <div className="space-y-6">
+                    <h3 className="font-black text-sm text-blue-600 uppercase tracking-widest flex items-center gap-2">
+                        <ShieldCheck size={16} /> Cài đặt nâng cao
+                    </h3>
+                    
+                    <div className="space-y-3">
+                        {/* Xác thực 2 lớp */}
+                        <div className="p-5 bg-slate-50 rounded-3xl border flex items-center justify-between group hover:bg-white hover:border-blue-200 transition-all">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400 group-hover:text-blue-500"><Smartphone size={20} /></div>
+                                <div>
+                                    <p className="text-sm font-black">Xác thực 2 lớp (2FA)</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">Bảo vệ qua mã OTP điện thoại</p>
+                                </div>
+                            </div>
+                            <button className="px-4 py-1.5 bg-slate-200 text-slate-500 rounded-full text-[9px] font-black uppercase">Sắp ra mắt</button>
+                        </div>
+
+                        {/* Nhật ký đăng nhập */}
+                        <div className="p-5 bg-slate-50 rounded-3xl border flex items-center justify-between group hover:bg-white hover:border-blue-200 transition-all">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400 group-hover:text-blue-500"><Fingerprint size={20} /></div>
+                                <div>
+                                    <p className="text-sm font-black">Thiết bị đã đăng nhập</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">Quản lý các phiên làm việc</p>
+                                </div>
+                            </div>
+                            <button className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[9px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">Kiểm tra</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
 function VoucherTab() { return <div className="p-10 text-center text-black"><Gift size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Bạn chưa có mã giảm giá nào.</p></div> }
 function GuideTab() { return <div className="p-10 text-center text-black"><BookOpen size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Tài liệu đang được AI biên soạn...</p></div> }
 function TermsTab() { return <div className="bg-red-50 p-8 rounded-[40px] border border-red-100 text-black font-sans"><h2 className="text-xl font-black mb-4 uppercase italic text-red-600">Điều khoản</h2><p className="text-sm font-bold text-red-900/60 leading-relaxed italic">1. Không hoàn tiền sau khi kích hoạt.<br/>2. Bảo mật dữ liệu 100%.</p></div> }
