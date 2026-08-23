@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Clock, Calendar, CheckCircle2, LayoutList, Loader2, Trash2, RefreshCw } from "lucide-react";
 
@@ -7,29 +7,23 @@ export default function SchedulePage() {
   // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  // --- 2. KHAI BÁO STATE (CHỈ GIỮ 1 BỘ DUY NHẤT) ---
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  // 1. Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
       setWorkspaceId(savedId);
     } else {
-      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa đăng nhập
+      setWorkspaceId("workspace-01"); // Dự phòng
     }
   }, []);
 
-  // Tự động tải lịch đăng bài khi đã bốc được Workspace ID
-  useEffect(() => {
-    if (workspaceId) {
-      fetchPosts();
-    }
-  }, [workspaceId]); // <--- Chạy lại khi ID thay đổi
-
-  const fetchPosts = async () => {
+  // 2. HÀM LẤY DANH SÁCH BÀI VIẾT (DUY NHẤT 1 HÀM)
+  const fetchPosts = useCallback(async () => {
     if (!workspaceId) return; 
     setLoading(true);
     try {
@@ -40,30 +34,14 @@ export default function SchedulePage() {
     } finally {
       setLoading(false);
     }
-  };
-  
-  // ... (Phần còn lại của trang giữ nguyên)
+  }, [workspaceId, API_URL]);
 
-  // --- 2. SỬA LỖI TYPESCRIPT (Thêm <any[]>) ---
-  const [posts, setPosts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // --- 3. SỬA LINK GỌI API ---
-  const fetchPosts = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API_URL}/social/scheduled-posts?workspaceId=${workspaceId}`);
-      setPosts(res.data || []);
-    } catch (error) {
-      console.error("Lỗi lấy dữ liệu lịch trình:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Tự động tải lịch khi ID đã sẵn sàng
   useEffect(() => {
-    fetchPosts();
-  }, []);
+    if (workspaceId) {
+      fetchPosts();
+    }
+  }, [workspaceId, fetchPosts]);
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-900 font-sans">
@@ -80,7 +58,7 @@ export default function SchedulePage() {
                 <p className="text-slate-400 text-[10px] font-bold uppercase mt-2 tracking-widest ml-12">Hệ thống AI tự động xếp lịch</p>
             </div>
             <div className="flex items-center gap-3">
-                <div className="bg-white px-6 py-3 rounded-2xl shadow-sm border border-slate-100 text-xs font-black text-slate-500 uppercase tracking-widest">
+                <div className="bg-white px-6 py-3 rounded-2xl shadow-sm border border-slate-100 text-xs font-black text-slate-500 uppercase tracking-widest text-black">
                     Chờ đăng: {posts.length} bài
                 </div>
                 <button onClick={fetchPosts} className="p-3 bg-white border rounded-2xl hover:bg-slate-50 transition-all shadow-sm group">
@@ -109,16 +87,16 @@ export default function SchedulePage() {
                  <div className="bg-orange-50 text-orange-600 p-6 rounded-[28px] font-black text-center min-w-[150px] border border-orange-100 shadow-inner">
                     <Calendar size={24} className="mx-auto mb-3" />
                     <div className="text-[9px] uppercase font-bold tracking-widest opacity-50">Ngày đăng dự kiến</div>
-                    <div className="text-xl mt-1 tracking-tighter">
+                    <div className="text-xl mt-1 tracking-tighter text-black">
                         {new Date(post.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                    <div className="text-[10px] mt-1 font-bold">
+                    <div className="text-[10px] mt-1 font-bold text-black">
                         {new Date(post.createdAt).toLocaleDateString('vi-VN')}
                     </div>
                  </div>
 
                  {/* Cột nội dung */}
-                 <div className="flex-1 w-full">
+                 <div className="flex-1 w-full text-black">
                     <div className="flex justify-between items-center mb-5">
                         <span className="flex items-center gap-2 text-[9px] font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full uppercase tracking-tighter shadow-sm border border-blue-100">
                             <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
@@ -139,9 +117,6 @@ export default function SchedulePage() {
                         </div>
                     )}
                  </div>
-
-                 {/* Hiệu ứng hover */}
-                 <div className="absolute top-1/2 -right-1 w-1 h-12 bg-orange-500 rounded-l-full opacity-0 group-hover:opacity-100 transition-all"></div>
               </div>
             ))}
           </div>

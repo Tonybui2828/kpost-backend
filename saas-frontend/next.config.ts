@@ -1,10 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true, // Ép build thành công bất kể lỗi TS nhỏ
+    // ÉP MÁY CHỦ PHẢI BUILD XONG BẤT KỂ LỖI TYPESCRIPT NHỎ
+    ignoreBuildErrors: true,
   },
   eslint: {
+    // Bỏ qua lỗi trình bày code khi build
     ignoreDuringBuilds: true,
   },
 };
+
 export default nextConfig;

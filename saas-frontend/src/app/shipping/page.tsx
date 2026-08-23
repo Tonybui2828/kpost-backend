@@ -1,13 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Truck, Save, ShieldCheck, Info, AlertCircle } from 'lucide-react';
+import { Truck, Save, ShieldCheck, Info } from 'lucide-react';
 
 export default function ShippingPage() {
- export default function ShippingPage() {
   // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   
-  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -18,17 +16,17 @@ export default function ShippingPage() {
     vtpShopId: '',
   });
 
-  // 1. Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  // Lấy Workspace ID từ máy người dùng khi vừa mở trang
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
       setWorkspaceId(savedId);
     } else {
-      setWorkspaceId("workspace-01"); // Dự phòng
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
     }
   }, []);
 
-  // 2. SỬA HÀM FETCH: Đảm bảo chỉ gọi khi đã bốc được workspaceId
+  // Hàm lấy cấu hình cũ
   const fetchConfig = async () => {
     if (!workspaceId) return;
     try {
@@ -49,39 +47,13 @@ export default function ShippingPage() {
     }
   };
 
-  // Tự động tải cấu hình khi workspaceId thay đổi
+  // Tự động tải cấu hình khi đã xác định được workspaceId
   useEffect(() => {
     if (workspaceId) {
       fetchConfig();
     }
-  }, [workspaceId]);
+  }, [workspaceId, API_URL]);
 
-  // ... (Hàm handleSave bên dưới nhớ sử dụng biến workspaceId này nhé)
-
-  // --- 2. SỬA LINK LẤY CẤU HÌNH ---
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const response = await fetch(`${API_URL}/orders/shipping-settings/${workspaceId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data) {
-            setConfig({
-              vtpToken: data.vtpToken || '',
-              vtpShopId: data.vtpShopId || '',
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Không thể lấy cấu hình cũ:", error);
-      } finally {
-        setFetching(false);
-      }
-    };
-    fetchConfig();
-  }, [API_URL]);
-
-  // --- 3. SỬA LINK LƯU CẤU HÌNH ---
   const handleSave = async () => {
     if (!config.vtpToken || !config.vtpShopId) {
       alert("Vui lòng nhập đầy đủ Token và Mã kho hàng!");
@@ -110,12 +82,12 @@ export default function ShippingPage() {
     }
   };
 
-  if (fetching) return <div className="p-8 text-slate-500 font-black italic animate-pulse">ĐANG TẢI CẤU HÌNH VẬN CHUYỂN...</div>;
+  if (fetching) return <div className="p-10 text-center font-black text-slate-300 italic animate-pulse uppercase">Đang tải cấu hình vận chuyển...</div>;
 
   return (
     <div className="p-8 max-w-4xl text-slate-800 font-sans">
       <div className="mb-10">
-        <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3 italic uppercase tracking-tighter">
+        <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3 italic uppercase tracking-tighter text-black">
           <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-100">
             <Truck size={28} />
           </div>
@@ -129,7 +101,7 @@ export default function ShippingPage() {
           <div className="flex items-center gap-4 mb-10 pb-6 border-b border-slate-50">
             <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center font-black text-red-600 text-xl shadow-inner border border-red-100">VTP</div>
             <div>
-              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">Viettel Post Integration</h3>
+              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight text-black">Viettel Post Integration</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID Không gian: {workspaceId}</p>
             </div>
           </div>

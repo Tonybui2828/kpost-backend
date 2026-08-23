@@ -1,19 +1,18 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Plus, Package, Tag, Loader2, X, UploadCloud, PenTool, Edit3, Trash2, Film } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-/// Khởi tạo Supabase Client (Giữ nguyên)
+// Khởi tạo Supabase Client (Giữ nguyên)
 const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_publishable__cTnEl5USBaraE6p6P0WDw_Q37Hmye7");
 
 export default function ProductsPage() {
-  // --- 1. LẤY URL API TỪ BIẾN MÔI TRƯỜNG ---
+  // --- 1. CẤU HÌNH API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  // --- 2. KHAI BÁO STATE (CHỈ GIỮ 1 BỘ DUY NHẤT) ---
   const [workspaceId, setWorkspaceId] = useState<string>("");
-  
   const [products, setProducts] = useState<any[]>([]); 
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,68 +23,55 @@ export default function ProductsPage() {
     name: "", description: "", price: "", skuInternal: "", totalStock: "", imageUrl: "", productUrl: ""
   });
 
-  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  // 3. Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
       setWorkspaceId(savedId);
     } else {
-      setWorkspaceId("workspace-01"); // Dự phòng
+      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
     }
   }, []);
 
-  // SỬA HÀM FETCH: Đảm bảo chỉ gọi khi đã bốc được workspaceId
-  const fetchProducts = async () => {
-    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
+  // 4. HÀM LẤY SẢN PHẨM (DUY NHẤT 1 HÀM)
+  const fetchProducts = useCallback(async () => {
+    if (!workspaceId) return; 
     try {
       const res = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
       setProducts(res.data || []);
-    } catch (error) { console.error("Lỗi lấy sản phẩm:", error); }
-  };
+    } catch (error) {
+      console.error("Lỗi lấy sản phẩm:", error);
+    }
+  }, [workspaceId, API_URL]);
 
-  // Tự động tải sản phẩm khi workspaceId thay đổi
+  // Tự động tải sản phẩm khi ID đã sẵn sàng
   useEffect(() => {
     if (workspaceId) {
       fetchProducts();
     }
-  }, [workspaceId]);
+  }, [workspaceId, fetchProducts]);
 
-  // ... (Các hàm handleUploadMedia, handleSaveProduct, handleDelete giữ nguyên bên dưới)
-
-  // --- 2. SỬA LINK LẤY SẢN PHẨM ---
-  const fetchProducts = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
-      setProducts(res.data || []);
-    } catch (error) { console.error("Lỗi lấy sản phẩm:", error); }
-  };
-
-  useEffect(() => { fetchProducts(); }, []);
-
+  // 5. HÀM XỬ LÝ UPLOAD
   const handleUploadMedia = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     
     setUploading(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
-    
-    const { data, error } = await supabase.storage
-      .from('product-images')
-      .upload(fileName, file);
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const { data, error } = await supabase.storage.from('product-images').upload(fileName, file);
 
-    if (!error) {
-      const { data: { publicUrl } } = supabase.storage
-        .from('product-images')
-        .getPublicUrl(fileName);
-      setNewProduct({ ...newProduct, imageUrl: publicUrl });
-    } else {
-        alert("Lỗi upload: " + error.message);
-    }
-    setUploading(false);
+        if (!error) {
+            const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName);
+            setNewProduct({ ...newProduct, imageUrl: publicUrl });
+        } else {
+            alert("Lỗi upload: " + error.message);
+        }
+    } catch (e) { alert("Lỗi tải tệp!"); } finally { setUploading(false); }
   };
 
-  // --- 3. SỬA LINK LƯU / CẬP NHẬT ---
+  // 6. HÀM LƯU SẢN PHẨM
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -107,11 +93,13 @@ export default function ProductsPage() {
     } finally { setLoading(false); }
   };
 
-  // --- 4. SỬA LINK XÓA ---
+  // 7. HÀM XÓA SẢN PHẨM
   const handleDelete = async (id: string) => {
     if (confirm("Xóa sản phẩm này?")) {
-      await axios.delete(`${API_URL}/products/${id}`);
-      fetchProducts();
+      try {
+        await axios.delete(`${API_URL}/products/${id}`);
+        fetchProducts();
+      } catch (e) { alert("Lỗi khi xóa!"); }
     }
   };
 
@@ -123,13 +111,14 @@ export default function ProductsPage() {
       imageUrl: p.imageUrl || "", productUrl: p.productUrl || ""
     });
     setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const isVideo = (url: string) => url?.match(/\.(mp4|mov|avi|wmv)$/i);
 
   return (
-    <div className="p-8 bg-slate-50 min-h-screen text-slate-800">
-      <div className="flex justify-between items-center mb-8">
+    <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
+      <div className="flex justify-between items-center mb-8 text-black">
         <h1 className="text-3xl font-black flex items-center gap-3 italic text-black">
             <Package className="text-blue-600" /> QUẢN LÝ KHO
         </h1>
@@ -140,7 +129,7 @@ export default function ProductsPage() {
 
       {showForm && (
         <div className={`mb-10 bg-white p-8 rounded-[32px] shadow-xl border-2 transition-all ${editingId ? 'border-orange-500' : 'border-blue-500'}`}>
-          <form onSubmit={handleSaveProduct} className="grid grid-cols-1 md:grid-cols-2 gap-8 text-black">
+          <form onSubmit={handleSaveProduct} className="grid grid-cols-1 md:grid-cols-2 gap-8 text-black font-medium">
             <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-3xl p-6 bg-slate-50 relative h-[300px] overflow-hidden text-black">
               {newProduct.imageUrl ? (
                 <div className="w-full h-full relative">
@@ -194,7 +183,7 @@ export default function ProductsPage() {
                 )
               ) : <div className="flex items-center justify-center h-full text-slate-400 font-bold">KHÔNG CÓ ẢNH</div>}
             </div>
-            <div className="p-6">
+            <div className="p-6 text-black">
               <h3 className="font-bold text-lg text-slate-800 uppercase truncate">{p.name}</h3>
               <p className="text-blue-600 font-black text-xl mt-1">{Number(p.price).toLocaleString()}đ</p>
               <button 

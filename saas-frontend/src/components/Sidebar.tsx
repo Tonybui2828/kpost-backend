@@ -2,11 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { 
   LayoutDashboard, PenTool, Package, MessageSquare, 
-  Settings, Share2, LogOut, Clock, MessageCircle, 
+  Settings, Share2, LogOut, LogIn, Clock, MessageCircle, 
   Users, ShoppingBag, Truck, Sparkles 
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation"; // Thêm useRouter
+import { usePathname, useRouter } from "next/navigation";
 import axios from "axios";
 import { io } from "socket.io-client";
 
@@ -31,89 +31,63 @@ const menuItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter(); 
-  const [plan, setPlan] = useState("FREE");
+  const [user, setUser] = useState<any>(null);
+  const [plan, setPlan] = useState("GUEST");
 
-  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
-  const [workspaceId, setWorkspaceId] = useState<string>("");
-
-  // Lấy ID thật của khách từ bộ nhớ máy ngay khi mở trang
-  useEffect(() => {
-    const savedId = localStorage.getItem("workspaceId");
-    if (savedId) {
-      setWorkspaceId(savedId);
-    } else {
-      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
+  // --- 2. HÀM LẤY THÔNG TIN NGƯỜI DÙNG & GÓI CƯỚC THẬT ---
+  const fetchUserStatus = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setUser(null);
+      setPlan("GUEST");
+      return;
     }
-  }, []);
 
-  // --- HÀM LẤY THÔNG TIN GÓI CƯỚC (Cập nhật để dùng workspaceId động) ---
-  const fetchPlan = useCallback(async () => {
-    if (!workspaceId) return; // Đợi lấy xong ID mới gọi API
     try {
-      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
-      if (res.data?.stats?.plan) {
-        setPlan(res.data.stats.plan.toUpperCase());
-      }
+      const res = await axios.get(`${API_URL}/auth/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUser(res.data);
+      setPlan(res.data.plan || "FREE");
     } catch (e) {
-      console.error("Lỗi cập nhật gói cước");
+      console.error("Phiên đăng nhập hết hạn");
+      setUser(null);
+      setPlan("GUEST");
     }
-  }, [workspaceId]);
-
-  // Tự động gọi lấy gói cước khi đã có ID hoặc khi chuyển trang
-  useEffect(() => {
-    if (workspaceId) {
-      fetchPlan();
-    }
-  }, [fetchPlan, workspaceId, pathname]);
-
-  // ... (Các phần socket.on và phần return bên dưới giữ nguyên)
-
-  // --- HÀM ĐĂNG XUẤT ---
-  const handleLogout = () => {
-    if (confirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?")) {
-      // 1. Xóa toàn bộ dữ liệu đăng nhập trong máy
-      localStorage.clear(); 
-      // 2. Chuyển hướng về trang chủ hoặc trang login
-      window.location.href = "/"; 
-    }
-  };
-
-  // --- LẤY THÔNG TIN GÓI CƯỚC ---
-  const fetchPlan = useCallback(async () => {
-    try {
-      const res = await axios.get(`${API_URL}/dashboard/stats?workspaceId=${workspaceId}`);
-      if (res.data?.stats?.plan) {
-        setPlan(res.data.stats.plan.toUpperCase());
-      }
-    } catch (e) {
-      console.error("Lỗi cập nhật gói cước từ API:", API_URL);
-    }
-  }, [workspaceId]);
+  }, [API_URL]);
 
   useEffect(() => {
-    fetchPlan();
+    fetchUserStatus();
 
-    socket.on("paymentSuccess", (data) => {
-      console.log("🚀 Sidebar nhận tín hiệu nâng cấp gói!");
-      fetchPlan(); 
+    // Lắng nghe tín hiệu nạp tiền thành công để cập nhật gói cước ngay lập tức
+    socket.on("paymentSuccess", () => {
+      console.log("🚀 Cập nhật gói cước mới...");
+      fetchUserStatus(); 
     });
 
     return () => {
       socket.off("paymentSuccess");
     };
-  }, [fetchPlan, pathname]);
+  }, [fetchUserStatus, pathname]);
+
+  const handleLogout = () => {
+    if (confirm("Bạn có chắc chắn muốn đăng xuất?")) {
+      localStorage.clear(); 
+      window.location.href = "/"; 
+    }
+  };
 
   return (
     <div className="w-64 bg-white h-screen border-r border-slate-200 flex flex-col fixed left-0 top-0 z-[100] font-sans">
-      {/* Phần Logo Hệ thống */}
+      {/* Logo */}
       <div className="p-6 pb-2 text-2xl font-black text-blue-600 flex items-center gap-2 italic uppercase tracking-tighter">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-100">
+        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg">
             <div className="w-4 h-4 bg-white rounded-sm rotate-45"></div>
         </div>
         KPOST AI
       </div>
 
-      {/* HUY HIỆU GÓI CƯỚC */}
+      {/* HUY HIỆU GÓI CƯỚC THẬT */}
       <div className="px-6 mb-6 mt-2">
         <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 font-black text-[10px] uppercase italic tracking-widest transition-all duration-700 shadow-sm ${
             plan === 'DIAMOND' ? 'bg-purple-600 text-white border-purple-400 shadow-purple-200' :
@@ -123,10 +97,10 @@ export default function Sidebar() {
         }`}>
             <Sparkles 
               size={12} 
-              fill={plan === 'FREE' ? 'none' : 'currentColor'} 
-              className={plan !== 'FREE' ? 'animate-pulse text-white' : ''} 
+              fill={plan === 'GUEST' ? 'none' : 'currentColor'} 
+              className={plan !== 'GUEST' ? 'animate-pulse text-white' : ''} 
             />
-            {plan} MEMBER
+            {plan} {plan === 'GUEST' ? '' : 'MEMBER'}
         </div>
       </div>
 
@@ -148,15 +122,25 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Nút Đăng xuất - ĐÃ GẮN LOGIC */}
+      {/* Nút Đăng xuất / Đăng nhập linh hoạt */}
       <div className="p-4 border-t border-slate-100">
-        <button 
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 font-black uppercase tracking-widest hover:text-red-600 transition-colors text-[10px]"
-        >
-          <LogOut size={18} />
-          <span>Đăng xuất</span>
-        </button>
+        {user ? (
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 font-black uppercase tracking-widest hover:text-red-600 transition-colors text-[10px]"
+          >
+            <LogOut size={18} />
+            <span>Đăng xuất</span>
+          </button>
+        ) : (
+          <Link
+            href="/settings"
+            className="flex items-center gap-3 px-4 py-3 w-full text-blue-600 font-black uppercase tracking-widest hover:bg-blue-50 rounded-xl transition-all text-[10px]"
+          >
+            <LogIn size={18} />
+            <span>Đăng nhập</span>
+          </Link>
+        )}
       </div>
     </div>
   );
