@@ -1,7 +1,6 @@
 FROM node:22-slim
 
-# Cài đặt các thư viện hệ thống cần thiết
-
+# 1. Cài đặt các thư viện hệ thống CẦN THIẾT cho bcrypt và puppeteer
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -15,24 +14,19 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# BIẾN NÀY ĐỂ BỎ QUA LỖI CÀI ĐẶT PUPPETEER
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-
 WORKDIR /app
 
-# Chỉ copy file package trước để tối ưu tốc độ build
+# 2. Copy file cấu hình
 COPY package*.json ./
 
-# Cài đặt thư viện (Bỏ qua các script tự chạy gây lỗi)
-RUN npm install --ignore-scripts
+# 3. Cài đặt thư viện và BIÊN DỊCH LẠI bcrypt cho Linux
+RUN npm install
 
-# Copy toàn bộ mã nguồn (trừ những thứ trong .dockerignore)
+# 4. Copy toàn bộ mã nguồn
 COPY . .
 
-# Cấp quyền và chạy Prisma
+# 5. Khởi tạo Prisma và Build
 RUN npx prisma generate
-
-# Build dự án
 RUN npm run build
 
 EXPOSE 3001

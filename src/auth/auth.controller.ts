@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Req, UseGuards, Res, HttpStatus, HttpExcep
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt'; // Đảm bảo đã chạy: npm install bcrypt
+import * as bcrypt from 'bcryptjs'; // Đảm bảo đã chạy: npm install bcrypt
 
 @Controller('auth')
 export class AuthController {
