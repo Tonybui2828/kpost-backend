@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class FacebookService {
+  // Sử dụng phiên bản API mới nhất của Facebook
   private readonly graphUrl = 'https://graph.facebook.com/v21.0'; 
 
   constructor(private readonly prisma: PrismaService) {}
@@ -46,20 +47,20 @@ export class FacebookService {
   }
 
   // ==========================================
-  // 2. ĐĂNG BÀI (ĐÃ NÂNG CẤP ĐĂNG NHIỀU ẢNH)
+  // 2. ĐĂNG BÀI (NÂNG CẤP ALBUM 10 ẢNH + AUTO COMMENT LINK)
   // ==========================================
-  async postToPage(pageId: string, accessToken: string, message: string, imageUrls?: any): Promise<any> {
+  async postToPage(pageId: string, accessToken: string, message: string, imageUrls?: any, productUrl?: string): Promise<any> {
     const cleanToken = this.clean(accessToken);
-    
-    // Chuyển đổi đầu vào thành mảng nếu là chuỗi đơn
     const images = Array.isArray(imageUrls) ? imageUrls : (imageUrls ? [imageUrls] : []);
 
-    // --- TRƯỜNG HỢP A: ĐĂNG NHIỀU ẢNH (TỪ 2 ĐẾN 10 ẢNH) ---
-    if (images.length > 1) {
-      try {
-        console.log(`--- 📸 Đang xử lý đăng Album ${images.length} ảnh ---`);
+    let resultId = "";
+
+    try {
+      // --- TRƯỜNG HỢP A: ĐĂNG NHIỀU ẢNH (ALBUM) ---
+      if (images.length > 1) {
+        console.log(`--- 📸 Đang tải lên Album ${images.length} ảnh ---`);
         
-        // 1. Upload từng ảnh lên Facebook ở chế độ "tạm ẩn" (published=false) để lấy ID
+        // Bước 1: Upload từng ảnh lên Facebook ở chế độ tạm ẩn (published=false)
         const mediaIds = await Promise.all(
           images.map(async (url: string) => {
             const uploadRes = await axios.post(`${this.graphUrl}/${pageId}/photos`, {
@@ -71,44 +72,50 @@ export class FacebookService {
           })
         );
 
-        // 2. Tạo bài viết Feed và gắn toàn bộ ID ảnh vào Album
+        // Bước 2: Tạo bài viết Feed và đính kèm danh sách ID ảnh đã upload
         const finalRes = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
           message: message,
           attached_media: JSON.stringify(mediaIds),
           access_token: cleanToken,
         });
+        resultId = finalRes.data.id;
+      } 
+      // --- TRƯỜNG HỢP B: ĐĂNG 1 ẢNH HOẶC VIDEO ---
+      else if (images.length === 1) {
+        const singleUrl = images[0];
+        const isVideo = singleUrl.match(/\.(mp4|mov|avi|wmv)$/i);
+        
+        let url = `${this.graphUrl}/${pageId}/photos`;
+        let payload: any = { url: singleUrl, caption: message, access_token: cleanToken };
 
-        return finalRes.data;
-      } catch (error) {
-        throw new Error(error.response?.data?.error?.message || 'Lỗi đăng nhiều ảnh');
+        if (isVideo) {
+          url = `${this.graphUrl}/${pageId}/videos`;
+          payload = { file_url: singleUrl, description: message, access_token: cleanToken };
+        }
+
+        const response = await axios.post(url, payload);
+        resultId = response.data.id;
       }
-    }
+      // --- TRƯỜNG HỢP C: CHỈ ĐĂNG CHỮ ---
+      else {
+        const response = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
+          message: message,
+          access_token: cleanToken,
+        });
+        resultId = response.data.id;
+      }
 
-    // --- TRƯỜNG HỢP B: ĐĂNG 1 ẢNH HOẶC 1 VIDEO (LOGIC CŨ) ---
-    const singleUrl = images[0] || "";
-    const isVideo = singleUrl.match(/\.(mp4|mov|avi|wmv)$/i);
-    const isImage = singleUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+      // --- BƯỚC QUAN TRỌNG: TỰ ĐỘNG CHÈN LINK VÀO COMMENT SAU KHI ĐĂNG ---
+      if (resultId && productUrl) {
+        console.log("--- 🔗 Đang tự động chèn link sản phẩm vào bình luận ---");
+        await this.commentOnPost(resultId, cleanToken, `Chào bạn, bạn có thể xem chi tiết và mua sản phẩm tại đây nhé: ${productUrl} 😍🚀`);
+      }
 
-    let url = `${this.graphUrl}/${pageId}/feed`;
-    const payload: any = { access_token: cleanToken, message };
+      return { id: resultId, status: 'success' };
 
-    if (isVideo) {
-      url = `${this.graphUrl}/${pageId}/videos`;
-      payload.file_url = singleUrl;
-      payload.description = message;
-      delete payload.message;
-    } else if (isImage) {
-      url = `${this.graphUrl}/${pageId}/photos`;
-      payload.url = singleUrl;
-      payload.caption = message;
-      delete payload.message;
-    }
-
-    try {
-      const response = await axios.post(url, payload);
-      return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.error?.message || 'Lỗi đăng bài');
+      console.error("❌ Lỗi xử lý Facebook:", error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Lỗi đăng bài lên Facebook');
     }
   }
 
