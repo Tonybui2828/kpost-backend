@@ -121,14 +121,15 @@ model Post {
   createdAt   DateTime  @default(now())
 }
 
-// 8. Bảng Sản phẩm
+// 8. Bảng Sản phẩm (Đã nâng cấp Mô tả và Nhiều ảnh)
 model Product {
   id           String    @id @default(uuid())
   workspaceId  String
   name         String
-  description  String?
+  description  String?   @db.Text // Cho phép nhập mô tả chi tiết sản phẩm rất dài
   price        Float?
-  imageUrl     String?   
+  imageUrl     String?   // Vẫn giữ để code cũ không lỗi
+  images       String[]  @default([]) // Mảng lưu tối đa 10 đường dẫn ảnh sản phẩm
   productUrl   String?   
   skuInternal  String    @unique
   totalStock   Int       @default(0)
