@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class FacebookService {
-  // Sử dụng phiên bản API mới nhất của Facebook
   private readonly graphUrl = 'https://graph.facebook.com/v21.0'; 
 
   constructor(private readonly prisma: PrismaService) {}
@@ -47,22 +46,25 @@ export class FacebookService {
   }
 
   // ==========================================
-  // 2. ĐĂNG BÀI (NÂNG CẤP ALBUM 10 ẢNH + AUTO COMMENT LINK)
+  // 2. ĐĂNG BÀI (ĐÃ FIX: ĐẢM BẢO LUÔN CÓ ẢNH)
   // ==========================================
   async postToPage(pageId: string, accessToken: string, message: string, imageUrls?: any, productUrl?: string): Promise<any> {
     const cleanToken = this.clean(accessToken);
+    
+    // Đảm bảo đầu vào luôn là một mảng link ảnh sạch
     const images = Array.isArray(imageUrls) ? imageUrls : (imageUrls ? [imageUrls] : []);
+    const validImages = images.filter((url: any) => typeof url === 'string' && url.startsWith('http'));
 
     let resultId = "";
 
     try {
-      // --- TRƯỜNG HỢP A: ĐĂNG NHIỀU ẢNH (ALBUM) ---
-      if (images.length > 1) {
-        console.log(`--- 📸 Đang tải lên Album ${images.length} ảnh ---`);
+      // --- TRƯỜNG HỢP 1: CÓ ẢNH (1 HOẶC NHIỀU ẢNH) ---
+      if (validImages.length > 0) {
+        console.log(`--- 📸 Đang xử lý đăng bài kèm ${validImages.length} ảnh ---`);
         
-        // Bước 1: Upload từng ảnh lên Facebook ở chế độ tạm ẩn (published=false)
+        // Bước A: Upload từng tấm ảnh lên Facebook lấy ID (published=false)
         const mediaIds = await Promise.all(
-          images.map(async (url: string) => {
+          validImages.map(async (url: string) => {
             const uploadRes = await axios.post(`${this.graphUrl}/${pageId}/photos`, {
               url: url.trim(),
               published: false,
@@ -72,7 +74,7 @@ export class FacebookService {
           })
         );
 
-        // Bước 2: Tạo bài viết Feed và đính kèm danh sách ID ảnh đã upload
+        // Bước B: Đăng bài Feed và đính kèm danh sách ID ảnh đã upload
         const finalRes = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
           message: message,
           attached_media: JSON.stringify(mediaIds),
@@ -80,23 +82,7 @@ export class FacebookService {
         });
         resultId = finalRes.data.id;
       } 
-      // --- TRƯỜNG HỢP B: ĐĂNG 1 ẢNH HOẶC VIDEO ---
-      else if (images.length === 1) {
-        const singleUrl = images[0];
-        const isVideo = singleUrl.match(/\.(mp4|mov|avi|wmv)$/i);
-        
-        let url = `${this.graphUrl}/${pageId}/photos`;
-        let payload: any = { url: singleUrl, caption: message, access_token: cleanToken };
-
-        if (isVideo) {
-          url = `${this.graphUrl}/${pageId}/videos`;
-          payload = { file_url: singleUrl, description: message, access_token: cleanToken };
-        }
-
-        const response = await axios.post(url, payload);
-        resultId = response.data.id;
-      }
-      // --- TRƯỜNG HỢP C: CHỈ ĐĂNG CHỮ ---
+      // --- TRƯỜNG HỢP 2: CHỈ ĐĂNG CHỮ ---
       else {
         const response = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
           message: message,
@@ -105,17 +91,17 @@ export class FacebookService {
         resultId = response.data.id;
       }
 
-      // --- BƯỚC QUAN TRỌNG: TỰ ĐỘNG CHÈN LINK VÀO COMMENT SAU KHI ĐĂNG ---
+      // --- BƯỚC QUAN TRỌNG: TỰ ĐỘNG CHÈN LINK VÀO COMMENT ---
       if (resultId && productUrl) {
-        console.log("--- 🔗 Đang tự động chèn link sản phẩm vào bình luận ---");
-        await this.commentOnPost(resultId, cleanToken, `Chào bạn, bạn có thể xem chi tiết và mua sản phẩm tại đây nhé: ${productUrl} 😍🚀`);
+        console.log("--- 🔗 Tự động chèn link mua hàng vào bình luận ---");
+        await this.commentOnPost(resultId, cleanToken, `Dạ em gửi mình link xem chi tiết và đặt hàng tại đây nhé: ${productUrl} 😍🚀`);
       }
 
       return { id: resultId, status: 'success' };
 
     } catch (error) {
-      console.error("❌ Lỗi xử lý Facebook:", error.response?.data || error.message);
-      throw new Error(error.response?.data?.error?.message || 'Lỗi đăng bài lên Facebook');
+      console.error("❌ Lỗi Facebook API:", error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Lỗi kết nối Facebook');
     }
   }
 

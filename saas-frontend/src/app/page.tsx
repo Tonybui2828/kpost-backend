@@ -79,31 +79,28 @@ function AiMarketingContent() {
     } catch (e) { alert("AI đang bận!"); } finally { setLoading(false); }
   };
 
+  // --- ĐOẠN HÀM ĐÃ ĐƯỢC THAY THẾ CHUẨN ---
   const handlePostAction = async () => {
-    if (!editableContent || selectedPageIds.length === 0) return alert("Chưa chọn Page!");
-    if (selectedImages.length === 0) return alert("Vui lòng chọn ít nhất 1 ảnh!");
+    if (!editableContent || selectedPageIds.length === 0) return alert("Chưa chọn nội dung hoặc Page!");
+    if (selectedImages.length === 0) return alert("Hãy chọn ít nhất 1 tấm ảnh đẹp nhé!");
 
     setPosting(true);
     try {
-      if (isScheduling) {
-        if (!scheduleDate) return alert("Chọn ngày giờ đăng!");
-        await axios.post(`${API_URL}/social/schedule`, {
-          content: editableContent, workspaceId, scheduledAt: scheduleDate,
-          imageUrls: selectedImages, productUrl: productUrl 
+      const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
+      
+      for (const acc of pagesToPost) {
+        await axios.post(`${API_URL}/social/facebook/post`, {
+          pageId: acc.platformId, 
+          accessToken: acc.accessToken, 
+          message: editableContent, 
+          imageUrls: selectedImages, // <--- Đảm bảo gửi mảng imageUrls (có chữ s)
+          productUrl: productUrl 
         });
-        alert(`✅ Đã lên lịch đăng bài thành công!`);
-      } else {
-        const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
-        for (const acc of pagesToPost) {
-          await axios.post(`${API_URL}/social/facebook/post`, {
-            pageId: acc.platformId, accessToken: acc.accessToken, 
-            message: editableContent, imageUrls: selectedImages, // Gửi mảng ảnh
-            productUrl: productUrl // Gửi link để Backend tự comment
-          });
-        }
-        alert(`🚀 Đã đăng Album ${selectedImages.length} ảnh lên ${pagesToPost.length} Page!`);
       }
-    } catch (error) { alert("Lỗi đẩy bài!"); } finally { setPosting(false); }
+      alert(`🚀 Thành công! Đã đăng bài kèm ${selectedImages.length} ảnh lên Facebook.`);
+    } catch (error) { 
+      alert("Lỗi khi đẩy bài. Hãy kiểm tra Token!"); 
+    } finally { setPosting(false); }
   };
 
   return (
@@ -144,7 +141,7 @@ function AiMarketingContent() {
              </div>
              <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={10} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
              
-             {/* --- TÍNH NĂNG KHÔI PHỤC: LINK COMMENT & HẸN GIỜ --- */}
+             {/* LINK COMMENT & HẸN GIỜ */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-black">
                 <div className="p-6 bg-blue-50/50 rounded-[35px] border-2 border-dashed border-blue-200">
                     <div className="flex items-center gap-2 mb-3">
