@@ -2,8 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { FacebookService } from './facebook.service';
-// BỔ SUNG: Inject AiContentService để Spin bài viết
-import { AiContentService } from '../ai-content/ai-content.service';
 
 @Injectable()
 export class SocialScheduleService {
@@ -12,12 +10,10 @@ export class SocialScheduleService {
   constructor(
     private prisma: PrismaService,
     private facebookService: FacebookService,
-    // BỔ SUNG
-    private aiContentService: AiContentService,
   ) {}
 
   // ========================================================
-  // [MỚI THÊM] XỬ LÝ NHẬN LỆNH LÊN LỊCH & SPIN TỪ FRONTEND
+  // XỬ LÝ NHẬN LỆNH LÊN LỊCH TỪ FRONTEND
   // ========================================================
   async handleBatchSchedule(data: any) {
     const { 
@@ -32,36 +28,20 @@ export class SocialScheduleService {
 
     this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds.length} pages. Thời gian: ${scheduledAt}`);
 
-    // Dùng imageUrl đầu tiên làm đại diện tạm (tuỳ logic hệ thống cũ của bạn)
+    // Dùng imageUrl đầu tiên làm đại diện tạm
     const firstImageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : "";
 
-    // Duyệt qua từng Fanpage để lưu lịch đăng (và spin nếu có bật)
+    // Duyệt qua từng Fanpage để lưu lịch đăng
     for (const pageId of pageIds) {
       let finalContent = baseContent;
 
-      // 1. Tự động viết lại nội dung (Spin Content) nếu khách bật tính năng Tránh Spam
+      // TODO: (Sau này) Bổ sung logic Spin bằng AI ở đây nếu cần.
+      // Hiện tại nếu bật Spin, tạm thời dùng nội dung gốc để tránh lỗi biên dịch.
       if (spinContent) {
-        try {
-           this.logger.debug(`🤖 Đang dùng AI viết lại nội dung cho Page ID: ${pageId}...`);
-           // Dùng AI sửa lại content (Sử dụng prompt spin cơ bản)
-           // Lưu ý: AiContentService phải có sẵn hàm để gọi. Nếu bạn chưa có hàm spin, có thể dùng tạm hàm generate
-           const promptSpin = `Hãy viết lại nội dung bán hàng sau đây theo một văn phong khác (không thay đổi thông tin sản phẩm, giá cả nếu có). Hãy làm cho nó tự nhiên, thêm bớt icon một chút để tránh thuật toán spam trùng lặp bài của Facebook. Nội dung gốc:\n\n${baseContent}`;
-           
-           // Thay 'userId' tạm thời bằng 'system' vì đây là chạy ngầm
-           const aiResult = await this.aiContentService.generate({ prompt: promptSpin, userId: 'system', workspaceId });
-           
-           if (aiResult && aiResult.content) {
-             finalContent = aiResult.content;
-           }
-        } catch (err) {
-           this.logger.error(`❌ Spin Content cho Page ${pageId} thất bại, dùng nội dung gốc. Lỗi: ${err.message}`);
-           // Nếu AI lỗi, vẫn dùng baseContent gốc để không làm gián đoạn lịch đăng
-           finalContent = baseContent;
-        }
+         this.logger.debug(`Spin Content tạm tắt, sử dụng nội dung gốc cho Page ID: ${pageId}...`);
       }
 
-      // 2. Lưu vào Database (Bảng Post) chờ đến giờ đăng
-      // Cấu trúc đang làm theo chuẩn cũ của bạn (Lưu imageUrl vào trường userId)
+      // Lưu vào Database (Bảng Post) chờ đến giờ đăng
       await this.prisma.post.create({
         data: {
           content: finalContent,
@@ -69,7 +49,7 @@ export class SocialScheduleService {
           productUrl: productUrl || null,
           status: 'scheduled',
           createdAt: new Date(scheduledAt), 
-          userId: firstImageUrl // <- Lưu tạm image vào userId như hàm schedule cũ của bạn
+          userId: firstImageUrl 
         }
       });
       
@@ -128,7 +108,7 @@ export class SocialScheduleService {
               acc.platformId,
               acc.accessToken,
               post.content,
-              post.userId || '', // URL ảnh (đang lưu tạm trong userId)
+              post.userId || '', 
             );
 
             this.logger.log(`✅ Đăng bài thành công lên Page: ${acc.accountName}`);
@@ -147,7 +127,7 @@ export class SocialScheduleService {
                 this.logger.log(`💬 Đã tự động rải link comment cho: ${acc.accountName}`);
             }
 
-          } catch (pageError) {
+          } catch (pageError: any) {
             this.logger.error(`❌ Lỗi tại Page [${acc.accountName}]: ${pageError.message}`);
           }
         }
@@ -160,7 +140,7 @@ export class SocialScheduleService {
 
         this.logger.log(`🎉 Nhiệm vụ hoàn tất cho bài đăng: ${post.id}`);
 
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error(`❌ Lỗi hệ thống bài đăng ${post.id}:`, error.message);
       }
     }
