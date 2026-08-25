@@ -48,7 +48,7 @@ export class SocialScheduleService {
            const promptSpin = `Hãy viết lại nội dung bán hàng sau đây theo một văn phong khác (không thay đổi thông tin sản phẩm, giá cả nếu có). Hãy làm cho nó tự nhiên, thêm bớt icon một chút để tránh thuật toán spam trùng lặp bài của Facebook. Nội dung gốc:\n\n${baseContent}`;
            
            // Thay 'userId' tạm thời bằng 'system' vì đây là chạy ngầm
-           const aiResult = await this.aiContentService.generateContent({ prompt: promptSpin, userId: 'system', workspaceId });
+           const aiResult = await this.aiContentService.generate({ prompt: promptSpin, userId: 'system', workspaceId });
            
            if (aiResult && aiResult.content) {
              finalContent = aiResult.content;
