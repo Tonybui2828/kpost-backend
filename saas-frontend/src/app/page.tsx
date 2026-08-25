@@ -3,13 +3,13 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import axios from "axios";
 import { useSearchParams } from "next/navigation";
 import { 
-  PenTool, Loader2, Sparkles, Image as ImageIcon, 
-  Globe, Edit3, Wand2, X, ListFilter, CheckCircle2, 
-  Square, Download, FileText, UploadCloud, Clock, Calendar,
-  ShoppingCart, FolderPlus, FolderCheck, Trash2
+  Loader2, Sparkles, Image as ImageIcon, 
+  Globe, Edit3, CheckCircle2, 
+  Square, Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Plus
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
+// Lưu ý: Thay API keys thực tế của bạn nếu cần
 const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_publishable__cTnEl5USBaraE6p6P0WDw_Q37Hmye7");
 
 function AiMarketingContent() {
@@ -24,18 +24,38 @@ function AiMarketingContent() {
   const [posting, setPosting] = useState(false); 
   const [isEditing, setIsEditing] = useState(false);
 
-  // --- QUẢN LÝ NHIỀU ẢNH ---
+  // --- QUẢN LÝ ẢNH/MEDIA ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [availableImages, setAvailableImages] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
+  // Hàm xử lý upload Media
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    // Xử lý tạo URL tạm để preview Ảnh/Video ngay trên trình duyệt
+    const newMediaUrls = Array.from(files).map(file => URL.createObjectURL(file));
+    
+    // Đẩy ảnh mới lên đầu danh sách availableImages
+    setAvailableImages(prev => [...newMediaUrls, ...prev]);
+    
+    // Tự động chọn luôn ảnh vừa thêm (giới hạn mảng tối đa 10 ảnh)
+    setSelectedImages(prev => {
+      const combined = [...newMediaUrls, ...prev];
+      return combined.slice(0, 10);
+    });
+  };
+
   // --- QUẢN LÝ PAGE & FOLDER ---
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
   const [pageGroups, setPageGroups] = useState<{name: string, ids: string[]}[]>([]);
   const [newGroupName, setNewGroupName] = useState("");
 
-  // --- HẸN GIỜ & LINK ---
+  // --- HẸN GIỜ & SPIN CONTENT ---
   const [isScheduling, setIsScheduling] = useState(false);
+  const [spinContent, setSpinContent] = useState(true); 
   const [scheduleDate, setScheduleDate] = useState("");
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
@@ -79,27 +99,48 @@ function AiMarketingContent() {
     } catch (e) { alert("AI đang bận!"); } finally { setLoading(false); }
   };
 
-  // --- ĐOẠN HÀM ĐÃ ĐƯỢC THAY THẾ CHUẨN ---
+  // --- LOGIC ĐĂNG HOẶC HẸN GIỜ CÓ BẮT LỖI CHI TIẾT ---
   const handlePostAction = async () => {
     if (!editableContent || selectedPageIds.length === 0) return alert("Chưa chọn nội dung hoặc Page!");
-    if (selectedImages.length === 0) return alert("Hãy chọn ít nhất 1 tấm ảnh đẹp nhé!");
+    if (selectedImages.length === 0) return alert("Hãy chọn ít nhất 1 tấm ảnh/video đẹp nhé!");
 
     setPosting(true);
     try {
-      const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
-      
-      for (const acc of pagesToPost) {
-        await axios.post(`${API_URL}/social/facebook/post`, {
-          pageId: acc.platformId, 
-          accessToken: acc.accessToken, 
-          message: editableContent, 
-          imageUrls: selectedImages, // <--- Đảm bảo gửi mảng imageUrls (có chữ s)
-          productUrl: productUrl 
+      if (isScheduling) {
+        if (!scheduleDate) return alert("Vui lòng chọn ngày giờ hẹn lịch!");
+        
+        // Cần truyền mảng ảnh/video (selectedImages)
+        await axios.post(`${API_URL}/social/schedule-batch`, {
+          workspaceId,
+          baseContent: editableContent,
+          pageIds: selectedPageIds,
+          imageUrls: selectedImages,
+          productUrl: productUrl,
+          scheduledAt: scheduleDate,
+          spinContent: spinContent 
         });
+        
+        alert(`🚀 Thành công! Đã đưa ${selectedPageIds.length} bài viết vào lịch chờ đăng.`);
+      } else {
+        const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
+        for (const acc of pagesToPost) {
+          await axios.post(`${API_URL}/social/facebook/post`, {
+            pageId: acc.platformId, 
+            accessToken: acc.accessToken, 
+            message: editableContent, 
+            imageUrls: selectedImages, 
+            productUrl: productUrl 
+          });
+        }
+        alert(`🚀 Thành công! Đã xuất bản lên ${selectedPageIds.length} Page.`);
       }
-      alert(`🚀 Thành công! Đã đăng bài kèm ${selectedImages.length} ảnh lên Facebook.`);
-    } catch (error) { 
-      alert("Lỗi khi đẩy bài. Hãy kiểm tra Token!"); 
+    } catch (error: any) { 
+      // In lỗi chi tiết ra console để dễ debug
+      console.error("CHI TIẾT LỖI GỌI API ĐĂNG BÀI:", error);
+      
+      // Báo lỗi chi tiết lên màn hình cho người dùng
+      const errorMessage = error?.response?.data?.message || error?.message || "Lỗi không xác định";
+      alert(`Lỗi API: ${errorMessage}\nHãy mở tab Console (F12) để xem chi tiết.`); 
     } finally { setPosting(false); }
   };
 
@@ -108,16 +149,36 @@ function AiMarketingContent() {
       <div className="max-w-5xl mx-auto">
         <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">AI CONTENT CREATOR</h1>
 
-        {/* CHỌN ẢNH BÀI ĐĂNG */}
+        {/* CHỌN ẢNH / THÊM MEDIA */}
         <div className="mb-10 bg-white p-6 rounded-[32px] border shadow-sm text-black">
             <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest flex items-center gap-2">
                 <ImageIcon size={14} className="text-blue-600" /> Bộ sưu tập ảnh sản phẩm ({selectedImages.length}/10)
             </p>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                
+                {/* NÚT TẢI MEDIA */}
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50"
+                >
+                  <Plus size={32} className="mb-2" />
+                  <span className="text-[10px] font-black uppercase tracking-wider">Thêm Media</span>
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*,video/*" 
+                    className="hidden" 
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                  />
+                </div>
+
+                {/* DANH SÁCH ẢNH HIỆN TẠI */}
                 {availableImages.map((url, idx) => (
                     <div key={idx} onClick={() => setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : (prev.length < 10 ? [...prev, url] : prev))}
                          className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${selectedImages.includes(url) ? 'border-blue-600 scale-95 shadow-md' : 'border-white opacity-40'}`}>
-                        <img src={url} className="w-full h-full object-cover" alt="product" />
+                        {/* Lưu ý: Nếu có video bạn có thể đổi tag img thành video hoặc xử lý conditional render nhé */}
+                        <img src={url} className="w-full h-full object-cover" alt="media" />
                         {selectedImages.includes(url) && <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1"><CheckCircle2 size={16} /></div>}
                     </div>
                 ))}
@@ -126,7 +187,7 @@ function AiMarketingContent() {
 
         {/* NHẬP Ý TƯỞNG */}
         <div className="bg-white p-8 rounded-[40px] shadow-2xl border mb-10 text-black">
-          <textarea className="w-full p-6 bg-slate-50 border-none rounded-[32px] outline-none text-xl min-h-[140px] text-slate-900 font-bold focus:bg-white transition-all" placeholder="Mô tả ý tưởng của bạn..." value={topic} onChange={(e) => setTopic(e.target.value)} />
+          <textarea className="w-full p-6 bg-slate-50 border-none rounded-[32px] outline-none text-xl min-h-[140px] text-slate-900 font-bold focus:bg-white transition-all" placeholder="Mô tả ý tưởng của bạn (vd: Viết bài bán áo thun mùa hè)..." value={topic} onChange={(e) => setTopic(e.target.value)} />
           <button onClick={handleGenerateContent} disabled={loading} className="w-full mt-6 bg-black text-white font-black py-5 rounded-3xl shadow-lg flex items-center justify-center gap-3 hover:bg-slate-800 transition-all">
              {loading ? <Loader2 className="animate-spin" /> : <Sparkles size={22} />} SÁNG TẠO BÀI VIẾT VỚI AI
           </button>
@@ -136,10 +197,10 @@ function AiMarketingContent() {
         {result && (
           <div className="bg-white p-8 rounded-[45px] shadow-2xl border-l-[16px] border-blue-600 mb-10 text-black animate-in fade-in slide-in-from-bottom-10">
              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black uppercase italic">Nội dung đề xuất</h2>
+                <h2 className="text-xl font-black uppercase italic">Nội dung đề xuất gốc</h2>
                 <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-xl ${isEditing ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400'}`}><Edit3 size={18}/></button>
              </div>
-             <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={10} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
+             <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={6} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
              
              {/* LINK COMMENT & HẸN GIỜ */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-black">
@@ -151,13 +212,28 @@ function AiMarketingContent() {
                     <input className="w-full px-6 py-4 bg-white rounded-2xl outline-none font-bold text-blue-600 shadow-sm" placeholder="Dán link sản phẩm của bạn..." value={productUrl} onChange={(e) => setProductUrl(e.target.value)} />
                 </div>
 
-                <div className="p-6 bg-slate-50 rounded-[35px] border border-slate-100">
-                    <label className="flex items-center gap-3 cursor-pointer mb-3">
+                <div className="p-6 bg-slate-50 rounded-[35px] border border-slate-100 flex flex-col justify-center">
+                    <label className="flex items-center justify-between cursor-pointer mb-3">
+                        <span className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Clock size={14} /> Chế độ hẹn giờ đăng</span>
                         <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-blue-600" checked={isScheduling} onChange={(e) => setIsScheduling(e.target.checked)} />
-                        <span className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Clock size={14} /> Chế độ hẹn giờ</span>
                     </label>
                     {isScheduling && (
-                        <input type="datetime-local" className="w-full bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                          <input type="datetime-local" className="w-full mb-3 bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                          
+                          {/* CHỨC NĂNG SPIN CONTENT */}
+                          <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-3 rounded-xl border border-orange-100">
+                              <input type="checkbox" className="w-4 h-4 rounded text-orange-600" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase text-orange-700 flex items-center gap-1">
+                                  <Shuffle size={12} /> Tránh Spam (Khuyên dùng)
+                                </span>
+                                <span className="text-[9px] text-orange-600 font-medium leading-tight mt-0.5">
+                                  Hệ thống sẽ dùng AI viết lại {selectedPageIds.length || 'nhiều'} phiên bản nội dung khác cho từng Page.
+                                </span>
+                              </div>
+                          </label>
+                        </div>
                     )}
                 </div>
              </div>
@@ -179,8 +255,8 @@ function AiMarketingContent() {
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-2">
                     {pageGroups.map((group, idx) => (
-                        <div key={idx} className="flex items-center gap-1">
-                            <button onClick={() => setSelectedPageIds(group.ids)} className="bg-white border-2 border-blue-500 text-blue-600 px-5 py-2.5 rounded-2xl text-[10px] font-black whitespace-nowrap">📁 {group.name.toUpperCase()}</button>
+                        <div key={idx} className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => setSelectedPageIds(group.ids)} className="bg-white border-2 border-blue-500 text-blue-600 px-5 py-2.5 rounded-2xl text-[10px] font-black whitespace-nowrap hover:bg-blue-50 transition-colors">📁 {group.name.toUpperCase()}</button>
                             <button onClick={() => {
                                 const updated = pageGroups.filter(g => g.name !== group.name);
                                 setPageGroups(updated);
@@ -202,8 +278,13 @@ function AiMarketingContent() {
                 ))}
              </div>
 
-             <button onClick={handlePostAction} disabled={posting} className="w-full bg-blue-600 text-white font-black py-6 rounded-[30px] shadow-2xl text-xl hover:bg-blue-700 active:scale-95 transition-all">
-                {posting ? <Loader2 className="animate-spin mx-auto" /> : <><Globe size={24} className="inline mr-2" /> XUẤT BẢN KÈM {selectedImages.length} ẢNH 🚀</>}
+             <button onClick={handlePostAction} disabled={posting} className="w-full bg-blue-600 text-white font-black py-6 rounded-[30px] shadow-xl text-xl hover:bg-blue-700 active:scale-95 transition-all flex justify-center items-center gap-2">
+                {posting ? <Loader2 className="animate-spin" /> : (
+                  <>
+                    <Globe size={24} /> 
+                    {isScheduling ? (spinContent ? 'LÊN LỊCH & SPIN NỘI DUNG 🚀' : 'ĐƯA VÀO HÀNG CHỜ ĐĂNG 🚀') : 'XUẤT BẢN NGAY 🚀'}
+                  </>
+                )}
              </button>
           </div>
         )}

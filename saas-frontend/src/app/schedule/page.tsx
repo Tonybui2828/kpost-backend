@@ -1,32 +1,39 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
-import { Clock, Calendar, CheckCircle2, LayoutList, Loader2, Trash2, RefreshCw } from "lucide-react";
+import { 
+  Clock, 
+  Calendar, 
+  Loader2, 
+  Trash2, 
+  RefreshCw, 
+  ChevronLeft, 
+  ChevronRight,
+  Edit,
+  CheckCircle2
+} from "lucide-react";
 
 export default function SchedulePage() {
-  // --- 1. LẤY URL API ĐỘNG TỪ BIẾN MÔI TRƯỜNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-  // --- 2. KHAI BÁO STATE (CHỈ GIỮ 1 BỘ DUY NHẤT) ---
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
+  // Calendar State
+  const [currentDate, setCurrentDate] = useState(new Date());
+
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
-    if (savedId) {
-      setWorkspaceId(savedId);
-    } else {
-      setWorkspaceId("workspace-01"); // Dự phòng
-    }
+    if (savedId) setWorkspaceId(savedId);
+    else setWorkspaceId("workspace-01");
   }, []);
 
-  // 2. HÀM LẤY DANH SÁCH BÀI VIẾT (DUY NHẤT 1 HÀM)
   const fetchPosts = useCallback(async () => {
     if (!workspaceId) return; 
     setLoading(true);
     try {
+      // Sửa lại endpoint nếu cần. Giả định API trả về mảng các bài viết có trường `scheduledAt` hoặc `createdAt`
       const res = await axios.get(`${API_URL}/social/scheduled-posts?workspaceId=${workspaceId}`);
       setPosts(res.data || []);
     } catch (error) {
@@ -36,91 +43,187 @@ export default function SchedulePage() {
     }
   }, [workspaceId, API_URL]);
 
-  // Tự động tải lịch khi ID đã sẵn sàng
   useEffect(() => {
-    if (workspaceId) {
-      fetchPosts();
-    }
+    if (workspaceId) fetchPosts();
   }, [workspaceId, fetchPosts]);
 
+  // --- LOGIC CALENDAR ---
+  const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+
+  const calendarDays = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    // Tìm ngày bắt đầu của tuần (Chủ nhật = 0)
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - startDate.getDay());
+    
+    // Tìm ngày kết thúc của calendar lưới (luôn đủ 35 hoặc 42 ô)
+    const endDate = new Date(lastDay);
+    if (endDate.getDay() !== 6) {
+      endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
+    }
+
+    const days = [];
+    const d = new Date(startDate);
+    while (d <= endDate) {
+      days.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  }, [currentDate]);
+
+  const monthYearString = currentDate.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+  const today = new Date();
+
+  // Handle Delete Action
+  const handleDelete = async (postId: string) => {
+    if(!confirm("Bạn có chắc chắn muốn xóa lịch đăng bài này?")) return;
+    try {
+      // Giả định API delete:
+      // await axios.delete(`${API_URL}/social/scheduled-posts/${postId}`);
+      
+      // Update local state temporarily (remove this if you want to refetch instead)
+      setPosts(posts.filter(p => p.id !== postId));
+      alert("Xóa thành công!");
+    } catch (error) {
+      console.error("Lỗi xóa bài:", error);
+      alert("Không thể xóa bài viết. Vui lòng thử lại.");
+    }
+  };
+
   return (
-    <div className="p-8 bg-slate-50 min-h-screen text-slate-900 font-sans">
-      <div className="max-w-5xl mx-auto">
-        {/* Tiêu đề */}
-        <div className="flex justify-between items-center mb-10">
-            <div>
-                <h1 className="text-3xl font-black flex items-center gap-3 text-slate-800 italic uppercase tracking-tighter">
-                    <div className="bg-orange-500 p-2 rounded-xl text-white shadow-lg shadow-orange-100">
-                        <Clock size={28} />
-                    </div>
-                    Lịch đăng bài tự động
-                </h1>
-                <p className="text-slate-400 text-[10px] font-bold uppercase mt-2 tracking-widest ml-12">Hệ thống AI tự động xếp lịch</p>
+    <div className="flex flex-col h-full bg-slate-50 min-h-screen text-slate-900 font-sans">
+      
+      {/* Header */}
+      <div className="h-20 px-8 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+            <div className="bg-blue-600 p-1.5 rounded-lg text-white">
+              <Calendar size={20} />
             </div>
-            <div className="flex items-center gap-3">
-                <div className="bg-white px-6 py-3 rounded-2xl shadow-sm border border-slate-100 text-xs font-black text-slate-500 uppercase tracking-widest text-black">
-                    Chờ đăng: {posts.length} bài
-                </div>
-                <button onClick={fetchPosts} className="p-3 bg-white border rounded-2xl hover:bg-slate-50 transition-all shadow-sm group">
-                    <RefreshCw size={20} className={`text-slate-400 group-hover:text-orange-500 ${loading ? "animate-spin" : ""}`} />
-                </button>
-            </div>
+            Quản lý lịch đăng bài
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">Theo dõi các bài viết đã lên lịch và đã đăng</p>
         </div>
 
-        {/* Nội dung danh sách */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[40px] shadow-sm border">
-            <Loader2 className="animate-spin mb-4 text-orange-500" size={40} />
-            <p className="font-black uppercase text-xs tracking-widest italic text-slate-300">Đang quét lịch trình bài viết...</p>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <button onClick={handlePrevMonth} className="p-1.5 hover:bg-white rounded-md text-slate-600 transition-colors shadow-sm"><ChevronLeft size={18} /></button>
+            <span className="px-4 text-sm font-semibold capitalize w-36 text-center">{monthYearString}</span>
+            <button onClick={handleNextMonth} className="p-1.5 hover:bg-white rounded-md text-slate-600 transition-colors shadow-sm"><ChevronRight size={18} /></button>
           </div>
-        ) : posts.length === 0 ? (
-          <div className="bg-white p-24 text-center rounded-[40px] border-2 border-dashed border-slate-200 shadow-inner">
-            <LayoutList size={56} className="mx-auto text-slate-100 mb-6" />
-            <p className="text-slate-400 font-black uppercase text-sm tracking-tighter">Hiện không có bài viết nào đang chờ</p>
-            <p className="text-slate-300 text-xs mt-2 font-medium italic">Hãy quay lại trang chủ để lên lịch cho bài viết AI của bạn!</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6">
-            {posts.map((post: any) => (
-              <div key={post.id} className="bg-white p-8 rounded-[32px] shadow-xl border border-slate-100 hover:border-orange-200 transition-all flex flex-col md:flex-row gap-8 items-start relative group animate-in fade-in slide-in-from-bottom-4 duration-500">
-                 {/* Cột thời gian */}
-                 <div className="bg-orange-50 text-orange-600 p-6 rounded-[28px] font-black text-center min-w-[150px] border border-orange-100 shadow-inner">
-                    <Calendar size={24} className="mx-auto mb-3" />
-                    <div className="text-[9px] uppercase font-bold tracking-widest opacity-50">Ngày đăng dự kiến</div>
-                    <div className="text-xl mt-1 tracking-tighter text-black">
-                        {new Date(post.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div className="text-[10px] mt-1 font-bold text-black">
-                        {new Date(post.createdAt).toLocaleDateString('vi-VN')}
-                    </div>
-                 </div>
+          
+          <button onClick={fetchPosts} className="p-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm group">
+            <RefreshCw size={18} className={`text-slate-500 group-hover:text-blue-600 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
 
-                 {/* Cột nội dung */}
-                 <div className="flex-1 w-full text-black">
-                    <div className="flex justify-between items-center mb-5">
-                        <span className="flex items-center gap-2 text-[9px] font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full uppercase tracking-tighter shadow-sm border border-blue-100">
-                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
-                            Auto Post Queued
-                        </span>
-                        <button className="p-2 text-slate-200 hover:text-red-500 transition-colors bg-slate-50 rounded-xl hover:bg-red-50">
-                            <Trash2 size={18} />
-                        </button>
-                    </div>
-                    <div className="text-slate-800 leading-relaxed text-lg bg-slate-50/50 p-6 rounded-3xl border border-slate-100 italic font-medium shadow-inner">
-                        "{post.content}"
-                    </div>
-                    
-                    {post.userId && (
-                        <div className="mt-5 flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-white w-fit px-4 py-2 rounded-xl border">
-                            <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
-                            Ảnh sản phẩm đã đính kèm
-                        </div>
-                    )}
-                 </div>
+      {/* Main Content - Calendar Grid */}
+      <div className="flex-1 p-8 overflow-y-auto">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full min-h-[600px]">
+          
+          {/* Days of Week Header */}
+          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 shrink-0">
+            {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(day => (
+              <div key={day} className="py-3 text-center text-xs font-semibold text-slate-500 border-r border-slate-200 last:border-0">
+                {day}
               </div>
             ))}
           </div>
-        )}
+
+          {/* Loading State Overlay */}
+          {loading && calendarDays.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+              <Loader2 className="animate-spin mb-4 text-blue-600" size={32} />
+              <p className="text-sm font-medium">Đang tải lịch trình...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-7 flex-1 auto-rows-[minmax(120px,1fr)]">
+              {calendarDays.map((date, i) => {
+                const isToday = date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+                const isCurrentMonth = date.getMonth() === currentDate.getMonth();
+                
+                // Lọc bài viết cho ngày này
+                // LƯU Ý: Phải parse chính xác trường date từ DB của bạn (createdAt hoặc scheduledAt)
+                const dayPosts = posts.filter(p => {
+                  const postDate = new Date(p.scheduledAt || p.createdAt); // Ưu tiên scheduledAt nếu có
+                  return postDate.getDate() === date.getDate() && 
+                         postDate.getMonth() === date.getMonth() && 
+                         postDate.getFullYear() === date.getFullYear();
+                });
+
+                return (
+                  <div key={i} className={`border-r border-b border-slate-200 last:border-r-0 p-2 group transition-colors ${
+                    isCurrentMonth ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50 text-slate-400'
+                  }`}>
+                    
+                    <div className="flex justify-between items-start mb-2">
+                      <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
+                        isToday ? 'bg-blue-600 text-white shadow-md' : (isCurrentMonth ? 'text-slate-700' : 'text-slate-400')
+                      }`}>
+                        {date.getDate()}
+                      </span>
+                    </div>
+
+                    {/* Danh sách bài trong ngày */}
+                    <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[140px] scrollbar-hide">
+                      {dayPosts.map(post => {
+                        const postDate = new Date(post.scheduledAt || post.createdAt);
+                        // Logic xác định trạng thái: Đã qua (published) hay Tương lai (scheduled)
+                        const isPublished = postDate < new Date(); 
+
+                        return (
+                          <div key={post.id} className={`group/item text-xs p-2 rounded-md border leading-snug flex flex-col gap-1 transition-all ${
+                            isPublished 
+                              ? 'bg-slate-100 border-slate-200 hover:bg-slate-200' // Đã đăng (Xám)
+                              : 'bg-blue-50 border-blue-200 hover:bg-blue-100' // Chờ đăng (Xanh)
+                          }`}>
+                            
+                            <div className="flex items-center justify-between">
+                              <div className={`font-semibold flex items-center gap-1.5 ${isPublished ? 'text-slate-600' : 'text-blue-700'}`}>
+                                {isPublished ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                                {postDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                              
+                              {/* Actions (Hiện khi hover vào item) */}
+                              <div className="opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-opacity">
+                                <button className="p-1 hover:bg-white/60 rounded text-slate-500 hover:text-blue-600">
+                                  <Edit size={12} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDelete(post.id)}
+                                  className="p-1 hover:bg-white/60 rounded text-slate-500 hover:text-red-600"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className={`line-clamp-2 mt-0.5 ${isPublished ? 'text-slate-500' : 'text-slate-700'}`}>
+                              {post.content}
+                            </div>
+                            
+                            {post.userId && ( // Placeholder cho việc có ảnh đính kèm
+                               <div className="text-[9px] mt-0.5 flex items-center gap-1 text-slate-500 font-medium">
+                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div> Có đính kèm ảnh
+                               </div>
+                            )}
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import { ChatGateway } from './chat.gateway';
 import { AiContentService } from '../ai-content/ai-content.service';
 import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
+// BỔ SUNG THÊM SERVICE LÊN LỊCH
+import { SocialScheduleService } from './social-schedule.service';
 
 @Controller('social')
 export class SocialController {
@@ -15,7 +17,9 @@ export class SocialController {
     private readonly chatGateway: ChatGateway,
     private readonly aiService: AiContentService,
     private readonly paymentService: PaymentService,
-    private readonly automatorService: AutomatorService
+    private readonly automatorService: AutomatorService,
+    // BỔ SUNG INJECT LÊN LỊCH
+    private readonly socialScheduleService: SocialScheduleService
   ) {}
 
   // ==========================================
@@ -103,6 +107,25 @@ export class SocialController {
       data: { content: body.content, workspaceId: body.workspaceId, productUrl: body.productUrl || null, status: 'scheduled', createdAt: new Date(body.scheduledAt), userId: body.imageUrl || "" }
     });
   }
+
+  // >>> ĐÂY LÀ ĐOẠN MỚI THÊM ĐỂ XỬ LÝ NÚT 'LÊN LỊCH & SPIN' TỪ FRONTEND >>>
+  @Post('schedule-batch')
+  async scheduleBatch(@Body() body: any) {
+    try {
+      if (!this.socialScheduleService) {
+         throw new Error("Lỗi Server: Chưa kết nối SocialScheduleService.");
+      }
+      // Gọi service xử lý logic spin & lưu DB
+      return await this.socialScheduleService.handleBatchSchedule(body);
+    } catch (error) {
+      console.error("[scheduleBatch] Lỗi:", error);
+      throw new HttpException(
+        error.message || 'Lỗi hệ thống khi lên lịch hàng loạt', 
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+  // <<< KẾT THÚC ĐOẠN MỚI THÊM <<<
 
   @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
 
