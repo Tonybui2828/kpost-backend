@@ -6,6 +6,9 @@ import { FacebookService } from './facebook.service';
 @Injectable()
 export class SocialScheduleService {
   private readonly logger = new Logger(SocialScheduleService.name);
+  
+  // BỔ SUNG: Cờ khóa luồng (Lock) để tránh các đợt Cronjob chạy đè lên nhau
+  private isCronRunning = false;
 
   constructor(
     private prisma: PrismaService,
@@ -26,22 +29,25 @@ export class SocialScheduleService {
       spinContent 
     } = data;
 
-    this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds.length} pages. Thời gian: ${scheduledAt}`);
+    this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds?.length || 0} pages. Thời gian: ${scheduledAt}`);
 
-    // Dùng imageUrl đầu tiên làm đại diện tạm
     const firstImageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : "";
 
-    // Duyệt qua từng Fanpage để lưu lịch đăng
     for (const pageId of pageIds) {
       let finalContent = baseContent;
 
-      // TODO: (Sau này) Bổ sung logic Spin bằng AI ở đây nếu cần.
-      // Hiện tại nếu bật Spin, tạm thời dùng nội dung gốc để tránh lỗi biên dịch.
       if (spinContent) {
          this.logger.debug(`Spin Content tạm tắt, sử dụng nội dung gốc cho Page ID: ${pageId}...`);
       }
 
-      // Lưu vào Database (Bảng Post) chờ đến giờ đăng
+      // LƯU Ý QUAN TRỌNG:
+      // Lưu gộp cả URL ảnh và ID của Page vào một chuỗi JSON ở cột userId. 
+      // Việc này giúp Cronjob biết chính xác TỪNG BÀI VIẾT thuộc về TỪNG FANPAGE cụ thể.
+      const payload = JSON.stringify({
+        image: firstImageUrl,
+        pageId: pageId
+      });
+
       await this.prisma.post.create({
         data: {
           content: finalContent,
@@ -49,7 +55,7 @@ export class SocialScheduleService {
           productUrl: productUrl || null,
           status: 'scheduled',
           createdAt: new Date(scheduledAt), 
-          userId: firstImageUrl 
+          userId: payload // Gắn payload chứa pageId vào đây
         }
       });
       
@@ -68,81 +74,113 @@ export class SocialScheduleService {
   // ========================================================
   @Cron(CronExpression.EVERY_MINUTE)
   async handleCron() {
-    this.logger.debug('--- 🔍 Đang quét danh sách bài viết chờ đăng... ---');
+    // CHỐT CHẶN 1: Nếu cronjob phút trước vẫn đang kẹt (do Facebook API chậm), bỏ qua phút này!
+    if (this.isCronRunning) {
+      this.logger.warn('⚠️ Cronjob trước chưa chạy xong, bỏ qua lượt này để tránh đăng trùng lặp...');
+      return;
+    }
 
-    const now = new Date();
+    this.isCronRunning = true; // Khóa luồng
+    
+    try {
+      const now = new Date();
 
-    // 1. Lấy danh sách bài viết trạng thái 'scheduled' đã đến giờ đăng
-    const pendingPosts = await this.prisma.post.findMany({
-      where: {
-        status: 'scheduled',
-        createdAt: { lte: now },
-      },
-    });
+      const pendingPosts = await this.prisma.post.findMany({
+        where: {
+          status: 'scheduled',
+          createdAt: { lte: now },
+        },
+      });
 
-    if (pendingPosts.length === 0) return;
+      if (pendingPosts.length === 0) {
+        this.isCronRunning = false;
+        return;
+      }
 
-    for (const post of pendingPosts) {
-      try {
-        this.logger.log(`🚀 Bắt đầu đăng bài theo lịch [ID: ${post.id}]`);
+      this.logger.debug(`--- 🔍 Tìm thấy ${pendingPosts.length} bài viết chờ đăng... ---`);
 
-        // 2. Lấy danh sách Fanpage của Workspace
-        const accounts = await this.prisma.socialAccount.findMany({
-          where: { workspaceId: post.workspaceId },
-        });
+      // CHỐT CHẶN 2: Lập tức chuyển toàn bộ sang 'processing' để không bị quét lại
+      await this.prisma.post.updateMany({
+        where: { id: { in: pendingPosts.map(p => p.id) } },
+        data: { status: 'processing' }
+      });
 
-        if (accounts.length === 0) {
-          this.logger.warn(`⚠️ Không tìm thấy Fanpage cho bài đăng ${post.id}.`);
+      for (const post of pendingPosts) {
+        try {
+          this.logger.log(`🚀 Bắt đầu xử lý bài đăng [ID: ${post.id}]`);
+
+          let imageUrl = post.userId || '';
+          let targetPageId = null;
+
+          // Giải mã dữ liệu (Lấy URL ảnh và ID của Fanpage mục tiêu)
+          try {
+            const parsed = JSON.parse(post.userId);
+            if (parsed.image !== undefined) imageUrl = parsed.image;
+            if (parsed.pageId) targetPageId = parsed.pageId;
+          } catch (e) {
+            // Tương thích ngược với các bài viết cũ (nếu có)
+            imageUrl = post.userId || '';
+          }
+
+          // CHỐT CHẶN 3: Chỉ tìm ĐÚNG Fanpage có ID là targetPageId
+          const whereClause: any = { workspaceId: post.workspaceId };
+          if (targetPageId) {
+            whereClause.platformId = targetPageId;
+          }
+
+          const accounts = await this.prisma.socialAccount.findMany({
+            where: whereClause,
+          });
+
+          if (accounts.length === 0) {
+            this.logger.warn(`⚠️ Không tìm thấy Fanpage hợp lệ cho bài đăng ${post.id}.`);
+            await this.prisma.post.update({
+              where: { id: post.id },
+              data: { status: 'failed' },
+            });
+            continue;
+          }
+
+          // Đăng bài (Lúc này accounts.length luôn bằng 1 nếu là đăng từ schedule-batch)
+          for (const acc of accounts) {
+            try {
+              const fbRes = await this.facebookService.postToPage(
+                acc.platformId,
+                acc.accessToken,
+                post.content,
+                imageUrl, 
+              );
+
+              this.logger.log(`✅ Đăng bài thành công lên Page: ${acc.accountName}`);
+
+              const linkSanPham = post.productUrl; 
+              if (fbRes && fbRes.id && linkSanPham) {
+                  const commentMessage = `🔗 Link mua sản phẩm tại đây: ${linkSanPham}`;
+                  await this.facebookService.commentOnPost(fbRes.id, acc.accessToken, commentMessage);
+              }
+            } catch (pageError: any) {
+              this.logger.error(`❌ Lỗi tại Page [${acc.accountName}]: ${pageError.message}`);
+            }
+          }
+
+          // Đánh dấu hoàn tất
+          await this.prisma.post.update({
+            where: { id: post.id },
+            data: { status: 'published' },
+          });
+
+        } catch (error: any) {
+          this.logger.error(`❌ Lỗi hệ thống bài đăng ${post.id}:`, error.message);
+          // Gặp lỗi nặng thì trả về trạng thái failed
           await this.prisma.post.update({
             where: { id: post.id },
             data: { status: 'failed' },
           });
-          continue;
         }
-
-        // 3. Đăng lên từng Fanpage và tự động comment link
-        for (const acc of accounts) {
-          try {
-            // A. ĐĂNG BÀI CHÍNH
-            const fbRes = await this.facebookService.postToPage(
-              acc.platformId,
-              acc.accessToken,
-              post.content,
-              post.userId || '', 
-            );
-
-            this.logger.log(`✅ Đăng bài thành công lên Page: ${acc.accountName}`);
-
-            // B. TỰ ĐỘNG CHÈN LINK VÀO BÌNH LUẬN (IMAGE-LINK-COMMENT)
-            const linkSanPham = post.productUrl; 
-            
-            if (fbRes && fbRes.id && linkSanPham) {
-                const commentMessage = `🔗 Link mua sản phẩm tại đây: ${linkSanPham}`;
-                
-                await this.facebookService.commentOnPost(
-                    fbRes.id, 
-                    acc.accessToken, 
-                    commentMessage
-                );
-                this.logger.log(`💬 Đã tự động rải link comment cho: ${acc.accountName}`);
-            }
-
-          } catch (pageError: any) {
-            this.logger.error(`❌ Lỗi tại Page [${acc.accountName}]: ${pageError.message}`);
-          }
-        }
-
-        // 4. Đánh dấu hoàn tất
-        await this.prisma.post.update({
-          where: { id: post.id },
-          data: { status: 'published' },
-        });
-
-        this.logger.log(`🎉 Nhiệm vụ hoàn tất cho bài đăng: ${post.id}`);
-
-      } catch (error: any) {
-        this.logger.error(`❌ Lỗi hệ thống bài đăng ${post.id}:`, error.message);
       }
+    } finally {
+      // Mở khóa luồng sau khi chạy xong toàn bộ
+      this.isCronRunning = false;
     }
   }
 }
