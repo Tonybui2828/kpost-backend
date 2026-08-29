@@ -28,25 +28,25 @@ export class SocialScheduleService {
 
     this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds?.length || 0} pages.`);
 
-    // Chuyển mảng ảnh thành chuỗi JSON Array 
-    // (Định dạng: '["url1", "url2"]') để hàm postToPage xử lý được nhiều ảnh
-    const imageString = imageUrls && imageUrls.length > 0 ? JSON.stringify(imageUrls) : '[]';
+    // 1. Đóng gói Meta Data (Ảnh và PageId)
+    const metaPayload = JSON.stringify({
+      images: imageUrls || [],
+      pageId: pageId
+    });
 
     for (const pageId of pageIds) {
-      // Gói url ảnh và pageId vào Database
-      const payload = JSON.stringify({
-        image: imageString,
-        pageId: pageId
-      });
+      // 2. GIẤU METADATA VÀO CUỐI BÀI VIẾT BẰNG THẺ [KPOST_META]
+      // Cột content là kiểu TEXT (vô hạn ký tự) nên sẽ không bao giờ bị cắt cụt.
+      const contentWithMeta = `${baseContent}\n\n[KPOST_META]${JSON.stringify({ images: imageUrls || [], pageId })}[/KPOST_META]`;
 
       await this.prisma.post.create({
         data: {
-          content: baseContent,
+          content: contentWithMeta, // Lưu nội dung kèm thẻ ẩn
           workspaceId: workspaceId,
           productUrl: productUrl || null,
           status: 'scheduled',
           createdAt: new Date(scheduledAt), 
-          userId: payload 
+          userId: 'batch-post' // Bỏ, không dùng cột này lưu data nữa
         }
       });
       
@@ -86,24 +86,27 @@ export class SocialScheduleService {
 
       for (const post of pendingPosts) {
         try {
-          let imageArray: string[] = []; // SỬA Ở ĐÂY: Khai báo là MẢNG
+          let actualContent = post.content;
+          let imageArray: string[] = [];
           let targetPageId = null;
 
-          try {
-            const parsed = JSON.parse(post.userId);
-            // SỬA Ở ĐÂY: Giải mã lần nữa vì lúc lưu ta đã stringify 2 lần
-            if (parsed.image !== undefined) {
-               try {
-                 imageArray = JSON.parse(parsed.image);
-               } catch(e) {
-                 imageArray = [];
-               }
+          // 3. BÓC TÁCH THẺ [KPOST_META] RA KHỎI NỘI DUNG
+          const metaMatch = actualContent.match(/\[KPOST_META\](.*?)\[\/KPOST_META\]/s);
+          
+          if (metaMatch && metaMatch[1]) {
+            try {
+              const meta = JSON.parse(metaMatch[1]);
+              imageArray = meta.images || [];
+              targetPageId = meta.pageId || null;
+              
+              // Xóa sạch đoạn Meta đi để nội dung gửi lên FB hoàn toàn sạch sẽ
+              actualContent = actualContent.replace(metaMatch[0], '').trim();
+            } catch(e) {
+              this.logger.error(`Lỗi giải mã Meta: ${e.message}`);
             }
-            if (parsed.pageId) targetPageId = parsed.pageId;
-          } catch (e) {
-            imageArray = [];
           }
 
+          // Lọc tài khoản đích
           const whereClause: any = { workspaceId: post.workspaceId };
           if (targetPageId) whereClause.platformId = targetPageId;
 
@@ -118,12 +121,14 @@ export class SocialScheduleService {
 
           for (const acc of accounts) {
             try {
-              // TRUYỀN `imageArray` (đã là Mảng) SANG FACEBOOK SERVICE
+              this.logger.log(`🚀 Chuyển ${imageArray.length} ảnh sang FB Service...`);
+              
+              // 4. GỬI NỘI DUNG SẠCH VÀ MẢNG ẢNH SANG FACEBOOK
               const fbRes = await this.facebookService.postToPage(
                 acc.platformId,
                 acc.accessToken,
-                post.content,
-                imageArray, 
+                actualContent, // Nội dung đã gọt bỏ Meta
+                imageArray,    // Mảng link ảnh thật
               );
 
               const linkSanPham = post.productUrl; 
