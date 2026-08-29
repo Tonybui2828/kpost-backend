@@ -81,7 +81,6 @@ export class SocialController {
       try {
         const account = await this.prisma.socialAccount.findFirst({ where: { workspaceId: body.workspaceId, platformId: group.pageId } });
         if (account) {
-          // ĐÃ FIX: Lấy đúng mảng ảnh từ imageUrls
           const imagesToPost = body.imageUrls || body.imageUrl;
           
           const res = await this.facebookService.postToPage(group.groupId, account.accessToken, body.message, imagesToPost);
@@ -95,7 +94,6 @@ export class SocialController {
 
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
-    // ĐÃ FIX: Lấy đúng mảng ảnh từ imageUrls do Frontend gửi lên
     const imagesToPost = body.imageUrls || body.imageUrl;
 
     const res = await this.facebookService.postToPage(body.pageId, body.accessToken, body.message, imagesToPost); 
@@ -127,6 +125,24 @@ export class SocialController {
   }
 
   @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
+
+  // ==========================================
+  // QUẢN LÝ BÀI ĐĂNG (SỬA & XÓA) - MỚI THÊM 🚀
+  // ==========================================
+  @Delete('scheduled-posts/:id')
+  async deleteScheduledPost(@Param('id') id: string) {
+    return this.prisma.post.delete({
+      where: { id }
+    });
+  }
+
+  @Patch('scheduled-posts/:id')
+  async updateScheduledPost(@Param('id') id: string, @Body() body: any) {
+    return this.prisma.post.update({
+      where: { id },
+      data: { content: body.content }
+    });
+  }
 
   // ==========================================
   // 4. THANH TOÁN TỰ ĐỘNG

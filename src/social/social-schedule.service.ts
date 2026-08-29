@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { FacebookService } from './facebook.service';
+import { GoogleGenAI } from '@google/genai';
 
 @Injectable()
 export class SocialScheduleService {
@@ -13,8 +14,33 @@ export class SocialScheduleService {
     private facebookService: FacebookService,
   ) {}
 
+  // --- HÀM TỰ ĐỘNG XÀO NỘI DUNG (SPIN) BẰNG AI ---
+  private async spinText(text: string): Promise<string> {
+    try {
+      // 1. Trộn văn bản thủ công (Cú pháp Spintax: {A|B|C})
+      let spinned = text.replace(/\{([^{}]*)\}/g, (match, choices) => {
+        const options = choices.split('|');
+        return options[Math.floor(Math.random() * options.length)];
+      });
+
+      // 2. Dùng AI xào lại nội dung (Nếu hệ thống có gắn key Gemini)
+      if (process.env.GEMINI_API_KEY) {
+         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+         const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Hãy đóng vai một chuyên gia Marketing. Viết lại bài đăng Facebook sau bằng tiếng Việt sao cho mới mẻ, văn phong khác đi một chút, giữ nguyên các icon emoji và CỰC KỲ QUAN TRỌNG là giữ nguyên các đường link mua hàng. Không thêm thông tin bịa đặt:\n\n${spinned}`
+         });
+         if (response.text) return response.text;
+      }
+      return spinned;
+    } catch(e) {
+      this.logger.error("Lỗi Spin content:", e.message);
+      return text;
+    }
+  }
+
   // ========================================================
-  // 1. XỬ LÝ NHẬN LỆNH LÊN LỊCH TỪ FRONTEND
+  // XỬ LÝ NHẬN LỆNH LÊN LỊCH TỪ FRONTEND
   // ========================================================
   async handleBatchSchedule(data: any) {
     const { 
@@ -23,23 +49,26 @@ export class SocialScheduleService {
       pageIds, 
       imageUrls, 
       productUrl, 
-      scheduledAt 
+      scheduledAt,
+      spinContent // Cờ hiệu Spin từ Frontend gửi lên
     } = data;
 
-    this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds?.length || 0} pages.`);
-
-    // Đảm bảo imageUrls luôn là một mảng
     const validImages = Array.isArray(imageUrls) ? imageUrls : [];
 
     for (const pageId of pageIds) {
-      // Đưa phần tạo Meta vào TRONG vòng lặp để biến pageId tồn tại
+      // BẮT ĐẦU SPIN NỘI DUNG NẾU ĐƯỢC YÊU CẦU
+      let finalContent = baseContent;
+      if (spinContent) {
+         this.logger.log(`🌀 Đang Spin AI tạo nội dung độc nhất cho Page ${pageId}...`);
+         finalContent = await this.spinText(baseContent);
+      }
+
       const metaPayload = JSON.stringify({
         images: validImages,
         pageId: pageId
       });
 
-      // Giấu mảng ảnh và ID page vào cuối nội dung bài viết bằng thẻ ẩn
-      const contentWithMeta = `${baseContent}\n\n[KPOST_META]${metaPayload}[/KPOST_META]`;
+      const contentWithMeta = `${finalContent}\n\n[KPOST_META]${metaPayload}[/KPOST_META]`;
 
       await this.prisma.post.create({
         data: {
@@ -48,11 +77,9 @@ export class SocialScheduleService {
           productUrl: productUrl || null,
           status: 'scheduled',
           createdAt: new Date(scheduledAt), 
-          userId: 'batch-post' // Bỏ cột này, không dùng để lưu JSON dài nữa
+          userId: 'batch-post' 
         }
       });
-      
-      this.logger.log(`✅ Đã lưu lịch đăng cho Page ${pageId}`);
     }
 
     return {
@@ -62,7 +89,7 @@ export class SocialScheduleService {
   }
 
   // ========================================================
-  // 2. CRONJOB: TỰ ĐỘNG QUÉT VÀ ĐĂNG BÀI ĐÃ ĐẾN GIỜ
+  // CRONJOB: QUÉT VÀ ĐĂNG BÀI
   // ========================================================
   @Cron(CronExpression.EVERY_MINUTE)
   async handleCron() {
@@ -71,12 +98,8 @@ export class SocialScheduleService {
     
     try {
       const now = new Date();
-
       const pendingPosts = await this.prisma.post.findMany({
-        where: { 
-          status: 'scheduled', 
-          createdAt: { lte: now } 
-        },
+        where: { status: 'scheduled', createdAt: { lte: now } },
       });
 
       if (pendingPosts.length === 0) {
@@ -84,7 +107,6 @@ export class SocialScheduleService {
         return;
       }
 
-      // Khóa các bài viết đang xử lý
       await this.prisma.post.updateMany({
         where: { id: { in: pendingPosts.map(p => p.id) } },
         data: { status: 'processing' }
@@ -96,93 +118,42 @@ export class SocialScheduleService {
           let imageArray: string[] = [];
           let targetPageId: string | null = null;
 
-          // BÓC TÁCH THẺ [KPOST_META] RA KHỎI NỘI DUNG
           const metaMatch = actualContent.match(/\[KPOST_META\](.*?)\[\/KPOST_META\]/s);
-          
           if (metaMatch && metaMatch[1]) {
             try {
               const meta = JSON.parse(metaMatch[1]);
               imageArray = meta.images || [];
               targetPageId = meta.pageId || null;
-              
-              // Xóa thẻ ẩn đi để trả lại nội dung sạch sẽ đăng lên Facebook
               actualContent = actualContent.replace(metaMatch[0], '').trim();
-            } catch(e) {
-              this.logger.error(`Lỗi giải mã JSON từ thẻ Meta: ${e.message}`);
-            }
-          } else {
-             // Fallback cứu hộ cho các bài cũ (nếu có lưu ảnh trong userId từ đợt test trước)
-             try {
-                if (post.userId && post.userId.startsWith('[')) {
-                    imageArray = JSON.parse(post.userId);
-                } else if (post.userId && post.userId.startsWith('{')) {
-                    const parsed = JSON.parse(post.userId);
-                    imageArray = parsed.images ? parsed.images : [];
-                    targetPageId = parsed.pageId || null;
-                } else if (post.userId && post.userId !== 'batch-post') {
-                    imageArray = [post.userId];
-                }
-             } catch (e) {
-                // Ignore fallback error
-             }
-          }
+            } catch(e) {}
+          } 
 
-          // Lọc chính xác Fanpage
           const whereClause: any = { workspaceId: post.workspaceId };
-          if (targetPageId) {
-            whereClause.platformId = targetPageId;
-          }
+          if (targetPageId) whereClause.platformId = targetPageId;
 
-          const accounts = await this.prisma.socialAccount.findMany({
-            where: whereClause,
-          });
+          const accounts = await this.prisma.socialAccount.findMany({ where: whereClause });
 
           if (accounts.length === 0) {
-            await this.prisma.post.update({ 
-              where: { id: post.id }, 
-              data: { status: 'failed' } 
-            });
+            await this.prisma.post.update({ where: { id: post.id }, data: { status: 'failed' } });
             continue;
           }
 
-          // Tiến hành đăng bài lên Facebook
           for (const acc of accounts) {
             try {
-              this.logger.log(`🚀 Chuyển ${imageArray.length} ảnh sang FB Service cho Page: ${acc.accountName}...`);
-              
               const fbRes = await this.facebookService.postToPage(
-                acc.platformId,
-                acc.accessToken,
-                actualContent, 
-                imageArray,    
+                acc.platformId, acc.accessToken, actualContent, imageArray
               );
-
-              // Auto comment link sản phẩm nếu có
-              const linkSanPham = post.productUrl; 
-              if (fbRes && fbRes.id && linkSanPham) {
-                  await this.facebookService.commentOnPost(
-                    fbRes.id, 
-                    acc.accessToken, 
-                    `🔗 Link mua sản phẩm tại đây: ${linkSanPham}`
-                  );
+              if (fbRes && fbRes.id && post.productUrl) {
+                  await this.facebookService.commentOnPost(fbRes.id, acc.accessToken, `🔗 Link mua sản phẩm: ${post.productUrl}`);
               }
             } catch (pageError: any) {
-              this.logger.error(`❌ Lỗi tại Page [${acc.accountName}]: ${pageError.message}`);
+              this.logger.error(`❌ Lỗi Page [${acc.accountName}]: ${pageError.message}`);
             }
           }
-
-          // Đánh dấu bài viết đã đăng thành công
-          await this.prisma.post.update({ 
-            where: { id: post.id }, 
-            data: { status: 'published' } 
-          });
+          await this.prisma.post.update({ where: { id: post.id }, data: { status: 'published' } });
 
         } catch (error: any) {
-          this.logger.error(`❌ Lỗi hệ thống bài đăng ${post.id}:`, error.message);
-          await this.prisma.post.update({ 
-            where: { id: post.id }, 
-            data: { status: 'failed' } 
-          });
+          await this.prisma.post.update({ where: { id: post.id }, data: { status: 'failed' } });
         }
       }
     } finally {
