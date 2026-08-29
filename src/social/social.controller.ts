@@ -6,7 +6,6 @@ import { ChatGateway } from './chat.gateway';
 import { AiContentService } from '../ai-content/ai-content.service';
 import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
-// BỔ SUNG THÊM SERVICE LÊN LỊCH
 import { SocialScheduleService } from './social-schedule.service';
 
 @Controller('social')
@@ -18,7 +17,6 @@ export class SocialController {
     private readonly aiService: AiContentService,
     private readonly paymentService: PaymentService,
     private readonly automatorService: AutomatorService,
-    // BỔ SUNG INJECT LÊN LỊCH
     private readonly socialScheduleService: SocialScheduleService
   ) {}
 
@@ -48,18 +46,16 @@ export class SocialController {
   @Delete('accounts/:id') async deleteAccount(@Param('id') id: string) { return this.prisma.socialAccount.delete({ where: { id } }); }
 
   // ==========================================
-  // 2. MỚI BỔ SUNG: ĐỒNG BỘ & LẤY TIN NHẮN (FIX LỖI 404 TRÌNH DUYỆT)
+  // 2. ĐỒNG BỘ & LẤY TIN NHẮN 
   // ==========================================
   
   @Post('sync-inbox')
   async syncInbox(@Body() body: { workspaceId: string }) {
-    // Gọi hàm quét tin nhắn từ FacebookService
     return this.facebookService.syncAllMessages(body.workspaceId);
   }
 
   @Get('inbox')
   async getInbox(@Query('workspaceId') workspaceId: string) {
-    // Lấy toàn bộ tin nhắn từ database để hiện lên Frontend
     return this.prisma.inboxMessage.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' }
@@ -75,7 +71,7 @@ export class SocialController {
   }
 
   // ==========================================
-  // 3. CHIẾN DỊCH HỘI NHÓM & ĐĂNG BÀI
+  // 3. CHIẾN DỊCH HỘI NHÓM & ĐĂNG BÀI 
   // ==========================================
   @Post('facebook/post-groups')
   async postToGroups(@Body() body: any) {
@@ -85,7 +81,10 @@ export class SocialController {
       try {
         const account = await this.prisma.socialAccount.findFirst({ where: { workspaceId: body.workspaceId, platformId: group.pageId } });
         if (account) {
-          const res = await this.facebookService.postToPage(group.groupId, account.accessToken, body.message, body.imageUrl);
+          // ĐÃ FIX: Lấy đúng mảng ảnh từ imageUrls
+          const imagesToPost = body.imageUrls || body.imageUrl;
+          
+          const res = await this.facebookService.postToPage(group.groupId, account.accessToken, body.message, imagesToPost);
           if (res?.id && body.productUrl) await this.facebookService.commentOnPost(res.id, account.accessToken, `🔗 Link mua sản phẩm: ${body.productUrl}`);
           results.push({ group: group.groupName, status: 'success' });
         }
@@ -96,7 +95,10 @@ export class SocialController {
 
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
-    const res = await this.facebookService.postToPage(body.pageId, body.accessToken, body.message, body.imageUrl); 
+    // ĐÃ FIX: Lấy đúng mảng ảnh từ imageUrls do Frontend gửi lên
+    const imagesToPost = body.imageUrls || body.imageUrl;
+
+    const res = await this.facebookService.postToPage(body.pageId, body.accessToken, body.message, imagesToPost); 
     if (res?.id && body.productUrl) await this.facebookService.commentOnPost(res.id, body.accessToken, `🔗 Link mua sản phẩm tại đây: ${body.productUrl}`);
     return res;
   }
@@ -108,14 +110,12 @@ export class SocialController {
     });
   }
 
-  // >>> ĐÂY LÀ ĐOẠN MỚI THÊM ĐỂ XỬ LÝ NÚT 'LÊN LỊCH & SPIN' TỪ FRONTEND >>>
   @Post('schedule-batch')
   async scheduleBatch(@Body() body: any) {
     try {
       if (!this.socialScheduleService) {
          throw new Error("Lỗi Server: Chưa kết nối SocialScheduleService.");
       }
-      // Gọi service xử lý logic spin & lưu DB
       return await this.socialScheduleService.handleBatchSchedule(body);
     } catch (error) {
       console.error("[scheduleBatch] Lỗi:", error);
@@ -125,7 +125,6 @@ export class SocialController {
       );
     }
   }
-  // <<< KẾT THÚC ĐOẠN MỚI THÊM <<<
 
   @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
 
@@ -180,31 +179,27 @@ export class SocialController {
       const entry = body.entry?.[0];
       if (!entry) return 'NO_ENTRY';
 
-      const pageId = entry.id; // ID của Fanpage nhận tin nhắn
+      const pageId = entry.id; 
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
-      // --- BƯỚC 1: XÁC ĐỊNH CHỦ SỞ HỮU FANPAGE TRONG HỆ THỐNG ---
       const account = await this.prisma.socialAccount.findFirst({
         where: { platformId: pageId },
       });
 
       if (!account) {
-        console.log(`[Webhook] Fanpage ${pageId} chưa được kết nối vào hệ thống Kpost.`);
         return 'ACCOUNT_NOT_FOUND';
       }
 
-      // --- BƯỚC 2: XỬ LÝ TIN NHẮN INBOX ---
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
-        // Lưu tin nhắn vào đúng kho dữ liệu của khách hàng (workspaceId)
         const savedMsg = await this.prisma.inboxMessage.upsert({
           where: { platformId: messaging.message.mid },
           update: { content: text },
           create: { 
-            workspaceId: account.workspaceId, // <--- Lấy động từ Database
+            workspaceId: account.workspaceId, 
             platform: 'facebook', 
             type: 'inbox', 
             senderName: "Khách từ Fanpage", 
@@ -215,27 +210,19 @@ export class SocialController {
           }
         });
 
-        // Bắn tín hiệu lên giao diện web của khách
         this.chatGateway.sendMessageToUI(savedMsg);
 
-        // KIỂM TRA: Chỉ tự động trả lời nếu khách đã BẬT nút Autopilot
         if (account.isAiAutoReply) {
-          console.log(`🤖 [AI ON] Đang trả lời khách cho workspace: ${account.workspaceId}`);
           await this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid);
-        } else {
-          console.log(`👤 [AI OFF] Khách tắt tự động trả lời, chỉ lưu log tin nhắn.`);
         }
       }
 
-      // --- BƯỚC 3: XỬ LÝ BÌNH LUẬN (COMMENT) ---
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
         const senderId = changes.value.from.id;
 
-        // Tránh AI tự trả lời chính nó
         if (senderId !== pageId) {
-          // Lưu bình luận vào Database (Vẫn lấy đúng workspaceId của khách)
           await this.prisma.inboxMessage.create({
             data: {
               workspaceId: account.workspaceId,
@@ -249,7 +236,6 @@ export class SocialController {
             }
           });
 
-          // Nếu BẬT AI thì mới tự trả lời bình luận
           if (account.isAiAutoReply) {
             await this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId);
           }
