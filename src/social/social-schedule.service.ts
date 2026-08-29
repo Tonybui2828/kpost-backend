@@ -28,12 +28,12 @@ export class SocialScheduleService {
 
     this.logger.log(`📥 Nhận lệnh lên lịch cho ${pageIds?.length || 0} pages.`);
 
-    // 1. SỬA LỖI ẢNH: Chuyển mảng ảnh thành chuỗi JSON Array 
+    // Chuyển mảng ảnh thành chuỗi JSON Array 
     // (Định dạng: '["url1", "url2"]') để hàm postToPage xử lý được nhiều ảnh
     const imageString = imageUrls && imageUrls.length > 0 ? JSON.stringify(imageUrls) : '[]';
 
     for (const pageId of pageIds) {
-      // 2. Gói url ảnh và pageId vào Database
+      // Gói url ảnh và pageId vào Database
       const payload = JSON.stringify({
         image: imageString,
         pageId: pageId
@@ -86,15 +86,22 @@ export class SocialScheduleService {
 
       for (const post of pendingPosts) {
         try {
-          let imageUrl = '[]';
+          let imageArray: string[] = []; // SỬA Ở ĐÂY: Khai báo là MẢNG
           let targetPageId = null;
 
           try {
             const parsed = JSON.parse(post.userId);
-            if (parsed.image !== undefined) imageUrl = parsed.image; // imageUrl lúc này sẽ là '["url1", "url2"]'
+            // SỬA Ở ĐÂY: Giải mã lần nữa vì lúc lưu ta đã stringify 2 lần
+            if (parsed.image !== undefined) {
+               try {
+                 imageArray = JSON.parse(parsed.image);
+               } catch(e) {
+                 imageArray = [];
+               }
+            }
             if (parsed.pageId) targetPageId = parsed.pageId;
           } catch (e) {
-            imageUrl = post.userId || '[]';
+            imageArray = [];
           }
 
           const whereClause: any = { workspaceId: post.workspaceId };
@@ -111,12 +118,12 @@ export class SocialScheduleService {
 
           for (const acc of accounts) {
             try {
-              // 3. Truyền biến imageUrl (là mảng JSON) qua cho facebook.service
+              // TRUYỀN `imageArray` (đã là Mảng) SANG FACEBOOK SERVICE
               const fbRes = await this.facebookService.postToPage(
                 acc.platformId,
                 acc.accessToken,
                 post.content,
-                imageUrl, 
+                imageArray, 
               );
 
               const linkSanPham = post.productUrl; 
