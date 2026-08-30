@@ -7,10 +7,6 @@ import {
   Globe, Edit3, CheckCircle2, 
   Square, Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Plus
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
-
-// Lưu ý: Thay API keys thực tế của bạn nếu cần
-const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_publishable__cTnEl5USBaraE6p6P0WDw_Q37Hmye7");
 
 function AiMarketingContent() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -29,18 +25,11 @@ function AiMarketingContent() {
   const [availableImages, setAvailableImages] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
-  // Hàm xử lý upload Media
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
-    // Xử lý tạo URL tạm để preview Ảnh/Video ngay trên trình duyệt
     const newMediaUrls = Array.from(files).map(file => URL.createObjectURL(file));
-    
-    // Đẩy ảnh mới lên đầu danh sách availableImages
     setAvailableImages(prev => [...newMediaUrls, ...prev]);
-    
-    // Tự động chọn luôn ảnh vừa thêm (giới hạn mảng tối đa 10 ảnh)
     setSelectedImages(prev => {
       const combined = [...newMediaUrls, ...prev];
       return combined.slice(0, 10);
@@ -55,7 +44,7 @@ function AiMarketingContent() {
 
   // --- HẸN GIỜ & SPIN CONTENT ---
   const [isScheduling, setIsScheduling] = useState(false);
-  const [spinContent, setSpinContent] = useState(true); 
+  const [spinContent, setSpinContent] = useState(true); // Đã chuyển ra ngoài để quản lý chung
   const [scheduleDate, setScheduleDate] = useState("");
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
@@ -99,7 +88,6 @@ function AiMarketingContent() {
     } catch (e) { alert("AI đang bận!"); } finally { setLoading(false); }
   };
 
-  // --- LOGIC ĐĂNG HOẶC HẸN GIỜ CÓ BẮT LỖI CHI TIẾT ---
   const handlePostAction = async () => {
     if (!editableContent || selectedPageIds.length === 0) return alert("Chưa chọn nội dung hoặc Page!");
     if (selectedImages.length === 0) return alert("Hãy chọn ít nhất 1 tấm ảnh/video đẹp nhé!");
@@ -109,20 +97,24 @@ function AiMarketingContent() {
       if (isScheduling) {
         if (!scheduleDate) return alert("Vui lòng chọn ngày giờ hẹn lịch!");
         
-        // Cần truyền mảng ảnh/video (selectedImages)
+        // 🚀 ĐÃ SỬA LỖI MÚI GIỜ CHỖ NÀY: Ép sang chuẩn UTC trước khi gửi
+        const isoDate = new Date(scheduleDate).toISOString();
+
         await axios.post(`${API_URL}/social/schedule-batch`, {
           workspaceId,
           baseContent: editableContent,
           pageIds: selectedPageIds,
           imageUrls: selectedImages,
           productUrl: productUrl,
-          scheduledAt: scheduleDate,
+          scheduledAt: isoDate, // Gửi biến đã ép chuẩn ISO
           spinContent: spinContent 
         });
         
         alert(`🚀 Thành công! Đã đưa ${selectedPageIds.length} bài viết vào lịch chờ đăng.`);
       } else {
         const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
+        // Lặp qua từng page và đăng ngay lập tức (Nếu spin=true, phải xào lại trên frontend vì API post lẻ ko xào)
+        // Hiện tại AI Post lẻ tạm bỏ qua Spin để tối ưu tốc độ, chỉ Spin khi Hẹn giờ.
         for (const acc of pagesToPost) {
           await axios.post(`${API_URL}/social/facebook/post`, {
             pageId: acc.platformId, 
@@ -135,10 +127,7 @@ function AiMarketingContent() {
         alert(`🚀 Thành công! Đã xuất bản lên ${selectedPageIds.length} Page.`);
       }
     } catch (error: any) { 
-      // In lỗi chi tiết ra console để dễ debug
       console.error("CHI TIẾT LỖI GỌI API ĐĂNG BÀI:", error);
-      
-      // Báo lỗi chi tiết lên màn hình cho người dùng
       const errorMessage = error?.response?.data?.message || error?.message || "Lỗi không xác định";
       alert(`Lỗi API: ${errorMessage}\nHãy mở tab Console (F12) để xem chi tiết.`); 
     } finally { setPosting(false); }
@@ -149,35 +138,19 @@ function AiMarketingContent() {
       <div className="max-w-5xl mx-auto">
         <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">AI CONTENT CREATOR</h1>
 
-        {/* CHỌN ẢNH / THÊM MEDIA */}
         <div className="mb-10 bg-white p-6 rounded-[32px] border shadow-sm text-black">
             <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest flex items-center gap-2">
                 <ImageIcon size={14} className="text-blue-600" /> Bộ sưu tập ảnh sản phẩm ({selectedImages.length}/10)
             </p>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                
-                {/* NÚT TẢI MEDIA */}
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50"
-                >
+                <div onClick={() => fileInputRef.current?.click()} className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50">
                   <Plus size={32} className="mb-2" />
                   <span className="text-[10px] font-black uppercase tracking-wider">Thêm Media</span>
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*,video/*" 
-                    className="hidden" 
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                  />
+                  <input type="file" multiple accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload}/>
                 </div>
-
-                {/* DANH SÁCH ẢNH HIỆN TẠI */}
                 {availableImages.map((url, idx) => (
                     <div key={idx} onClick={() => setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : (prev.length < 10 ? [...prev, url] : prev))}
                          className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${selectedImages.includes(url) ? 'border-blue-600 scale-95 shadow-md' : 'border-white opacity-40'}`}>
-                        {/* Lưu ý: Nếu có video bạn có thể đổi tag img thành video hoặc xử lý conditional render nhé */}
                         <img src={url} className="w-full h-full object-cover" alt="media" />
                         {selectedImages.includes(url) && <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1"><CheckCircle2 size={16} /></div>}
                     </div>
@@ -185,7 +158,6 @@ function AiMarketingContent() {
             </div>
         </div>
 
-        {/* NHẬP Ý TƯỞNG */}
         <div className="bg-white p-8 rounded-[40px] shadow-2xl border mb-10 text-black">
           <textarea className="w-full p-6 bg-slate-50 border-none rounded-[32px] outline-none text-xl min-h-[140px] text-slate-900 font-bold focus:bg-white transition-all" placeholder="Mô tả ý tưởng của bạn (vd: Viết bài bán áo thun mùa hè)..." value={topic} onChange={(e) => setTopic(e.target.value)} />
           <button onClick={handleGenerateContent} disabled={loading} className="w-full mt-6 bg-black text-white font-black py-5 rounded-3xl shadow-lg flex items-center justify-center gap-3 hover:bg-slate-800 transition-all">
@@ -193,7 +165,6 @@ function AiMarketingContent() {
           </button>
         </div>
 
-        {/* KẾT QUẢ VÀ CẤU HÌNH ĐĂNG */}
         {result && (
           <div className="bg-white p-8 rounded-[45px] shadow-2xl border-l-[16px] border-blue-600 mb-10 text-black animate-in fade-in slide-in-from-bottom-10">
              <div className="flex justify-between items-center mb-6">
@@ -202,7 +173,19 @@ function AiMarketingContent() {
              </div>
              <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={6} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
              
-             {/* LINK COMMENT & HẸN GIỜ */}
+             {/* LUÔN HIỆN NÚT SPIN */}
+             <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-4 rounded-2xl border border-orange-100 mb-6 hover:bg-orange-100 transition-colors">
+                  <input type="checkbox" className="w-5 h-5 rounded text-orange-600 focus:ring-orange-500" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-black uppercase text-orange-700 flex items-center gap-1">
+                      <Shuffle size={16} /> Bật AI Spin Trộn nội dung (Chống Spam)
+                    </span>
+                    <span className="text-xs text-orange-600 font-medium leading-tight mt-1">
+                      Khi Lên Lịch, Hệ thống sẽ dùng AI viết lại {selectedPageIds.length || 'nhiều'} phiên bản nội dung hoàn toàn khác nhau cho từng Page.
+                    </span>
+                  </div>
+             </label>
+
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-black">
                 <div className="p-6 bg-blue-50/50 rounded-[35px] border-2 border-dashed border-blue-200">
                     <div className="flex items-center gap-2 mb-3">
@@ -219,26 +202,12 @@ function AiMarketingContent() {
                     </label>
                     {isScheduling && (
                         <div className="animate-in fade-in slide-in-from-top-2">
-                          <input type="datetime-local" className="w-full mb-3 bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
-                          
-                          {/* CHỨC NĂNG SPIN CONTENT */}
-                          <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-3 rounded-xl border border-orange-100">
-                              <input type="checkbox" className="w-4 h-4 rounded text-orange-600" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase text-orange-700 flex items-center gap-1">
-                                  <Shuffle size={12} /> Tránh Spam (Khuyên dùng)
-                                </span>
-                                <span className="text-[9px] text-orange-600 font-medium leading-tight mt-0.5">
-                                  Hệ thống sẽ dùng AI viết lại {selectedPageIds.length || 'nhiều'} phiên bản nội dung khác cho từng Page.
-                                </span>
-                              </div>
-                          </label>
+                          <input type="datetime-local" className="w-full bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
                         </div>
                     )}
                 </div>
              </div>
 
-             {/* PAGE FOLDERS */}
              <div className="mb-8 p-6 bg-slate-50 rounded-[32px] border border-slate-100">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-black"><FolderCheck size={14} /> Nhóm Fanpage theo Folder</h3>
@@ -267,7 +236,6 @@ function AiMarketingContent() {
                 </div>
              </div>
 
-             {/* CHỌN PAGE LẺ */}
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar text-black">
                 {accounts.map((acc: any) => (
                     <div key={acc.platformId} onClick={() => setSelectedPageIds(prev => prev.includes(acc.platformId) ? prev.filter(id => id !== acc.platformId) : [...prev, acc.platformId])} 

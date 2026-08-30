@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { FacebookService } from './facebook.service';
-import { GoogleGenAI } from '@google/genai';
 
 @Injectable()
 export class SocialScheduleService {
@@ -14,23 +13,44 @@ export class SocialScheduleService {
     private facebookService: FacebookService,
   ) {}
 
-  // --- HÀM TỰ ĐỘNG XÀO NỘI DUNG (SPIN) BẰNG AI ---
+  // --- HÀM TỰ ĐỘNG XÀO NỘI DUNG (AI SPIN) SIÊU TRÂU BÒ ---
   private async spinText(text: string): Promise<string> {
     try {
-      // 1. Trộn văn bản thủ công (Cú pháp Spintax: {A|B|C})
       let spinned = text.replace(/\{([^{}]*)\}/g, (match, choices) => {
         const options = choices.split('|');
         return options[Math.floor(Math.random() * options.length)];
       });
 
-      // 2. Dùng AI xào lại nội dung (Nếu hệ thống có gắn key Gemini)
-      if (process.env.GEMINI_API_KEY) {
-         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Hãy đóng vai một chuyên gia Marketing. Viết lại bài đăng Facebook sau bằng tiếng Việt sao cho mới mẻ, văn phong khác đi một chút, giữ nguyên các icon emoji và CỰC KỲ QUAN TRỌNG là giữ nguyên các đường link mua hàng. Không thêm thông tin bịa đặt:\n\n${spinned}`
-         });
-         if (response.text) return response.text;
+      // Ưu tiên 1: Dùng OpenAI (ChatGPT) vì hệ thống bạn có key này
+      if (process.env.OPENAI_API_KEY) {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+              },
+              body: JSON.stringify({
+                  model: 'gpt-4o-mini',
+                  messages: [
+                      { role: 'system', content: 'Bạn là chuyên gia Content. Hãy viết lại bài đăng Facebook sau sao cho mới mẻ, giữ nguyên emoji, CỰC KỲ QUAN TRỌNG: KHÔNG ĐƯỢC XÓA LINK. Trả về trực tiếp bài viết, không giải thích dài dòng.' },
+                      { role: 'user', content: spinned }
+                  ]
+              })
+          });
+          const data = await res.json();
+          if (data?.choices?.[0]?.message?.content) return data.choices[0].message.content.trim();
+      } 
+      // Ưu tiên 2: Fallback qua Gemini API nếu không có OpenAI
+      else if (process.env.GEMINI_API_KEY) {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  contents: [{ parts: [{ text: `Viết lại bài đăng Facebook này, giữ nguyên emoji và KHÔNG ĐƯỢC XÓA link:\n\n${spinned}` }] }]
+              })
+          });
+          const data = await res.json();
+          if (data?.candidates?.[0]?.content?.parts?.[0]?.text) return data.candidates[0].content.parts[0].text.trim();
       }
       return spinned;
     } catch(e) {
@@ -40,34 +60,20 @@ export class SocialScheduleService {
   }
 
   // ========================================================
-  // XỬ LÝ NHẬN LỆNH LÊN LỊCH TỪ FRONTEND
+  // XỬ LÝ LÊN LỊCH
   // ========================================================
   async handleBatchSchedule(data: any) {
-    const { 
-      workspaceId, 
-      baseContent, 
-      pageIds, 
-      imageUrls, 
-      productUrl, 
-      scheduledAt,
-      spinContent // Cờ hiệu Spin từ Frontend gửi lên
-    } = data;
-
+    const { workspaceId, baseContent, pageIds, imageUrls, productUrl, scheduledAt, spinContent } = data;
     const validImages = Array.isArray(imageUrls) ? imageUrls : [];
 
     for (const pageId of pageIds) {
-      // BẮT ĐẦU SPIN NỘI DUNG NẾU ĐƯỢC YÊU CẦU
       let finalContent = baseContent;
       if (spinContent) {
-         this.logger.log(`🌀 Đang Spin AI tạo nội dung độc nhất cho Page ${pageId}...`);
+         this.logger.log(`🌀 Đang gọi AI Spin nội dung độc nhất cho Page ${pageId}...`);
          finalContent = await this.spinText(baseContent);
       }
 
-      const metaPayload = JSON.stringify({
-        images: validImages,
-        pageId: pageId
-      });
-
+      const metaPayload = JSON.stringify({ images: validImages, pageId: pageId });
       const contentWithMeta = `${finalContent}\n\n[KPOST_META]${metaPayload}[/KPOST_META]`;
 
       await this.prisma.post.create({
@@ -76,16 +82,13 @@ export class SocialScheduleService {
           workspaceId: workspaceId,
           productUrl: productUrl || null,
           status: 'scheduled',
-          createdAt: new Date(scheduledAt), 
+          createdAt: new Date(scheduledAt), // Ngày giờ UTC chuẩn từ frontend gửi lên
           userId: 'batch-post' 
         }
       });
     }
 
-    return {
-      success: true,
-      message: `Đã đưa ${pageIds.length} bài viết vào lịch chờ thành công!`
-    };
+    return { success: true, message: `Đã lên lịch thành công` };
   }
 
   // ========================================================
