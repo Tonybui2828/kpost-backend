@@ -20,9 +20,6 @@ export class SocialController {
     private readonly socialScheduleService: SocialScheduleService
   ) {}
 
-  // ==========================================
-  // 1. QUẢN TRỊ TÀI KHOẢN FANPAGE
-  // ==========================================
   @Post('accounts') 
   async saveAccount(@Body() data: any) { 
     const workspace = await this.prisma.workspace.findUnique({
@@ -45,10 +42,6 @@ export class SocialController {
   @Patch('accounts/:id') async updateAccount(@Param('id') id: string, @Body() data: any) { return this.prisma.socialAccount.update({ where: { id }, data }); }
   @Delete('accounts/:id') async deleteAccount(@Param('id') id: string) { return this.prisma.socialAccount.delete({ where: { id } }); }
 
-  // ==========================================
-  // 2. ĐỒNG BỘ & LẤY TIN NHẮN 
-  // ==========================================
-  
   @Post('sync-inbox')
   async syncInbox(@Body() body: { workspaceId: string }) {
     return this.facebookService.syncAllMessages(body.workspaceId);
@@ -70,9 +63,6 @@ export class SocialController {
     });
   }
 
-  // ==========================================
-  // 3. CHIẾN DỊCH HỘI NHÓM & ĐĂNG BÀI 
-  // ==========================================
   @Post('facebook/post-groups')
   async postToGroups(@Body() body: any) {
     const groups = await this.prisma.socialGroup.findMany({ where: { workspaceId: body.workspaceId } });
@@ -82,7 +72,6 @@ export class SocialController {
         const account = await this.prisma.socialAccount.findFirst({ where: { workspaceId: body.workspaceId, platformId: group.pageId } });
         if (account) {
           const imagesToPost = body.imageUrls || body.imageUrl;
-          
           const res = await this.facebookService.postToPage(group.groupId, account.accessToken, body.message, imagesToPost);
           if (res?.id && body.productUrl) await this.facebookService.commentOnPost(res.id, account.accessToken, `🔗 Link mua sản phẩm: ${body.productUrl}`);
           results.push({ group: group.groupName, status: 'success' });
@@ -95,7 +84,6 @@ export class SocialController {
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
     const imagesToPost = body.imageUrls || body.imageUrl;
-
     const res = await this.facebookService.postToPage(body.pageId, body.accessToken, body.message, imagesToPost); 
     if (res?.id && body.productUrl) await this.facebookService.commentOnPost(res.id, body.accessToken, `🔗 Link mua sản phẩm tại đây: ${body.productUrl}`);
     return res;
@@ -141,9 +129,6 @@ export class SocialController {
     });
   }
 
-  // ==========================================
-  // 4. THANH TOÁN TỰ ĐỘNG
-  // ==========================================
   @Post('create-transaction')
   async createTransaction(@Body() body: any) {
     const billCode = `SAASAI${Math.floor(1000 + Math.random() * 8999)}`;
@@ -175,9 +160,6 @@ export class SocialController {
     return res.status(200).json({ error: 0, message: "Done" });
   }
 
-  // ==========================================
-  // 5. WEBHOOK FACEBOOK & AI AUTOPILOT
-  // ==========================================
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
     if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === "saas_ai_token_123") {
@@ -261,9 +243,6 @@ export class SocialController {
     return 'EVENT_RECEIVED';
   }
 
-  // ==========================================
-  // 6. CÁC TIỆN ÍCH AI & REPLY
-  // ==========================================
   @Post('extract-info')
   async extractInfo(@Body() body: { text: string }) {
     const { text } = body;
@@ -277,7 +256,7 @@ export class SocialController {
   @Post('ai-generate-image') async aiImage(@Body() body: { prompt: string }) { return this.aiService.generateImage(body.prompt); }
   @Post('ai-edit-image') async aiEditImage(@Body() body: { imageUrl: string, prompt: string }) { return this.aiService.editImage(body.imageUrl, body.prompt); }
 
-  // 🚀 ĐÃ THÊM: Cổng POST /social/comment-reply để Front-End gọi
+  // 🚀 ĐÃ SỬA: Bỏ phần update status
   @Post('comment-reply')
   async commentReply(@Body() body: any) {
     try {
@@ -288,12 +267,6 @@ export class SocialController {
       
       const fbRes = await this.facebookService.replyToComment(body.commentId, account.accessToken, body.text);
       
-      // Đổi trạng thái trong Database thành "Đã trả lời"
-      await this.prisma.inboxMessage.updateMany({
-        where: { platformId: body.commentId },
-        data: { status: 'replied' }
-      });
-
       return fbRes;
     } catch (e) { 
       throw new HttpException(e.message, HttpStatus.BAD_REQUEST); 
