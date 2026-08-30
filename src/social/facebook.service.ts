@@ -13,6 +13,11 @@ export class FacebookService {
     return token ? token.trim().replace(/\s/g, "") : "";
   }
 
+  // Hàm phụ: Kiểm tra xem link có phải là Video không
+  private isVideo(url: string): boolean {
+    return url.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null;
+  }
+
   // ==========================================
   // 1. ĐỒNG BỘ TIN NHẮN
   // ==========================================
@@ -51,14 +56,14 @@ export class FacebookService {
   }
 
   // ==========================================
-  // 2. ĐĂNG BÀI FACEBOOK (CHUẨN 1 ẢNH & NHIỀU ẢNH)
+  // 2. ĐĂNG BÀI FACEBOOK (CHUẨN 1 ẢNH / 1 VIDEO / NHIỀU ẢNH)
   // ==========================================
   async postToPage(pageId: string, accessToken: string, message: string, imageUrls?: any, productUrl?: string): Promise<any> {
     const cleanToken = this.clean(accessToken);
     
-    // Lọc danh sách link ảnh hợp lệ
+    // Lọc danh sách link ảnh/video hợp lệ
     const rawImages = Array.isArray(imageUrls) ? imageUrls : (imageUrls ? [imageUrls] : []);
-    const validImages = rawImages
+    const validMediaUrls = rawImages
       .filter((url: any) => typeof url === 'string' && url.trim().startsWith('http'))
       .map((url: string) => url.trim());
 
@@ -66,12 +71,25 @@ export class FacebookService {
 
     try {
       // ----------------------------------------------------
-      // TRƯỜNG HỢP 1: ĐĂNG 1 ẢNH DUY NHẤT (POST PHOTO TRỰC TIẾP)
+      // TRƯỜNG HỢP 1: ĐĂNG 1 VIDEO DUY NHẤT (REELS/VIDEO POST)
       // ----------------------------------------------------
-      if (validImages.length === 1) {
+      if (validMediaUrls.length === 1 && this.isVideo(validMediaUrls[0])) {
+        this.logger.log(`--- 🎥 [Page: ${pageId}] Đang đăng Video / Reels ---`);
+        const videoRes = await axios.post(`${this.graphUrl}/${pageId}/videos`, {
+          file_url: validMediaUrls[0], // Lưu ý: API video dùng file_url thay vì url
+          description: message,        // API video dùng description thay vì caption
+          published: true,
+          access_token: cleanToken,
+        });
+        resultId = videoRes.data?.post_id || videoRes.data?.id;
+      }
+      // ----------------------------------------------------
+      // TRƯỜNG HỢP 2: ĐĂNG 1 ẢNH DUY NHẤT
+      // ----------------------------------------------------
+      else if (validMediaUrls.length === 1 && !this.isVideo(validMediaUrls[0])) {
         this.logger.log(`--- 📸 [Page: ${pageId}] Đang đăng bài kèm 1 ảnh đơn ---`);
         const photoRes = await axios.post(`${this.graphUrl}/${pageId}/photos`, {
-          url: validImages[0],
+          url: validMediaUrls[0],
           caption: message,
           published: true,
           access_token: cleanToken,
@@ -79,17 +97,22 @@ export class FacebookService {
         resultId = photoRes.data?.post_id || photoRes.data?.id;
       } 
       // ----------------------------------------------------
-      // TRƯỜNG HỢP 2: ĐĂNG TỪ 2 ẢNH TRỞ LÊN (ALBUM POST)
+      // TRƯỜNG HỢP 3: ĐĂNG TỪ 2 MEDIA TRỞ LÊN (ALBUM ẢNH)
       // ----------------------------------------------------
-      else if (validImages.length > 1) {
-        this.logger.log(`--- 📸 [Page: ${pageId}] Đang xử lý đăng Album kèm ${validImages.length} ảnh ---`);
+      else if (validMediaUrls.length > 1) {
+        this.logger.log(`--- 📸 [Page: ${pageId}] Đang xử lý đăng Album kèm ${validMediaUrls.length} file ---`);
         
-        // Bước A: Tải từng ảnh lên Facebook ở trạng thái tạm (published=false)
         const mediaObjects = [];
-        for (const imgUrl of validImages) {
+        for (const mediaUrl of validMediaUrls) {
+          // Lưu ý: Facebook Graph API hạn chế gộp Video và Ảnh chung vào attached_media của Feed
+          // Tốt nhất trong mảng nhiều file ta coi như tải Album ảnh. Nếu có video nó có thể bỏ qua hoặc lỗi
+          if (this.isVideo(mediaUrl)) {
+             this.logger.warn(`⚠ Facebook Album API hiện không hỗ trợ gộp Video. Đã bỏ qua file video: ${mediaUrl}`);
+             continue; 
+          }
           try {
             const uploadRes = await axios.post(`${this.graphUrl}/${pageId}/photos`, {
-              url: imgUrl,
+              url: mediaUrl,
               published: false,
               access_token: cleanToken,
             });
@@ -97,27 +120,26 @@ export class FacebookService {
               mediaObjects.push({ media_fbid: uploadRes.data.id });
             }
           } catch (uploadErr) {
-            this.logger.error(`Lỗi tải ảnh (${imgUrl}): ${uploadErr.response?.data?.error?.message || uploadErr.message}`);
+            this.logger.error(`Lỗi tải ảnh (${mediaUrl}): ${uploadErr.response?.data?.error?.message || uploadErr.message}`);
           }
         }
 
         if (mediaObjects.length === 0) {
-          throw new Error('Không thể tải bất kỳ hình ảnh nào lên Facebook Server');
+          throw new Error('Không thể tải bất kỳ hình ảnh nào hợp lệ lên Facebook Server');
         }
 
-        // Bước B: Đăng bài viết Feed gắn kèm mảng attached_media chuẩn JSON Array
         const feedRes = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
           message: message,
-          attached_media: mediaObjects, // MẢNG OBJECT CHUẨN (KHÔNG DÙNG JSON.stringify)
+          attached_media: mediaObjects,
           access_token: cleanToken,
         });
         resultId = feedRes.data?.id;
       } 
       // ----------------------------------------------------
-      // TRƯỜNG HỢP 3: CHỈ ĐĂNG VĂN BẢN (KHÔNG ẢNH)
+      // TRƯỜNG HỢP 4: CHỈ ĐĂNG VĂN BẢN (KHÔNG CÓ MEDIA)
       // ----------------------------------------------------
       else {
-        this.logger.log(`--- 📝 [Page: ${pageId}] Đang đăng bài dạng chữ (không ảnh) ---`);
+        this.logger.log(`--- 📝 [Page: ${pageId}] Đang đăng bài dạng chữ (không đính kèm) ---`);
         const feedRes = await axios.post(`${this.graphUrl}/${pageId}/feed`, {
           message: message,
           access_token: cleanToken,
@@ -128,7 +150,7 @@ export class FacebookService {
       // --- TỰ ĐỘNG CHÈN LINK VÀO BÌNH LUẬN ---
       if (resultId && productUrl) {
         this.logger.log(`--- 🔗 Auto comment link mua hàng vào post ${resultId} ---`);
-        await this.commentOnPost(resultId, cleanToken, `Dạ em gửi mình link xem chi tiết và đặt hàng tại đây nhé: ${productUrl} 😍🚀`);
+        await this.commentOnPost(resultId, cleanToken, `🔗 Link mua sản phẩm: ${productUrl}`);
       }
 
       return { id: resultId, status: 'success' };

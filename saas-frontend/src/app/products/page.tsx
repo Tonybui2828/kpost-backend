@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { 
   Plus, Package, Tag, Loader2, X, UploadCloud, 
-  PenTool, Edit3, Trash2, Film, Image as ImageIcon, FileText 
+  PenTool, Edit3, Trash2, Film, Image as ImageIcon, FileText, Video
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -27,15 +27,14 @@ export default function ProductsPage() {
     price: "", 
     skuInternal: "", 
     totalStock: "", 
-    images: [] as string[], // Mảng chứa tối đa 10 ảnh
+    images: [] as string[], // Mảng chứa tối đa 10 file (Ảnh/Video)
     productUrl: ""
   });
 
-  // Lấy Workspace ID từ máy người dùng
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
-        // Cập nhật logic nếu cần lấy ID động
+        // Cập nhật logic nếu cần
     }
   }, []);
 
@@ -48,11 +47,17 @@ export default function ProductsPage() {
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  // --- HÀM XỬ LÝ UPLOAD NHIỀU ẢNH (TỐI ĐA 10) ---
+  // --- HÀM KIỂM TRA VIDEO ---
+  const isVideo = (url: string) => {
+    if (!url) return false;
+    return url.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null;
+  };
+
+  // --- HÀM XỬ LÝ UPLOAD NHIỀU MEDIA (ẢNH/VIDEO) ---
   const handleUploadMultiple = async (e: any) => {
     const files = Array.from(e.target.files);
     if (newProduct.images.length + files.length > 10) {
-      return alert("Bạn chỉ được tải lên tối đa 10 ảnh cho mỗi sản phẩm!");
+      return alert("Bạn chỉ được tải lên tối đa 10 Media (Ảnh/Video) cho mỗi sản phẩm!");
     }
     
     setUploading(true);
@@ -144,29 +149,39 @@ export default function ProductsPage() {
           <form onSubmit={handleSaveProduct} className="space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               
-              {/* CỘT 1: QUẢN LÝ 10 ẢNH */}
+              {/* CỘT 1: QUẢN LÝ 10 MEDIA (ẢNH/VIDEO) */}
               <div className="space-y-4">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex justify-between">
-                   <span>Ảnh sản phẩm ({newProduct.images.length}/10)</span>
+                   <span>Media (Ảnh/Video) ({newProduct.images.length}/10)</span>
                    {uploading && <span className="text-blue-600 animate-pulse italic">Đang tải...</span>}
                 </label>
                 
                 <div className="grid grid-cols-5 gap-3 p-4 bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 min-h-[200px]">
                     {newProduct.images.map((url, idx) => (
-                        <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden shadow-md group border-2 border-white">
-                            <img src={url} className="w-full h-full object-cover" alt="product" />
-                            <button type="button" onClick={() => setNewProduct({...newProduct, images: newProduct.images.filter((_, i) => i !== idx)})} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={10}/></button>
+                        <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden shadow-md group border-2 border-white bg-slate-900">
+                            {/* Phân biệt hiển thị Ảnh hoặc Video */}
+                            {isVideo(url) ? (
+                               <video src={url} className="w-full h-full object-cover opacity-90" muted loop autoPlay playsInline />
+                            ) : (
+                               <img src={url} className="w-full h-full object-cover" alt="product" />
+                            )}
+                            
+                            {isVideo(url) && <Film className="absolute bottom-1 left-1 text-white shadow-sm" size={14} />}
+
+                            <button type="button" onClick={() => setNewProduct({...newProduct, images: newProduct.images.filter((_, i) => i !== idx)})} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"><X size={10}/></button>
                         </div>
                     ))}
                     
                     {newProduct.images.length < 10 && (
-                        <label className="aspect-square rounded-2xl bg-white border-2 border-dashed border-blue-200 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-all text-blue-400 group">
-                            <UploadCloud size={24} className="group-hover:scale-110 transition-transform" />
-                            <input type="file" multiple className="hidden" accept="image/*" onChange={handleUploadMultiple} />
+                        <label className="aspect-square rounded-2xl bg-white border-2 border-dashed border-blue-200 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-all text-blue-400 group relative">
+                            <UploadCloud size={24} className="group-hover:scale-110 transition-transform mb-1" />
+                            <span className="text-[8px] font-bold">Thêm Media</span>
+                            {/* Chỗ này quan trọng: Mở khóa chọn cả Video (mp4, mov,...) */}
+                            <input type="file" multiple className="hidden" accept="image/*,video/*" onChange={handleUploadMultiple} />
                         </label>
                     )}
                 </div>
-                <p className="text-[9px] text-slate-400 italic">* Lưu ý: Bạn có thể chọn nhiều ảnh cùng lúc.</p>
+                <p className="text-[9px] text-slate-400 italic">* Lưu ý: Bạn có thể chọn nhiều file. Hỗ trợ cả ẢNH và VIDEO (để đăng Reels).</p>
               </div>
 
               {/* CỘT 2: THÔNG TIN CHI TIẾT */}
@@ -209,17 +224,27 @@ export default function ProductsPage() {
 
       {/* DANH SÁCH SẢN PHẨM HIỂN THỊ */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-black">
-        {products.map((p: any) => (
+        {products.map((p: any) => {
+          const firstMedia = p.images?.[0] || p.imageUrl || "";
+          const hasVideo = p.images?.some((url: string) => isVideo(url)) || isVideo(p.imageUrl);
+
+          return (
           <div key={p.id} className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-2xl transition-all relative">
             <div className="absolute top-4 right-4 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                <button onClick={() => startEdit(p)} className="p-2 bg-white/90 text-orange-500 rounded-xl shadow-md border hover:bg-orange-500 hover:text-white transition-all"><Edit3 size={18}/></button>
                <button onClick={() => handleDelete(p.id)} className="p-2 bg-white/90 text-red-500 rounded-xl shadow-md border hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18}/></button>
             </div>
             
-            <div className="h-64 bg-slate-100 relative overflow-hidden">
-                <img src={p.images?.[0] || p.imageUrl || ""} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={p.name} />
+            <div className="h-64 bg-slate-900 relative overflow-hidden">
+                {isVideo(firstMedia) ? (
+                    <video src={firstMedia} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" muted loop autoPlay playsInline />
+                ) : (
+                    <img src={firstMedia} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={p.name} />
+                )}
+                
                 <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md text-white px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-white/20">
-                    <ImageIcon size={12} /> {p.images?.length || 1} ẢNH
+                    {hasVideo ? <Film size={12} className="text-pink-400" /> : <ImageIcon size={12} />} 
+                    {p.images?.length || 1} FILE
                 </div>
             </div>
 
@@ -243,7 +268,7 @@ export default function ProductsPage() {
               </button>
             </div>
           </div>
-        ))}
+        )})}
       </div>
     </div>
   );

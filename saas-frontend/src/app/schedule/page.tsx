@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Clock, Calendar, Loader2, Trash2, RefreshCw, Edit } from "lucide-react";
@@ -8,7 +7,7 @@ export default function SchedulePage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [posts, setPosts] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]); // State lưu danh sách Fanpage thật
+  const [accounts, setAccounts] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   const [editingPost, setEditingPost] = useState<any>(null);
@@ -23,7 +22,6 @@ export default function SchedulePage() {
     if (!workspaceId) return; 
     setLoading(true);
     try {
-      // Gọi song song API lấy bài viết và lấy danh sách Fanpage
       const [postRes, accRes] = await Promise.all([
          axios.get(`${API_URL}/social/scheduled-posts?workspaceId=${workspaceId}`),
          axios.get(`${API_URL}/social/accounts?workspaceId=${workspaceId}`)
@@ -67,14 +65,16 @@ export default function SchedulePage() {
     } catch(error) {}
   };
 
-  // Sắp xếp bài đăng theo thời gian
   const sortedPosts = [...posts].sort((a, b) => new Date(a.scheduledAt || a.createdAt).getTime() - new Date(b.scheduledAt || b.createdAt).getTime());
 
-  // Gom nhóm bài đăng theo ngày
   const groupedPosts: Record<string, any[]> = {};
   sortedPosts.forEach(post => {
     const d = new Date(post.scheduledAt || post.createdAt);
-    const dateKey = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    // 🚀 FIX LỖI TIMEZONE: Ép cứng giờ hiển thị là giờ Việt Nam (UTC + 7)
+    const vnTime = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+    
+    // Gom nhóm theo ngày Việt Nam
+    const dateKey = `${vnTime.getUTCDate().toString().padStart(2, '0')}/${(vnTime.getUTCMonth() + 1).toString().padStart(2, '0')}/${vnTime.getUTCFullYear()}`;
     if (!groupedPosts[dateKey]) groupedPosts[dateKey] = [];
     groupedPosts[dateKey].push(post);
   });
@@ -116,17 +116,19 @@ export default function SchedulePage() {
                    <div className="flex flex-col gap-3">
                       {dailyPosts.map((post) => {
                          const d = new Date(post.scheduledAt || post.createdAt);
-                         const timeString = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                         
+                         // 🚀 Đóng đinh hiển thị giờ VN (Bỏ qua sai lệch của máy tính/trình duyệt)
+                         const vnTime = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+                         const timeString = `${vnTime.getUTCHours().toString().padStart(2, '0')}:${vnTime.getUTCMinutes().toString().padStart(2, '0')}`;
                          
                          const displayContent = (post.content || "").replace(/\[KPOST_META\].*?\[\/KPOST_META\]/s, '').trim();
                          
-                         // 🚀 LẤY TÊN THẬT CỦA FANPAGE TỪ META DATA
+                         // LẤY TÊN THẬT CỦA FANPAGE TỪ META DATA
                          let targetPageId = "";
                          const metaMatch = post.content.match(/\[KPOST_META\](.*?)\[\/KPOST_META\]/s);
                          if (metaMatch && metaMatch[1]) {
                              try { targetPageId = JSON.parse(metaMatch[1]).pageId; } catch(e) {}
                          }
-                         // So khớp ID để lấy tên
                          const accountMatch = accounts.find(a => a.platformId === targetPageId);
                          const pageName = accountMatch ? accountMatch.accountName : "Fanpage không xác định";
 
