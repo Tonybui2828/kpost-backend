@@ -10,7 +10,7 @@ export default function CommentsPage() {
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState<{ [key: string]: boolean }>({});
-  const [repliedIds, setRepliedIds] = useState<string[]>([]); // Lưu vết những comment đã trả lời để đổi màu
+  const [repliedIds, setRepliedIds] = useState<string[]>([]);
   
   const [workspaceId, setWorkspaceId] = useState<string>("");
 
@@ -25,12 +25,14 @@ export default function CommentsPage() {
       await axios.post(`${API_URL}/social/sync-inbox`, { workspaceId });
       const res = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`);
       
-      // 🚀 LỌC BỎ INBOX: Chỉ lấy những tin có type là 'comment'
-      const onlyComments = (res.data || []).filter((c: any) => c.type === 'comment');
+      const validComments = (res.data || []).filter((c: any) => {
+          const isComment = c.type === 'comment';
+          const isNotFromPage = c.senderName !== c.pageName;
+          const isNotAutoLink = !c.content.includes("Link mua sản phẩm"); 
+          return isComment && isNotFromPage && isNotAutoLink;
+      });
       
-      // Sắp xếp bình luận mới nhất lên đầu (hoặc cũ nhất tùy bạn, ở đây xếp mới nhất)
-      const sortedComments = onlyComments.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      
+      const sortedComments = validComments.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setComments(sortedComments);
     } catch (e) { 
       console.error("Lỗi kết nối:", e); 
@@ -44,7 +46,6 @@ export default function CommentsPage() {
     if (workspaceId) fetchComments(); 
   }, [workspaceId]);
 
-  // --- HÀM TÍNH THỜI GIAN CHỜ ---
   const getWaitTime = (dateStr: string) => {
     if (!dateStr) return "";
     const diffMs = new Date().getTime() - new Date(dateStr).getTime();
@@ -57,24 +58,25 @@ export default function CommentsPage() {
     return `${Math.floor(diffHours / 24)} ngày`;
   };
 
-  // --- HÀM GỌI AI TRẢ LỜI ---
+  // 🚀 ĐÃ SỬA: Khớp đúng tên biến msg và wsId với Backend để gọi AI thành công
   const handleAiSuggest = async (comment: any) => {
     setAiLoading({ ...aiLoading, [comment.id]: true });
     try {
       const res = await axios.post(`${API_URL}/ai-content/suggest-reply`, {
-        message: comment.content,
-        workspaceId
+        msg: comment.content,           // Cần dùng đúng tên msg
+        wsId: workspaceId,              // Cần dùng đúng tên wsId
+        message: comment.content,       // Backup
+        workspaceId: workspaceId        // Backup
       });
-      // Lấy kết quả AI điền thẳng vào ô text
       setReplyText({ ...replyText, [comment.id]: res.data });
-    } catch (error) {
-      alert("AI đang bận, vui lòng thử lại sau!");
+    } catch (error: any) {
+      alert("Lỗi AI: " + (error.response?.data?.message || error.message));
     } finally {
       setAiLoading({ ...aiLoading, [comment.id]: false });
     }
   };
 
-  // --- HÀM GỬI PHẢN HỒI LÊN FACEBOOK ---
+  // 🚀 ĐÃ SỬA: Hiển thị lỗi gốc từ Facebook / Backend nếu gửi xịt
   const handleReply = async (comment: any) => {
     const text = replyText[comment.id];
     if (!text || !text.trim()) return alert("Vui lòng nhập nội dung!");
@@ -88,13 +90,13 @@ export default function CommentsPage() {
       });
       alert("Đã gửi phản hồi thành công! ✅");
       
-      // Xóa chữ trong ô input và Đánh dấu là đã trả lời (để chuyển màu thẻ)
       setReplyText({ ...replyText, [comment.id]: "" });
       if (!repliedIds.includes(comment.id)) {
           setRepliedIds([...repliedIds, comment.id]);
       }
-    } catch (error) { 
-      alert("Lỗi khi phản hồi! Kiểm tra lại kết nối mạng."); 
+    } catch (error: any) { 
+      const errorMsg = error.response?.data?.message || error.message;
+      alert(`Lỗi khi phản hồi: ${errorMsg}`); 
     }
   };
 
@@ -124,7 +126,6 @@ export default function CommentsPage() {
           </div>
         ) : (
           comments.map((comment: any) => {
-            // Kiểm tra xem comment đã được trả lời chưa (có cờ status từ DB hoặc đã thao tác ở frontend)
             const isReplied = comment.status === 'replied' || repliedIds.includes(comment.id);
             
             return (
@@ -132,8 +133,8 @@ export default function CommentsPage() {
                 key={comment.id} 
                 className={`p-8 rounded-[36px] shadow-xl border animate-in fade-in slide-in-from-bottom-4 duration-500 transition-colors ${
                     isReplied 
-                    ? 'bg-white border-slate-100 opacity-70' // Trạng thái Đã trả lời (Trắng)
-                    : 'bg-emerald-50 border-emerald-300' // Trạng thái Chưa trả lời (Xanh lá)
+                    ? 'bg-white border-slate-100 opacity-70'
+                    : 'bg-emerald-50 border-emerald-300' 
                 }`}
               >
                 <div className="flex justify-between items-start mb-6">
@@ -149,7 +150,6 @@ export default function CommentsPage() {
                     </div>
                   </div>
 
-                  {/* THẺ TRẠNG THÁI (STATUS BADGE) */}
                   <div className="flex flex-col items-end gap-1">
                       {isReplied ? (
                          <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 px-3 py-1 rounded-full">
@@ -173,7 +173,6 @@ export default function CommentsPage() {
                   "{comment.content}"
                 </div>
 
-                {/* KHU VỰC NHẬP VÀ GỌI AI */}
                 <div className="flex gap-3">
                   <input 
                     className="flex-1 p-4 bg-white border border-slate-200 rounded-[20px] outline-none text-black font-bold focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm"
@@ -183,7 +182,6 @@ export default function CommentsPage() {
                     onKeyPress={(e) => e.key === 'Enter' && handleReply(comment)}
                   />
                   
-                  {/* NÚT AI */}
                   <button 
                     onClick={() => handleAiSuggest(comment)}
                     disabled={aiLoading[comment.id] || isReplied}
@@ -193,7 +191,6 @@ export default function CommentsPage() {
                     {aiLoading[comment.id] ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
                   </button>
 
-                  {/* NÚT GỬI */}
                   <button 
                     onClick={() => handleReply(comment)}
                     disabled={!replyText[comment.id]?.trim()}

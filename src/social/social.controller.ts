@@ -126,9 +126,6 @@ export class SocialController {
 
   @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
 
-  // ==========================================
-  // QUẢN LÝ BÀI ĐĂNG (SỬA & XÓA) - MỚI THÊM 🚀
-  // ==========================================
   @Delete('scheduled-posts/:id')
   async deleteScheduledPost(@Param('id') id: string) {
     return this.prisma.post.delete({
@@ -279,6 +276,29 @@ export class SocialController {
   @Post('ai-suggest-reply') async suggestReply(@Body() body: any) { return this.aiService.suggestReply(body.customerMessage, body.workspaceId); }
   @Post('ai-generate-image') async aiImage(@Body() body: { prompt: string }) { return this.aiService.generateImage(body.prompt); }
   @Post('ai-edit-image') async aiEditImage(@Body() body: { imageUrl: string, prompt: string }) { return this.aiService.editImage(body.imageUrl, body.prompt); }
+
+  // 🚀 ĐÃ THÊM: Cổng POST /social/comment-reply để Front-End gọi
+  @Post('comment-reply')
+  async commentReply(@Body() body: any) {
+    try {
+      const account = await this.prisma.socialAccount.findFirst({ 
+        where: { workspaceId: body.workspaceId, accountName: body.pageName } 
+      });
+      if (!account) throw new Error("Không tìm thấy Fanpage");
+      
+      const fbRes = await this.facebookService.replyToComment(body.commentId, account.accessToken, body.text);
+      
+      // Đổi trạng thái trong Database thành "Đã trả lời"
+      await this.prisma.inboxMessage.updateMany({
+        where: { platformId: body.commentId },
+        data: { status: 'replied' }
+      });
+
+      return fbRes;
+    } catch (e) { 
+      throw new HttpException(e.message, HttpStatus.BAD_REQUEST); 
+    }
+  }
 
   @Post('reply') 
   async sendReply(@Body() body: any) { 
