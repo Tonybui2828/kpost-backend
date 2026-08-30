@@ -19,37 +19,81 @@ export class FacebookService {
   }
 
   // ==========================================
-  // 1. ĐỒNG BỘ TIN NHẮN
+  // 1. ĐỒNG BỘ TIN NHẮN & BÌNH LUẬN
   // ==========================================
   async syncAllMessages(workspaceId: string) {
     try {
       const accounts = await this.prisma.socialAccount.findMany({ where: { workspaceId } });
+      
       for (const acc of accounts) {
-        const url = `${this.graphUrl}/${acc.platformId}/conversations?fields=messages{message,from,created_time},participants&access_token=${this.clean(acc.accessToken)}`;
-        const response = await axios.get(url);
-        const conversations = response.data.data || [];
-        for (const conv of conversations) {
-          const lastMsg = conv.messages?.data[0];
-          if (lastMsg && lastMsg.from?.id !== acc.platformId) {
-            await this.prisma.inboxMessage.upsert({
-              where: { platformId: lastMsg.id },
-              update: { content: lastMsg.message },
-              create: {
-                workspaceId, 
-                platform: 'facebook', 
-                type: 'inbox',
-                senderName: lastMsg.from?.name || "Khách hàng mới",
-                senderId: lastMsg.from?.id || "",
-                content: lastMsg.message, 
-                platformId: lastMsg.id,
-                pageName: acc.accountName, 
-                createdAt: new Date(lastMsg.created_time)
-              }
-            });
+        const cleanToken = this.clean(acc.accessToken);
+
+        // --- A. QUÉT INBOX (TIN NHẮN) ---
+        try {
+          const inboxUrl = `${this.graphUrl}/${acc.platformId}/conversations?fields=messages{message,from,created_time},participants&access_token=${cleanToken}`;
+          const response = await axios.get(inboxUrl);
+          const conversations = response.data.data || [];
+          
+          for (const conv of conversations) {
+            const lastMsg = conv.messages?.data[0];
+            if (lastMsg && lastMsg.from?.id !== acc.platformId) {
+              await this.prisma.inboxMessage.upsert({
+                where: { platformId: lastMsg.id },
+                update: { content: lastMsg.message },
+                create: {
+                  workspaceId, 
+                  platform: 'facebook', 
+                  type: 'inbox',
+                  senderName: lastMsg.from?.name || "Khách hàng",
+                  senderId: lastMsg.from?.id || "",
+                  content: lastMsg.message, 
+                  platformId: lastMsg.id,
+                  pageName: acc.accountName, 
+                  createdAt: new Date(lastMsg.created_time)
+                }
+              });
+            }
           }
+        } catch (e) { 
+          this.logger.error(`Lỗi quét Inbox Page ${acc.accountName}`); 
+        }
+
+        // --- B. QUÉT COMMENTS (BÌNH LUẬN) ---
+        try {
+          // Lấy danh sách bài đăng và bình luận của bài đăng đó
+          const feedUrl = `${this.graphUrl}/${acc.platformId}/feed?fields=comments{id,message,from,created_time}&access_token=${cleanToken}`;
+          const feedRes = await axios.get(feedUrl);
+          const posts = feedRes.data.data || [];
+
+          for (const post of posts) {
+            if (post.comments && post.comments.data) {
+              for (const comment of post.comments.data) {
+                // CHẶN BÌNH LUẬN RÁC: Chỉ lưu bình luận nếu ID người gửi KHÁC với ID của Page
+                if (comment.from?.id !== acc.platformId && comment.from?.name !== acc.accountName) {
+                  await this.prisma.inboxMessage.upsert({
+                    where: { platformId: comment.id },
+                    update: { content: comment.message },
+                    create: {
+                      workspaceId,
+                      platform: 'facebook',
+                      type: 'comment',
+                      senderName: comment.from?.name || "Khách hàng",
+                      senderId: comment.from?.id || "",
+                      content: comment.message,
+                      platformId: comment.id,
+                      pageName: acc.accountName,
+                      createdAt: new Date(comment.created_time)
+                    }
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) { 
+          this.logger.error(`Lỗi quét Comments Page ${acc.accountName}`); 
         }
       }
-      return { status: 'success', message: 'Đồng bộ hoàn tất!' };
+      return { status: 'success', message: 'Đồng bộ Tin nhắn & Bình luận hoàn tất!' };
     } catch (error) {
       return { status: 'error', message: error.message };
     }
@@ -76,8 +120,8 @@ export class FacebookService {
       if (validMediaUrls.length === 1 && this.isVideo(validMediaUrls[0])) {
         this.logger.log(`--- 🎥 [Page: ${pageId}] Đang đăng Video / Reels ---`);
         const videoRes = await axios.post(`${this.graphUrl}/${pageId}/videos`, {
-          file_url: validMediaUrls[0], // Lưu ý: API video dùng file_url thay vì url
-          description: message,        // API video dùng description thay vì caption
+          file_url: validMediaUrls[0], 
+          description: message,        
           published: true,
           access_token: cleanToken,
         });
@@ -104,8 +148,6 @@ export class FacebookService {
         
         const mediaObjects = [];
         for (const mediaUrl of validMediaUrls) {
-          // Lưu ý: Facebook Graph API hạn chế gộp Video và Ảnh chung vào attached_media của Feed
-          // Tốt nhất trong mảng nhiều file ta coi như tải Album ảnh. Nếu có video nó có thể bỏ qua hoặc lỗi
           if (this.isVideo(mediaUrl)) {
              this.logger.warn(`⚠ Facebook Album API hiện không hỗ trợ gộp Video. Đã bỏ qua file video: ${mediaUrl}`);
              continue; 
