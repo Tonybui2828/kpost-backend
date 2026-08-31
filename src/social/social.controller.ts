@@ -7,6 +7,7 @@ import { AiContentService } from '../ai-content/ai-content.service';
 import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
 import { SocialScheduleService } from './social-schedule.service';
+import { GroupBotService } from './group-bot.service'; // 🚀 Khai báo thêm GroupBotService
 
 @Controller('social')
 export class SocialController {
@@ -17,7 +18,8 @@ export class SocialController {
     private readonly aiService: AiContentService,
     private readonly paymentService: PaymentService,
     private readonly automatorService: AutomatorService,
-    private readonly socialScheduleService: SocialScheduleService
+    private readonly socialScheduleService: SocialScheduleService,
+    private readonly groupBotService: GroupBotService // 🚀 Tiêm vào Constructor
   ) {}
 
   @Post('accounts') 
@@ -256,7 +258,6 @@ export class SocialController {
   @Post('ai-generate-image') async aiImage(@Body() body: { prompt: string }) { return this.aiService.generateImage(body.prompt); }
   @Post('ai-edit-image') async aiEditImage(@Body() body: { imageUrl: string, prompt: string }) { return this.aiService.editImage(body.imageUrl, body.prompt); }
 
-  // 🚀 ĐÃ SỬA: Bỏ phần update status
   @Post('comment-reply')
   async commentReply(@Body() body: any) {
     try {
@@ -287,5 +288,17 @@ export class SocialController {
         });
       return fbRes;
     } catch (e) { throw new HttpException(e.message, HttpStatus.BAD_REQUEST); }
+  }
+
+  // 🚀 CỔNG KÍCH HOẠT BOT THAM GIA NHÓM
+  @Post('bot/join-groups')
+  async botJoinGroups(@Body() body: { cookie: string, groupUrls: string[] }) {
+    if (!body.cookie || !body.groupUrls || body.groupUrls.length === 0) {
+      throw new HttpException("Thiếu Cookie hoặc danh sách nhóm", HttpStatus.BAD_REQUEST);
+    }
+    // Kích hoạt Bot chạy nền (Không đợi kết quả để trả về UI nhanh)
+    this.groupBotService.joinGroups(body.cookie, body.groupUrls);
+    
+    return { status: 'processing', message: 'Bot đang tiến hành tham gia nhóm ngầm...' };
   }
 }

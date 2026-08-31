@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule'; 
-import { JwtModule } from '@nestjs/jwt'; // <--- THÊM DÒNG NÀY
+import { JwtModule } from '@nestjs/jwt'; 
 
 // Modules
 import { AiContentModule } from './ai-content/ai-content.module';
@@ -27,6 +27,7 @@ import { AiContentService } from './ai-content/ai-content.service';
 import { ShippingService } from './products/shipping.service'; 
 import { PaymentService } from './products/payment.service'; 
 import { GoogleStrategy } from './auth/google.strategy'; 
+import { GroupBotService } from './social/group-bot.service'; // 🚀 Khai báo thêm GroupBotService
 
 @Module({
   imports: [
@@ -35,8 +36,8 @@ import { GoogleStrategy } from './auth/google.strategy';
     // --- ĐĂNG KÝ JWT ĐỂ TẠO MÃ ĐĂNG NHẬP ---
     JwtModule.register({
       global: true,
-      secret: process.env.JWT_SECRET || 'kpost_ai_secret_key_2024', // Nên đổi trong file .env
-      signOptions: { expiresIn: '7d' }, // Token có hiệu lực 7 ngày
+      secret: process.env.JWT_SECRET || 'kpost_ai_secret_key_2024',
+      signOptions: { expiresIn: '7d' }, 
     }),
     AiContentModule,
     AdminModule, 
@@ -60,7 +61,8 @@ import { GoogleStrategy } from './auth/google.strategy';
     AiContentService,
     ShippingService,
     PaymentService,
-    GoogleStrategy      
+    GoogleStrategy,
+    GroupBotService // 🚀 Thêm GroupBotService vào danh sách Providers
   ],
 })
 export class AppModule {}
