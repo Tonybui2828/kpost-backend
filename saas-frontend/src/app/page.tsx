@@ -1,10 +1,11 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import axios from "axios";
 import { useSearchParams } from "next/navigation";
 import { 
   Loader2, Sparkles, Globe, Edit3, 
-  Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Square, CheckCircle2
+  Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Square, CheckCircle2,
+  Image as ImageIcon, Plus 
 } from "lucide-react";
 
 function AiMarketingContent() {
@@ -19,7 +20,9 @@ function AiMarketingContent() {
   const [posting, setPosting] = useState(false); 
   const [isEditing, setIsEditing] = useState(false);
 
-  // Vẫn giữ state mảng ảnh để ngầm nhận dữ liệu từ trang Sản phẩm truyền sang (qua URL)
+  // --- QUẢN LÝ ẢNH ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [availableImages, setAvailableImages] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   
   // --- QUẢN LÝ PAGE & FOLDER ---
@@ -35,13 +38,33 @@ function AiMarketingContent() {
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
 
+  // LẤY DỮ LIỆU TỪ LOCAL STORAGE KHI LOAD TRANG
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId") || "workspace-01";
     setWorkspaceId(savedId);
+
+    // Bắt dữ liệu từ trang Sản phẩm truyền qua
+    const savedTopic = localStorage.getItem("pendingAIPost_topic");
+    const savedImgs = localStorage.getItem("pendingAIPost_imgs");
+
+    if (savedTopic) {
+      setTopic(savedTopic);
+      localStorage.removeItem("pendingAIPost_topic");
+    }
+
+    if (savedImgs) {
+      const imgList = savedImgs.split(',');
+      setAvailableImages(prev => [...new Set([...imgList, ...prev])]); // Lưu vào kho ảnh hiện có
+      setSelectedImages(imgList); // Tự động chọn luôn ảnh này
+      localStorage.removeItem("pendingAIPost_imgs");
+    }
+
+    // Load Folder
     const savedGroups = localStorage.getItem("kpost_page_groups");
     if (savedGroups) setPageGroups(JSON.parse(savedGroups));
   }, []);
 
+  // Lấy dữ liệu Fanpage & Fallback lấy params cũ từ URL
   useEffect(() => {
     const fetchAccounts = async () => {
       if (!workspaceId) return;
@@ -54,12 +77,20 @@ function AiMarketingContent() {
 
     const t = searchParams.get("topic");
     const imgs = searchParams.get("imgs");
-    if (t) setTopic(t);
-    if (imgs) {
+    if (t && !topic) setTopic(t); 
+    if (imgs && selectedImages.length === 0) {
         const imgList = imgs.split(',');
+        setAvailableImages(prev => [...new Set([...imgList, ...prev])]);
         setSelectedImages(imgList); 
     }
   }, [searchParams, API_URL, workspaceId]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const newUrls = Array.from(files).map(file => URL.createObjectURL(file));
+    setAvailableImages(prev => [...prev, ...newUrls]);
+  };
 
   const handleGenerateContent = async () => {
     if (!topic) return alert("Nhập chủ đề!");
@@ -79,7 +110,6 @@ function AiMarketingContent() {
       if (isScheduling) {
         if (!scheduleDate) return alert("Vui lòng chọn ngày giờ hẹn lịch!");
         
-        // Ép múi giờ chuẩn VN
         const exactVnTime = `${scheduleDate}:00+07:00`;
         const isoDate = new Date(exactVnTime).toISOString();
 
@@ -110,38 +140,69 @@ function AiMarketingContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 text-black font-sans">
-      <div className="max-w-5xl mx-auto">
+    <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 text-black font-sans min-h-screen">
+      <div className="max-w-5xl mx-auto pb-20">
         <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">AI CONTENT CREATOR</h1>
 
-        {/* ĐÃ XÓA Ô THÊM MEDIA Ở ĐÂY CHO GỌN GÀNG */}
+        {/* ============================================================== */}
+        {/* 1. CHỌN ẢNH BÀI ĐĂNG (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)                */}
+        {/* ============================================================== */}
+        <div className="mb-10 bg-white p-6 rounded-[32px] border shadow-sm text-black">
+            <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest flex items-center gap-2">
+                <ImageIcon size={14} className="text-blue-600" /> Bộ sưu tập ảnh sản phẩm ({selectedImages.length}/10)
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50"
+                >
+                  <Plus size={32} className="mb-2" />
+                  <span className="text-[10px] font-black uppercase tracking-wider">Thêm Media</span>
+                  <input 
+                     type="file" 
+                     multiple 
+                     accept="image/*,video/*" 
+                     className="hidden" 
+                     ref={fileInputRef}
+                     onChange={handleFileUpload}
+                  />
+                </div>
+                {availableImages.map((url, idx) => (
+                    <div key={idx} onClick={() => setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : (prev.length < 10 ? [...prev, url] : prev))}
+                         className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${selectedImages.includes(url) ? 'border-blue-600 scale-95 shadow-md' : 'border-white opacity-40'}`}>
+                        <img src={url} className="w-full h-full object-cover" alt="product" />
+                        {selectedImages.includes(url) && <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1"><CheckCircle2 size={16} /></div>}
+                    </div>
+                ))}
+            </div>
+        </div>
 
+        {/* 2. NHẬP Ý TƯỞNG */}
         <div className="bg-white p-8 rounded-[40px] shadow-2xl border mb-10 text-black">
-          <textarea className="w-full p-6 bg-slate-50 border-none rounded-[32px] outline-none text-xl min-h-[140px] text-slate-900 font-bold focus:bg-white transition-all" placeholder="Mô tả ý tưởng của bạn..." value={topic} onChange={(e) => setTopic(e.target.value)} />
+          <textarea className="w-full p-6 bg-slate-50 border-none rounded-[32px] outline-none text-xl min-h-[140px] text-slate-900 font-bold focus:bg-white transition-all" placeholder="Mô tả ý tưởng của bạn (vd: Viết bài bán áo thun mùa hè)..." value={topic} onChange={(e) => setTopic(e.target.value)} />
           <button onClick={handleGenerateContent} disabled={loading} className="w-full mt-6 bg-black text-white font-black py-5 rounded-3xl shadow-lg flex items-center justify-center gap-3 hover:bg-slate-800 transition-all">
              {loading ? <Loader2 className="animate-spin" /> : <Sparkles size={22} />} SÁNG TẠO BÀI VIẾT VỚI AI
           </button>
         </div>
 
+        {/* 3. KẾT QUẢ VÀ CẤU HÌNH ĐĂNG */}
         {result && (
-          <div className="bg-white p-8 rounded-[45px] shadow-2xl border-l-[16px] border-blue-600 mb-10 text-black animate-in fade-in slide-in-from-bottom-10">
+          <div className="bg-white p-8 rounded-[45px] shadow-xl border-l-[16px] border-blue-600 mb-10 text-black animate-in fade-in slide-in-from-bottom-10">
              <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-black uppercase italic">Nội dung đề xuất gốc</h2>
                 <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-xl ${isEditing ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400'}`}><Edit3 size={18}/></button>
              </div>
              <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={6} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
              
-             <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-4 rounded-2xl border border-orange-100 mb-6 hover:bg-orange-100 transition-colors">
-                  <input type="checkbox" className="w-5 h-5 rounded text-orange-600 focus:ring-orange-500" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-black uppercase text-orange-700 flex items-center gap-1"><Shuffle size={16} /> Bật AI Spin Trộn nội dung (Chống Spam)</span>
-                    <span className="text-xs text-orange-600 font-medium mt-1">Khi Lên Lịch, Hệ thống sẽ dùng AI viết lại nhiều phiên bản nội dung hoàn toàn khác nhau cho từng Page.</span>
-                  </div>
-             </label>
-
+             {/* ============================================================== */}
+             {/* HẸN GIỜ & SPIN CONTENT (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)              */}
+             {/* ============================================================== */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-black">
                 <div className="p-6 bg-blue-50/50 rounded-[35px] border-2 border-dashed border-blue-200">
-                    <div className="flex items-center gap-2 mb-3"><ShoppingCart size={16} className="text-blue-600" /><span className="text-[10px] font-black uppercase text-blue-900">Link chèn tự động dưới comment</span></div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <ShoppingCart size={16} className="text-blue-600" />
+                        <span className="text-[10px] font-black uppercase text-blue-900">Link chèn tự động dưới comment</span>
+                    </div>
                     <input className="w-full px-6 py-4 bg-white rounded-2xl outline-none font-bold text-blue-600 shadow-sm" placeholder="Dán link sản phẩm của bạn..." value={productUrl} onChange={(e) => setProductUrl(e.target.value)} />
                 </div>
 
@@ -150,21 +211,38 @@ function AiMarketingContent() {
                         <span className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Clock size={14} /> Chế độ hẹn giờ đăng</span>
                         <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-blue-600" checked={isScheduling} onChange={(e) => setIsScheduling(e.target.checked)} />
                     </label>
+                    
                     {isScheduling && (
                         <div className="animate-in fade-in slide-in-from-top-2">
-                          <input type="datetime-local" className="w-full bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                          <input type="datetime-local" className="w-full mb-3 bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                          
+                          {/* TÍNH NĂNG CHỐNG SPAM */}
+                          <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-3 rounded-xl border border-orange-100">
+                              <input type="checkbox" className="w-4 h-4 rounded text-orange-600" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase text-orange-700 flex items-center gap-1">
+                                  <Shuffle size={12} /> Tránh Spam (Khuyên dùng)
+                                </span>
+                                <span className="text-[9px] text-orange-600 font-medium leading-tight mt-0.5">
+                                  Hệ thống sẽ dùng AI viết lại {selectedPageIds.length || 'nhiều'} phiên bản nội dung khác nhau cho từng Page.
+                                </span>
+                              </div>
+                          </label>
                         </div>
                     )}
                 </div>
              </div>
 
+             {/* ============================================================== */}
+             {/* PAGE FOLDERS (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)                         */}
+             {/* ============================================================== */}
              <div className="mb-8 p-6 bg-slate-50 rounded-[32px] border border-slate-100">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                    <h3 className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-black"><FolderCheck size={14} /> Nhóm Fanpage theo Folder</h3>
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-black"><FolderCheck size={14} /> Nhóm Fanpage theo Folder ({selectedPageIds.length} đã chọn)</h3>
                     <div className="flex gap-2 text-black">
                         <input placeholder="Tên Folder..." className="px-4 py-2 rounded-xl text-xs bg-white border outline-none font-bold text-black" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
                         <button onClick={() => {
-                            if(!newGroupName || selectedPageIds.length === 0) return alert("Nhập tên và chọn Page!");
+                            if(!newGroupName || selectedPageIds.length === 0) return alert("Nhập tên và chọn Page để tạo Folder!");
                             const updated = [...pageGroups, { name: newGroupName, ids: selectedPageIds }];
                             setPageGroups(updated);
                             localStorage.setItem("kpost_page_groups", JSON.stringify(updated));
@@ -186,6 +264,7 @@ function AiMarketingContent() {
                 </div>
              </div>
 
+             {/* CHỌN PAGE LẺ */}
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar text-black">
                 {accounts.map((acc: any) => (
                     <div key={acc.platformId} onClick={() => setSelectedPageIds(prev => prev.includes(acc.platformId) ? prev.filter(id => id !== acc.platformId) : [...prev, acc.platformId])} 
