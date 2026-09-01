@@ -384,12 +384,11 @@ export class SocialController {
       }
       
       // Xong xuôi, điều hướng khách quay lại trang Quản lý Fanpage báo thành công
-      // THAY ĐỔI ĐƯỜNG DẪN BÊN DƯỚI THÀNH TRANG QUẢN LÝ FANPAGE TRÊN WEB CỦA BẠN NẾU CẦN
-      return res.redirect(`${process.env.FRONTEND_URL}/social-accounts?success=true`);
+      return res.redirect(`${process.env.FRONTEND_URL}/social?success=true`);
     } catch (error) {
       console.error("Lỗi đăng nhập FB:", error.response?.data || error.message);
       // Điều hướng về báo lỗi
-      return res.redirect(`${process.env.FRONTEND_URL}/social-accounts?error=true`);
+      return res.redirect(`${process.env.FRONTEND_URL}/social?error=true`);
     }
   }
 }
