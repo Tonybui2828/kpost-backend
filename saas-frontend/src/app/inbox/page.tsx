@@ -4,7 +4,8 @@ import axios from "axios";
 import { 
   MessageSquare, RefreshCw, Send, Loader2, Sparkles, 
   ShoppingCart, X, Package, CheckCircle, User, CheckCircle2,
-  Trash2, Plus, Minus, Search, MapPin, Phone, Flag
+  Trash2, Plus, Minus, Search, MapPin, Phone, Flag,
+  Filter, Clock, AlertCircle // <-- THÊM ICON MỚI CHO BỘ LỌC
 } from "lucide-react";
 
 export default function InboxPage() {
@@ -28,17 +29,18 @@ export default function InboxPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // --- SỬA TẠI ĐÂY: BIẾN ĐỘNG CHO WORKSPACE ID ---
+  // --- BỘ LỌC MỚI ---
+  const [filterUnread, setFilterUnread] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc"); // desc: Mới nhất, asc: Chờ lâu nhất
+
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const chatEndRef = useRef<null | HTMLDivElement>(null);
 
-  // Lấy Workspace ID từ máy người dùng ngay khi vừa mở trang
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
       setWorkspaceId(savedId);
     } else {
-      // Nếu là khách vãng lai/chưa login, dùng tạm id mặc định
       setWorkspaceId("workspace-01"); 
     }
   }, []);
@@ -151,6 +153,28 @@ export default function InboxPage() {
     } finally { setSending(false); }
   };
 
+  // --- XỬ LÝ LỌC & SẮP XẾP DỮ LIỆU INBOX ---
+  const displayedMessages = messages
+    .filter(msg => msg.type?.toLowerCase() !== 'comment') // 1. Bỏ loại comment
+    .filter(msg => filterUnread ? !msg.isReplied : true)  // 2. Lọc chưa trả lời
+    .sort((a, b) => {                                     // 3. Sắp xếp thời gian
+      const timeA = new Date(a.updatedAt || a.timestamp || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.timestamp || b.createdAt || 0).getTime();
+      return sortOrder === "desc" ? timeB - timeA : timeA - timeB;
+    });
+
+  // Tính thời gian chờ
+  const getTimeAgo = (dateStr: string) => {
+    if (!dateStr) return "Vừa xong";
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "Vừa xong";
+    if (minutes < 60) return `${minutes} phút trước`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} giờ trước`;
+    return `${Math.floor(hours / 24)} ngày trước`;
+  };
+
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
       <div className="flex justify-between items-center mb-8 text-black">
@@ -166,29 +190,65 @@ export default function InboxPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black font-medium">
         {/* DANH SÁCH HỘI THOẠI BÊN TRÁI */}
         <div className="lg:col-span-1 bg-white rounded-[40px] shadow-sm border border-slate-100 h-[75vh] flex flex-col overflow-hidden">
-           <div className="p-6 border-b bg-slate-50/50 font-black text-slate-400 text-[10px] uppercase tracking-widest">Hội thoại</div>
+           
+           {/* TIÊU ĐỀ & KHUNG LỌC MỚI */}
+           <div className="p-6 border-b bg-slate-50/50 flex flex-col gap-3">
+              <div className="font-black text-slate-400 text-[10px] uppercase tracking-widest">
+                 Hội thoại ({displayedMessages.length})
+              </div>
+              <div className="flex gap-2">
+                 <button 
+                   onClick={() => setFilterUnread(!filterUnread)}
+                   className={`flex-1 py-2 px-2 rounded-xl text-[10px] font-black uppercase flex justify-center items-center gap-1.5 transition-all border ${filterUnread ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                 >
+                   {filterUnread ? <CheckCircle2 size={12}/> : <Filter size={12}/>} 
+                   {filterUnread ? "Đang Lọc Chưa Trả Lời" : "Chưa Trả Lời"}
+                 </button>
+                 <button 
+                   onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+                   className="flex-1 py-2 px-2 rounded-xl text-[10px] font-black uppercase bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 flex justify-center items-center gap-1.5 transition-all"
+                 >
+                   <Clock size={12} /> {sortOrder === 'desc' ? "Mới Nhất" : "Chờ Lâu Nhất"}
+                 </button>
+              </div>
+           </div>
+
            <div className="flex-1 overflow-y-auto custom-scrollbar">
-              {messages.map((msg: any) => (
-                <div key={msg.id} onClick={() => fetchChatHistory(msg)} className={`p-6 border-b cursor-pointer transition-all border-l-4 ${selectedMsg?.senderId === msg.senderId ? 'bg-blue-50 border-l-blue-600 shadow-inner' : 'hover:bg-slate-50'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-black text-sm text-slate-800 truncate pr-2">{msg.senderName}</span>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                        {/* HIỂN THỊ TÊN PAGE */}
-                        <span className="text-[8px] font-black bg-slate-800 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1">
-                            <Flag size={8} /> {msg.pageName || "Trang"}
-                        </span>
-                        <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full uppercase ${msg.type === 'comment' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-                            {msg.type}
-                        </span>
+              {displayedMessages.length === 0 ? (
+                 <div className="p-8 text-center text-slate-400 font-bold text-sm italic">
+                    {filterUnread ? "Tuyệt vời! Không có tin nhắn nào bị bỏ lỡ." : "Chưa có hội thoại nào."}
+                 </div>
+              ) : (
+                displayedMessages.map((msg: any) => (
+                  <div key={msg.id} onClick={() => fetchChatHistory(msg)} className={`p-6 border-b cursor-pointer transition-all border-l-4 ${selectedMsg?.senderId === msg.senderId ? 'bg-blue-50 border-l-blue-600 shadow-inner' : 'hover:bg-slate-50 border-l-transparent'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-black text-sm text-slate-800 truncate pr-2">{msg.senderName}</span>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-[8px] font-black bg-slate-800 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1">
+                              <Flag size={8} /> {msg.pageName || "Trang"}
+                          </span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-500 truncate italic mb-3">"{msg.content}"</p>
+                    
+                    {/* THỜI GIAN VÀ TRẠNG THÁI */}
+                    <div className="flex justify-between items-center text-[10px] font-bold">
+                       <span className="text-slate-400 flex items-center gap-1">
+                          <Clock size={12}/> {getTimeAgo(msg.updatedAt || msg.timestamp || msg.createdAt)}
+                       </span>
+                       {!msg.isReplied ? (
+                           <span className="text-orange-500 flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md"><AlertCircle size={10}/> Chưa phản hồi</span>
+                       ) : (
+                           <span className="text-emerald-500 flex items-center gap-1"><CheckCircle2 size={10}/> Đã trả lời</span>
+                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-slate-500 truncate italic">"{msg.content}"</p>
-                </div>
-              ))}
+                ))
+              )}
            </div>
         </div>
 
-        {/* CHI TIẾT TIN NHẮN BÊN PHẢI */}
+        {/* CHI TIẾT TIN NHẮN BÊN PHẢI (GIỮ NGUYÊN) */}
         <div className="lg:col-span-2 bg-white rounded-[40px] shadow-xl border border-slate-100 flex flex-col h-[75vh] overflow-hidden relative text-black">
             {selectedMsg ? (
               <>
@@ -227,7 +287,7 @@ export default function InboxPage() {
               <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu quản lý</div>
             )}
 
-            {/* MODAL CHI TIẾT ĐƠN HÀNG */}
+            {/* MODAL CHI TIẾT ĐƠN HÀNG (GIỮ NGUYÊN 100%) */}
             {showOrderModal && (
               <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300 text-black">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50">

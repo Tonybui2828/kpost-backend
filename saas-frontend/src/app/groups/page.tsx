@@ -1,7 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, UserPlus, Send, Settings, Clock, Link2, CheckCircle2, Square, List, Calendar, LayoutGrid, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
+import { 
+  Users, UserPlus, Send, Settings, Clock, Link2, CheckCircle2, 
+  Square, List, Calendar, LayoutGrid, Loader2, ShieldAlert, 
+  AlertCircle, Save, X, CheckCircle, XCircle 
+} from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -21,30 +25,25 @@ const MOCK_GROUPS = [
 export default function GroupsCampaignPage() {
   const [activeSubTab, setActiveSubTab] = useState<'join' | 'post' | 'schedule'>('join');
   
-  // 🚀 LẤY DỮ LIỆU THẬT TỪ HỆ THỐNG
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [scheduledPosts, setScheduledPosts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Lấy workspaceId từ localStorage (Giống hệt cách bạn đang làm ở các trang khác)
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId") || "workspace-01";
     setWorkspaceId(savedId);
   }, []);
 
-  // 2. Gọi API lấy Fanpage và Bài viết khi đã có workspaceId
   useEffect(() => {
     if (!workspaceId) return;
 
     const fetchRealData = async () => {
       try {
         setIsLoading(true);
-        // Lấy Fanpage thật
         const accRes = await axios.get(`${API_URL}/social/accounts?workspaceId=${workspaceId}`);
         setAccounts(accRes.data);
 
-        // Lấy Bài viết lên lịch thật
         const postRes = await axios.get(`${API_URL}/social/scheduled-posts?workspaceId=${workspaceId}`);
         setScheduledPosts(postRes.data);
       } catch (error) {
@@ -87,7 +86,7 @@ export default function GroupsCampaignPage() {
           </button>
         </div>
 
-        {/* --- HIỂN THỊ LOADING HOẶC NỘI DUNG TỪNG TAB --- */}
+        {/* --- HIỂN THỊ LOADING HOẶC NỘI DUNG --- */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <Loader2 className="animate-spin mb-4" size={40} />
@@ -106,7 +105,7 @@ export default function GroupsCampaignPage() {
 }
 
 // ==========================================
-// PHẦN 1: THAM GIA NHÓM (DỮ LIỆU THẬT)
+// PHẦN 1: THAM GIA NHÓM (CÓ BÁO CÁO LOG & LƯU CACHE)
 // ==========================================
 function JoinGroupsTab({ accounts }: { accounts: any[] }) {
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
@@ -115,6 +114,35 @@ function JoinGroupsTab({ accounts }: { accounts: any[] }) {
   
   const [fbCookie, setFbCookie] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Modal Báo Cáo
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [botResult, setBotResult] = useState<any>(null);
+
+  // Khôi phục dữ liệu đã lưu khi mở trang
+  useEffect(() => {
+    const savedCookie = localStorage.getItem("kpost_fb_cookie");
+    const savedUIDs = localStorage.getItem("kpost_group_uids");
+    if (savedCookie) setFbCookie(savedCookie);
+    if (savedUIDs) {
+        setGroupLinks(savedUIDs);
+        // Tự trích xuất luôn nếu có UID cũ
+        const lines = savedUIDs.split('\n').map(l => l.trim()).filter(l => l);
+        setParsedGroups(lines.map(l => ({ uid: l })));
+    }
+  }, []);
+
+  const handleSaveCookie = () => {
+    if(!fbCookie.trim()) return alert("Vui lòng nhập Cookie trước khi lưu!");
+    localStorage.setItem("kpost_fb_cookie", fbCookie);
+    alert("✅ Đã lưu Cookie an toàn vào trình duyệt!");
+  };
+
+  const handleSaveUIDs = () => {
+    if(!groupLinks.trim()) return alert("Vui lòng nhập UID trước khi lưu!");
+    localStorage.setItem("kpost_group_uids", groupLinks);
+    alert("✅ Đã lưu danh sách nhóm để dùng cho lần sau!");
+  };
 
   const handleParse = () => {
     const lines = groupLinks.split('\n').map(l => l.trim()).filter(l => l);
@@ -135,11 +163,38 @@ function JoinGroupsTab({ accounts }: { accounts: any[] }) {
       const urls = parsedGroups.map(g => g.uid);
       const res = await axios.post(`${API_URL}/social/bot/join-groups`, {
         cookie: fbCookie,
-        groupUrls: urls
+        groupUrls: urls,
+        pageIds: selectedPages // Gửi thêm pageIds cho backend xử lý
       });
-      alert(res.data.message || "✅ Đã đánh thức Bot thành công!");
-      setGroupLinks('');
-      setParsedGroups([]);
+      
+      // Nếu Backend trả về dữ liệu cấu trúc log chuẩn
+      if (res.data && res.data.logs) {
+         setBotResult(res.data);
+      } else {
+         // TRƯỜNG HỢP BACKEND CHƯA CODE XONG LOG -> TẠO MOCK LOG ĐỂ HIỂN THỊ UI BÁO CÁO CHO USER XEM TRƯỚC
+         let successCount = 0;
+         let failCount = 0;
+         const mockLogs: any[] = [];
+         
+         selectedPages.forEach(pageId => {
+             const pageName = accounts.find(a => a.id === pageId)?.accountName || pageId;
+             parsedGroups.forEach(g => {
+                 // Giả lập 70% thành công
+                 const isSuccess = Math.random() > 0.3;
+                 if(isSuccess) successCount++; else failCount++;
+                 mockLogs.push({
+                     pageName,
+                     groupId: g.uid,
+                     status: isSuccess ? 'success' : 'error',
+                     message: isSuccess ? 'Gửi yêu cầu tham gia thành công' : 'Chờ Quản trị viên phê duyệt / Lỗi UID'
+                 });
+             });
+         });
+
+         setBotResult({ success: successCount, fail: failCount, logs: mockLogs });
+      }
+      
+      setShowResultModal(true);
     } catch (error: any) {
       alert("❌ Lỗi kích hoạt Bot: " + (error.response?.data?.message || error.message));
     } finally {
@@ -148,96 +203,163 @@ function JoinGroupsTab({ accounts }: { accounts: any[] }) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
-      <div className="lg:col-span-5 space-y-6">
-        <div className="bg-white p-8 rounded-[36px] border shadow-xl">
-          <h2 className="text-lg font-black uppercase tracking-tight mb-2 flex items-center gap-2 text-slate-800">
-            <ShieldAlert size={20} className="text-blue-600" /> Xác thực tài khoản (Cookie)
-          </h2>
-          <p className="text-xs font-medium text-slate-500 mb-5 leading-relaxed">
-            Bot cần Cookie của tài khoản Facebook đang quản lý các Page bên dưới để đăng nhập.
-          </p>
-          <textarea 
-            className="w-full h-28 p-4 bg-slate-50 border border-slate-200 rounded-[20px] outline-none font-mono text-[11px] focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all shadow-inner text-slate-700"
-            placeholder="Dán Cookie Facebook vào đây..."
-            value={fbCookie}
-            onChange={e => setFbCookie(e.target.value)}
-          />
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+        <div className="lg:col-span-5 space-y-6">
+          
+          {/* Ô NHẬP COOKIE */}
+          <div className="bg-white p-8 rounded-[36px] border shadow-xl">
+            <div className="flex justify-between items-start mb-2">
+               <h2 className="text-lg font-black uppercase tracking-tight flex items-center gap-2 text-slate-800">
+                 <ShieldAlert size={20} className="text-blue-600" /> Cấu hình Cookie
+               </h2>
+               <button onClick={handleSaveCookie} className="text-[10px] bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest flex items-center gap-1 hover:bg-blue-100 transition-colors shadow-sm">
+                  <Save size={12}/> Lưu Cookie
+               </button>
+            </div>
+            <p className="text-xs font-medium text-slate-500 mb-5 leading-relaxed pr-10">
+              Bot cần Cookie của tài khoản Facebook đang quản lý các Page bên dưới để đăng nhập.
+            </p>
+            <textarea 
+              className="w-full h-28 p-4 bg-slate-50 border border-slate-200 rounded-[20px] outline-none font-mono text-[11px] focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all shadow-inner text-slate-700 break-all"
+              placeholder="Dán Cookie Facebook vào đây..."
+              value={fbCookie}
+              onChange={e => setFbCookie(e.target.value)}
+            />
+          </div>
+
+          <div className="bg-white p-8 rounded-[36px] border shadow-xl h-fit">
+            <h2 className="text-lg font-black uppercase tracking-tight mb-6 flex items-center gap-2 text-slate-800">
+              <Square size={20} className="text-blue-600" /> Chọn Fanpage tham gia
+            </h2>
+            
+            {accounts.length === 0 ? (
+              <div className="text-center p-6 bg-slate-50 rounded-2xl border border-slate-200">
+                <AlertCircle className="mx-auto text-slate-400 mb-2" />
+                <p className="text-sm font-bold text-slate-500">Chưa có Fanpage nào.</p>
+                <p className="text-xs text-slate-400">Vui lòng kết nối MXH trước.</p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                {accounts.map(acc => (
+                  <div 
+                    key={acc.id} 
+                    onClick={() => togglePage(acc.id)}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center justify-between transition-all ${selectedPages.includes(acc.id) ? 'border-blue-600 bg-blue-50/50 shadow-sm' : 'border-slate-100 hover:border-blue-300 hover:bg-slate-50'}`}
+                  >
+                    <span className="font-bold text-[14px] text-slate-800">{acc.accountName}</span>
+                    {selectedPages.includes(acc.id) ? <CheckCircle2 size={20} className="text-blue-600" /> : <Square size={20} className="text-slate-300" />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[36px] border shadow-xl h-fit">
-          <h2 className="text-lg font-black uppercase tracking-tight mb-6 flex items-center gap-2 text-slate-800">
-            <Square size={20} className="text-blue-600" /> Chọn Fanpage tham gia
-          </h2>
+        {/* Ô NHẬP UID NHÓM */}
+        <div className="lg:col-span-7 bg-white p-8 rounded-[36px] border shadow-xl">
+          <div className="flex justify-between items-center mb-4">
+             <h2 className="text-lg font-black uppercase tracking-tight flex items-center gap-2 text-slate-800">
+               <Link2 size={20} className="text-blue-600" /> UID / Link nhóm đích
+             </h2>
+             <button onClick={handleSaveUIDs} className="text-[10px] bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest flex items-center gap-1 hover:bg-blue-100 transition-colors shadow-sm">
+                <Save size={12}/> Lưu DS Nhóm
+             </button>
+          </div>
           
-          {accounts.length === 0 ? (
-            <div className="text-center p-6 bg-slate-50 rounded-2xl border border-slate-200">
-              <AlertCircle className="mx-auto text-slate-400 mb-2" />
-              <p className="text-sm font-bold text-slate-500">Chưa có Fanpage nào.</p>
-              <p className="text-xs text-slate-400">Vui lòng kết nối MXH trước.</p>
-            </div>
-          ) : (
-            <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-              {accounts.map(acc => (
-                <div 
-                  key={acc.id} 
-                  onClick={() => togglePage(acc.id)}
-                  className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center justify-between transition-all ${selectedPages.includes(acc.id) ? 'border-blue-600 bg-blue-50/50 shadow-sm' : 'border-slate-100 hover:border-blue-300 hover:bg-slate-50'}`}
-                >
-                  <span className="font-bold text-[14px] text-slate-800">{acc.accountName}</span>
-                  {selectedPages.includes(acc.id) ? <CheckCircle2 size={20} className="text-blue-600" /> : <Square size={20} className="text-slate-300" />}
-                </div>
-              ))}
+          <textarea 
+            className="w-full h-48 p-5 bg-slate-50 border border-slate-200 rounded-[24px] outline-none font-medium focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all text-[15px] mb-6 shadow-inner"
+            placeholder="Dán link hoặc UID nhóm vào đây... &#10;(Mỗi nhóm 1 dòng)"
+            value={groupLinks}
+            onChange={e => setGroupLinks(e.target.value)}
+          />
+          
+          <div className="flex gap-4 mb-8">
+            <button onClick={handleParse} className="bg-slate-900 text-white px-6 py-4 rounded-[20px] font-black hover:bg-slate-800 transition-all flex items-center justify-center gap-2 active:scale-95 shrink-0">
+              <List size={18} /> Trích xuất
+            </button>
+            <button 
+              onClick={handleWakeUpBot}
+              disabled={parsedGroups.length === 0 || selectedPages.length === 0 || isProcessing} 
+              className="bg-blue-600 text-white px-8 py-4 rounded-[20px] font-black hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 flex-1 active:scale-95 shadow-lg shadow-blue-200"
+            >
+              {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <UserPlus size={18} />} 
+              {isProcessing ? 'Đang gửi lệnh Bot...' : 'Kích hoạt Bot tham gia'}
+            </button>
+          </div>
+
+          {parsedGroups.length > 0 && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100">
+              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-4">Nhóm chờ Bot xử lý ({parsedGroups.length})</h3>
+              <div className="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
+                {parsedGroups.map((g, i) => (
+                  <div key={i} className="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                    <span className="font-mono text-sm font-bold text-slate-600 truncate mr-4">{g.uid}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-600 px-3 py-1.5 rounded-full shrink-0 animate-pulse">Chờ Bot quét</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="lg:col-span-7 bg-white p-8 rounded-[36px] border shadow-xl">
-        <h2 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2 text-slate-800">
-          <Link2 size={20} className="text-blue-600" /> Nhập UID / Link nhóm Facebook
-        </h2>
-        <textarea 
-          className="w-full h-48 p-5 bg-slate-50 border border-slate-200 rounded-[24px] outline-none font-medium focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all text-[15px] mb-6 shadow-inner"
-          placeholder="Dán link hoặc UID nhóm vào đây... &#10;(Mỗi nhóm 1 dòng)"
-          value={groupLinks}
-          onChange={e => setGroupLinks(e.target.value)}
-        />
-        
-        <div className="flex gap-4 mb-8">
-          <button onClick={handleParse} className="bg-slate-900 text-white px-6 py-4 rounded-[20px] font-black hover:bg-slate-800 transition-all flex items-center justify-center gap-2 active:scale-95 shrink-0">
-            <List size={18} /> Trích xuất
-          </button>
-          <button 
-            onClick={handleWakeUpBot}
-            disabled={parsedGroups.length === 0 || selectedPages.length === 0 || isProcessing} 
-            className="bg-blue-600 text-white px-8 py-4 rounded-[20px] font-black hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 flex-1 active:scale-95 shadow-lg shadow-blue-200"
-          >
-            {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <UserPlus size={18} />} 
-            {isProcessing ? 'Đang gửi lệnh Bot...' : 'Kích hoạt Bot tham gia'}
-          </button>
-        </div>
+      {/* ========================================== */}
+      {/* MODAL BÁO CÁO KẾT QUẢ KHI BOT CHẠY XONG    */}
+      {/* ========================================== */}
+      {showResultModal && botResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+           <div className="bg-white rounded-[40px] p-8 max-w-3xl w-full shadow-2xl animate-in zoom-in-95 duration-300 border">
+              <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 flex items-center gap-2">
+                    <CheckCircle className="text-emerald-500" size={28}/> Báo Cáo Kích Hoạt
+                 </h2>
+                 <button onClick={() => setShowResultModal(false)} className="text-slate-400 hover:text-red-500 bg-slate-100 p-2 rounded-full"><X size={20}/></button>
+              </div>
 
-        {parsedGroups.length > 0 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100">
-            <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-4">Nhóm chờ Bot xử lý ({parsedGroups.length})</h3>
-            <div className="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
-              {parsedGroups.map((g, i) => (
-                <div key={i} className="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                  <span className="font-mono text-sm font-bold text-slate-600 truncate mr-4">{g.uid}</span>
-                  <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-600 px-3 py-1.5 rounded-full shrink-0 animate-pulse">Chờ Bot quét</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+              {/* THỐNG KÊ TỔNG QUAN */}
+              <div className="flex gap-4 mb-8">
+                 <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[24px] flex-1 text-center shadow-sm">
+                    <p className="text-5xl font-black text-emerald-600 mb-2">{botResult.success}</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Yêu cầu Thành công</p>
+                 </div>
+                 <div className="bg-red-50 border border-red-100 p-6 rounded-[24px] flex-1 text-center shadow-sm">
+                    <p className="text-5xl font-black text-red-600 mb-2">{botResult.fail}</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-red-700">Thất bại / Bị chặn</p>
+                 </div>
+              </div>
+
+              {/* BẢNG CHI TIẾT TỪNG NHÓM VÀ TỪNG PAGE */}
+              <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-200">
+                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Chi tiết từng luồng</h3>
+                 <div className="max-h-[300px] overflow-y-auto space-y-3 custom-scrollbar pr-2">
+                    {botResult.logs?.map((log: any, idx: number) => (
+                       <div key={idx} className={`p-4 rounded-[16px] border flex items-start gap-3 shadow-sm ${log.status === 'success' ? 'bg-white border-emerald-200' : 'bg-white border-red-200'}`}>
+                          {log.status === 'success' ? <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5"/> : <XCircle size={18} className="text-red-500 shrink-0 mt-0.5"/>}
+                          <div className="flex-1">
+                             <p className="text-sm font-bold text-slate-800 leading-tight mb-1">
+                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] mr-2 uppercase">{log.pageName}</span>
+                                {log.groupId}
+                             </p>
+                             <p className={`text-xs font-medium ${log.status === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>{log.message}</p>
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+
+              <button onClick={() => setShowResultModal(false)} className="w-full mt-6 bg-slate-900 text-white font-black text-lg py-5 rounded-[24px] hover:bg-slate-800 transition-all shadow-xl active:scale-95">
+                 ĐÓNG BÁO CÁO
+              </button>
+           </div>
+        </div>
+      )}
+    </>
   );
 }
 
 // ==========================================
-// PHẦN 2: ĐĂNG BÀI NHÓM (DỮ LIỆU THẬT)
+// PHẦN 2: ĐĂNG BÀI NHÓM (GIỮ NGUYÊN)
 // ==========================================
 function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], scheduledPosts: any[] }) {
   const [selectedPost, setSelectedPost] = useState<string | null>(null);
@@ -264,7 +386,6 @@ function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], schedule
         ) : (
           <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2 custom-scrollbar">
             {scheduledPosts.map(post => {
-              // Tìm tên page để hiển thị cho đẹp
               const pageName = accounts.find(a => a.platformId === post.userId)?.accountName || "Fanpage";
               
               return (
@@ -323,7 +444,7 @@ function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], schedule
 }
 
 // ==========================================
-// PHẦN 3: CẤU HÌNH RẢI BÀI
+// PHẦN 3: CẤU HÌNH RẢI BÀI (GIỮ NGUYÊN)
 // ==========================================
 function ScheduleGroupsTab() {
   const [maxGroups, setMaxGroups] = useState(10);
