@@ -62,6 +62,14 @@ export class GroupBotService {
         
         // 2. Lặp qua từng nhóm
         for (const url of groupUrls) {
+          
+          // Bỏ qua nếu URL bị dán dính chữ, không hợp lệ
+          if (!url.includes('facebook.com')) {
+              failCount++;
+              logs.push({ pageName: pageId, groupId: url, status: 'error', message: 'URL không hợp lệ' });
+              continue;
+          }
+
           this.logger.log(`👉 Bot đang truy cập nhóm: ${url} (Tư cách ID: ${pageId})`);
           
           try {
@@ -70,8 +78,20 @@ export class GroupBotService {
             // Nghỉ ngơi 3-5s như người thật đang đọc trang web
             await this.delay(3000, 5000);
 
-            // Tìm nút "Tham gia nhóm" hoặc "Join Group"
-            const joinButton = await page.$('div[aria-label="Tham gia nhóm"], div[aria-label="Join Group"]');
+            // 🚀 BÍ KÍP DEBUG: In ra màn hình console tiêu đề của trang web Bot đang thấy
+            const pageTitle = await page.title();
+            this.logger.log(`🏷️ Tiêu đề trang Bot đang thấy: "${pageTitle}"`);
+            
+            // Kiểm tra xem Cookie có bị chết văng ra ngoài màn hình đăng nhập không
+            if (pageTitle.toLowerCase().includes('log in') || pageTitle.toLowerCase().includes('đăng nhập')) {
+               this.logger.error(`❌ COOKIE ĐÃ CHẾT! Bot bị đá văng ra màn hình Đăng Nhập.`);
+               failCount++;
+               logs.push({ pageName: pageId, groupId: url, status: 'error', message: 'Cookie lỗi/Bị văng đăng nhập' });
+               continue; // Chuyển sang URL tiếp theo
+            }
+
+            // Tìm nút "Tham gia nhóm" hoặc "Join Group" (Bao quát cả Tiếng Anh và Tiếng Việt)
+            const joinButton = await page.$('[aria-label="Tham gia nhóm"], [aria-label="Join Group"], [aria-label="Tham gia"], [aria-label="Join"]');
             
             if (joinButton) {
               await joinButton.click();
