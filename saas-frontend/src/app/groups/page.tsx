@@ -105,7 +105,7 @@ export default function GroupsCampaignPage() {
 }
 
 // ==========================================
-// PHẦN 1: THAM GIA NHÓM (CÓ BÁO CÁO LOG & LƯU CACHE)
+// PHẦN 1: THAM GIA NHÓM (ĐÃ CHUYỂN SANG ĐỌC KẾT QUẢ THỰC TẾ)
 // ==========================================
 function JoinGroupsTab({ accounts }: { accounts: any[] }) {
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
@@ -161,40 +161,22 @@ function JoinGroupsTab({ accounts }: { accounts: any[] }) {
     setIsProcessing(true);
     try {
       const urls = parsedGroups.map(g => g.uid);
+      
+      // GỌI XUỐNG BACKEND VÀ CHỜ ĐỢI
       const res = await axios.post(`${API_URL}/social/bot/join-groups`, {
         cookie: fbCookie,
         groupUrls: urls,
-        pageIds: selectedPages // Gửi thêm pageIds cho backend xử lý
+        pageIds: selectedPages
       });
       
-      // Nếu Backend trả về dữ liệu cấu trúc log chuẩn
+      // SAU KHI BACKEND CHẠY XONG VÀ TRẢ KẾT QUẢ VỀ THÌ MỚI HIỆN BÁO CÁO
       if (res.data && res.data.logs) {
          setBotResult(res.data);
+         setShowResultModal(true);
       } else {
-         // TRƯỜNG HỢP BACKEND CHƯA CODE XONG LOG -> TẠO MOCK LOG ĐỂ HIỂN THỊ UI BÁO CÁO CHO USER XEM TRƯỚC
-         let successCount = 0;
-         let failCount = 0;
-         const mockLogs: any[] = [];
-         
-         selectedPages.forEach(pageId => {
-             const pageName = accounts.find(a => a.id === pageId)?.accountName || pageId;
-             parsedGroups.forEach(g => {
-                 // Giả lập 70% thành công
-                 const isSuccess = Math.random() > 0.3;
-                 if(isSuccess) successCount++; else failCount++;
-                 mockLogs.push({
-                     pageName,
-                     groupId: g.uid,
-                     status: isSuccess ? 'success' : 'error',
-                     message: isSuccess ? 'Gửi yêu cầu tham gia thành công' : 'Chờ Quản trị viên phê duyệt / Lỗi UID'
-                 });
-             });
-         });
-
-         setBotResult({ success: successCount, fail: failCount, logs: mockLogs });
+         alert("Có lỗi xảy ra: Backend trả về sai định dạng dữ liệu hoặc chưa có logs!");
       }
       
-      setShowResultModal(true);
     } catch (error: any) {
       alert("❌ Lỗi kích hoạt Bot: " + (error.response?.data?.message || error.message));
     } finally {

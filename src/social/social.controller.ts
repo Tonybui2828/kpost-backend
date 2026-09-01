@@ -292,13 +292,16 @@ export class SocialController {
 
   // 🚀 CỔNG KÍCH HOẠT BOT THAM GIA NHÓM
   @Post('bot/join-groups')
-  async botJoinGroups(@Body() body: { cookie: string, groupUrls: string[] }) {
+  async botJoinGroups(@Body() body: { cookie: string, groupUrls: string[], pageIds: string[] }) {
     if (!body.cookie || !body.groupUrls || body.groupUrls.length === 0) {
       throw new HttpException("Thiếu Cookie hoặc danh sách nhóm", HttpStatus.BAD_REQUEST);
     }
-    // Kích hoạt Bot chạy nền (Không đợi kết quả để trả về UI nhanh)
-    this.groupBotService.joinGroups(body.cookie, body.groupUrls);
     
-    return { status: 'processing', message: 'Bot đang tiến hành tham gia nhóm ngầm...' };
+    // Thêm chữ await vào đây để API CHỜ ĐỢI con bot duyệt xong toàn bộ nhóm!
+    // Đồng thời truyền thêm body.pageIds vào
+    const result = await this.groupBotService.joinGroups(body.cookie, body.groupUrls, body.pageIds);
+    
+    // Trả cục result (gồm success, fail, logs) về cho Giao diện hiển thị Modal Báo Cáo
+    return result; 
   }
 }
