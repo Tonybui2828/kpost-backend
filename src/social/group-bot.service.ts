@@ -16,7 +16,13 @@ export class GroupBotService {
     this.logger.log('🚀 Khởi động Bot Trình duyệt ẩn...');
     const browser = await puppeteer.launch({
       headless: true, // true = chạy ẩn, false = hiện giao diện
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-notifications']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-notifications',
+        '--disable-gpu', // 🚀 Tắt tính năng card màn hình vì server Linux không có
+        '--disable-dev-shm-usage' // 🚀 Chống crash văng Bot khi Server bị đầy RAM chia sẻ
+      ]
     });
     
     const page = await browser.newPage();
