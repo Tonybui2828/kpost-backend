@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express'; 
+import axios from 'axios'; // 🚀 Khai báo thêm axios để gọi API Facebook
 import { FacebookService } from './facebook.service';
 import { PrismaService } from '../prisma.service';
 import { ChatGateway } from './chat.gateway';
@@ -7,7 +8,7 @@ import { AiContentService } from '../ai-content/ai-content.service';
 import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
 import { SocialScheduleService } from './social-schedule.service';
-import { GroupBotService } from './group-bot.service'; // 🚀 Khai báo thêm GroupBotService
+import { GroupBotService } from './group-bot.service'; 
 
 @Controller('social')
 export class SocialController {
@@ -19,7 +20,7 @@ export class SocialController {
     private readonly paymentService: PaymentService,
     private readonly automatorService: AutomatorService,
     private readonly socialScheduleService: SocialScheduleService,
-    private readonly groupBotService: GroupBotService // 🚀 Tiêm vào Constructor
+    private readonly groupBotService: GroupBotService 
   ) {}
 
   @Post('accounts') 
@@ -290,29 +291,105 @@ export class SocialController {
     } catch (e) { throw new HttpException(e.message, HttpStatus.BAD_REQUEST); }
   }
 
-  // 🚀 LẤY DANH SÁCH NHÓM CỦA 1 FANPAGE (Mới thêm)
   @Get('groups')
   async getGroupsByPage(@Query('pageId') pageId: string) {
     if (!pageId) return [];
     
-    // Tìm các nhóm có pageId khớp với Fanpage đang được chọn trên giao diện
     return this.prisma.socialGroup.findMany({
       where: { pageId: pageId }
     });
   }
 
-  // 🚀 CỔNG KÍCH HOẠT BOT THAM GIA NHÓM
   @Post('bot/join-groups')
   async botJoinGroups(@Body() body: { cookie: string, groupUrls: string[], pageIds: string[] }) {
     if (!body.cookie || !body.groupUrls || body.groupUrls.length === 0) {
       throw new HttpException("Thiếu Cookie hoặc danh sách nhóm", HttpStatus.BAD_REQUEST);
     }
     
-    // Thêm chữ await vào đây để API CHỜ ĐỢI con bot duyệt xong toàn bộ nhóm!
-    // Đồng thời truyền thêm body.pageIds vào
     const result = await this.groupBotService.joinGroups(body.cookie, body.groupUrls, body.pageIds);
-    
-    // Trả cục result (gồm success, fail, logs) về cho Giao diện hiển thị Modal Báo Cáo
     return result; 
+  }
+
+  // ==========================================
+  // 🚀 TÍNH NĂNG ĐĂNG NHẬP FACEBOOK LẤY PAGE TỰ ĐỘNG
+  // ==========================================
+
+  // 1. Tạo Link để khách bấm vào đăng nhập
+  @Get('auth/facebook')
+  async facebookLogin(@Query('workspaceId') workspaceId: string, @Res() res: Response) {
+    const appId = process.env.FACEBOOK_APP_ID;
+    const redirectUri = `${process.env.BACKEND_URL}/social/auth/facebook/callback`;
+    
+    // Lưu tạm workspaceId vào state để lát Facebook gọi về mình biết là của khách nào
+    const state = JSON.stringify({ workspaceId });
+    
+    // Yêu cầu các quyền cần thiết để đăng bài, nhắn tin, đọc comment
+    const scope = 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging';
+    
+    const fbAuthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
+    
+    // Đẩy khách hàng sang trang đăng nhập của Facebook
+    return res.redirect(fbAuthUrl);
+  }
+
+  // 2. Facebook trả mã về đây -> Đổi ra Token -> Quét Page -> Lưu DB
+  @Get('auth/facebook/callback')
+  async facebookCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+    try {
+      if (!code) throw new Error("Khách hàng từ chối cấp quyền.");
+      
+      const { workspaceId } = JSON.parse(state);
+      const appId = process.env.FACEBOOK_APP_ID;
+      const appSecret = process.env.FACEBOOK_APP_SECRET;
+      const redirectUri = `${process.env.BACKEND_URL}/social/auth/facebook/callback`;
+
+      // Bước A: Đổi 'code' lấy 'User Token' (Sống 2 tiếng)
+      const tokenRes = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&redirect_uri=${redirectUri}&client_secret=${appSecret}&code=${code}`);
+      const shortLivedToken = tokenRes.data.access_token;
+
+      // Bước B: Đổi 'User Token ngắn' lấy 'User Token dài hạn' (Sống 60 ngày)
+      const longLivedRes = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortLivedToken}`);
+      const longLivedToken = longLivedRes.data.access_token;
+
+      // Bước C: Quét toàn bộ Fanpage mà User này quản lý (Mỗi page sẽ có Token vĩnh viễn riêng)
+      const pagesRes = await axios.get(`https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedToken}`);
+      const pages = pagesRes.data.data;
+
+      // Bước D: Lưu thẳng vào Database của hệ thống
+      for (const page of pages) {
+        // Kiểm tra xem Page này đã có trong Database của khách chưa
+        const existingPage = await this.prisma.socialAccount.findFirst({
+          where: { platformId: page.id, workspaceId: workspaceId }
+        });
+
+        if (existingPage) {
+          // Nếu có rồi thì chỉ việc cập nhật Access Token mới nhất
+          await this.prisma.socialAccount.update({
+            where: { id: existingPage.id },
+            data: { accessToken: page.access_token, accountName: page.name }
+          });
+        } else {
+          // Nếu chưa có thì tạo mới
+          await this.prisma.socialAccount.create({
+            data: {
+              workspaceId,
+              platformId: page.id,
+              accountName: page.name,
+              accessToken: page.access_token,
+              platform: 'facebook',
+              isAiAutoReply: false // Mặc định tắt AI, để khách tự bật
+            }
+          });
+        }
+      }
+      
+      // Xong xuôi, điều hướng khách quay lại trang Quản lý Fanpage báo thành công
+      // THAY ĐỔI ĐƯỜNG DẪN BÊN DƯỚI THÀNH TRANG QUẢN LÝ FANPAGE TRÊN WEB CỦA BẠN NẾU CẦN
+      return res.redirect(`${process.env.FRONTEND_URL}/social-accounts?success=true`);
+    } catch (error) {
+      console.error("Lỗi đăng nhập FB:", error.response?.data || error.message);
+      // Điều hướng về báo lỗi
+      return res.redirect(`${process.env.FRONTEND_URL}/social-accounts?error=true`);
+    }
   }
 }

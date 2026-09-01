@@ -30,7 +30,7 @@
     "@payos/node": "^2.0.5",
     "@prisma/client": "^5.0.0",
     "@supabase/supabase-js": "^2.112.2",
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
