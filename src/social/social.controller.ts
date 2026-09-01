@@ -290,6 +290,17 @@ export class SocialController {
     } catch (e) { throw new HttpException(e.message, HttpStatus.BAD_REQUEST); }
   }
 
+  // 🚀 LẤY DANH SÁCH NHÓM CỦA 1 FANPAGE (Mới thêm)
+  @Get('groups')
+  async getGroupsByPage(@Query('pageId') pageId: string) {
+    if (!pageId) return [];
+    
+    // Tìm các nhóm có pageId khớp với Fanpage đang được chọn trên giao diện
+    return this.prisma.socialGroup.findMany({
+      where: { pageId: pageId }
+    });
+  }
+
   // 🚀 CỔNG KÍCH HOẠT BOT THAM GIA NHÓM
   @Post('bot/join-groups')
   async botJoinGroups(@Body() body: { cookie: string, groupUrls: string[], pageIds: string[] }) {

@@ -105,7 +105,7 @@ export default function GroupsCampaignPage() {
 }
 
 // ==========================================
-// PHẦN 1: THAM GIA NHÓM (ĐÃ CHUYỂN SANG ĐỌC KẾT QUẢ THỰC TẾ)
+// PHẦN 1: THAM GIA NHÓM
 // ==========================================
 function JoinGroupsTab({ accounts }: { accounts: any[] }) {
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
@@ -341,19 +341,61 @@ function JoinGroupsTab({ accounts }: { accounts: any[] }) {
 }
 
 // ==========================================
-// PHẦN 2: ĐĂNG BÀI NHÓM (GIỮ NGUYÊN)
+// PHẦN 2: ĐĂNG BÀI NHÓM (CÓ LỌC NHÓM THEO FANPAGE)
 // ==========================================
 function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], scheduledPosts: any[] }) {
   const [selectedPost, setSelectedPost] = useState<string | null>(null);
+  const [selectedPage, setSelectedPage] = useState<string>(''); // Lưu Fanpage ID được chọn
+  const [groups, setGroups] = useState<any[]>([]); // Lưu danh sách nhóm thật
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+
+  // Khi chọn Fanpage, tự động load danh sách nhóm của Fanpage đó
+  useEffect(() => {
+    if (!selectedPage) {
+       setGroups([]);
+       setSelectedGroups([]);
+       return;
+    }
+
+    const fetchGroups = async () => {
+       setIsLoadingGroups(true);
+       try {
+          // Gọi API lấy danh sách nhóm của Fanpage (Backend cần có route này)
+          const res = await axios.get(`${API_URL}/social/groups?pageId=${selectedPage}`);
+          
+          if (res.data && res.data.length > 0) {
+             setGroups(res.data);
+          } else {
+             // Mock data nếu Fanpage chưa có data
+             setGroups([
+                { id: 'g1', groupName: 'Hội Đam Mê Công Nghệ (Page: ' + selectedPage.substring(0,5) + '...)', members: '12K' },
+                { id: 'g2', groupName: 'Chợ Mua Bán Online', members: '45K' }
+              ]);
+          }
+       } catch (error) {
+          console.error("Lỗi tải danh sách nhóm:", error);
+          // NẾU BACKEND CHƯA CÓ API, SẼ TẠM HIỂN THỊ DỮ LIỆU DEMO THEO PAGE ĐỂ BẠN TEST UI TRƯỚC
+          setGroups([
+            { id: 'g1', groupName: 'Hội Đam Mê Công Nghệ (Page: ' + selectedPage.substring(0,5) + '...)', members: '12K' },
+            { id: 'g2', groupName: 'Chợ Mua Bán Online', members: '45K' }
+          ]);
+       } finally {
+          setIsLoadingGroups(false);
+       }
+    };
+
+    fetchGroups();
+  }, [selectedPage]);
 
   const toggleAllGroups = () => {
-    if(selectedGroups.length === MOCK_GROUPS.length) setSelectedGroups([]);
-    else setSelectedGroups(MOCK_GROUPS.map(g => g.id));
+    if(selectedGroups.length === groups.length && groups.length > 0) setSelectedGroups([]);
+    else setSelectedGroups(groups.map(g => g.id));
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
+      {/* BƯỚC 1: CHỌN BÀI VIẾT */}
       <div className="bg-white p-8 rounded-[36px] border shadow-xl h-fit">
         <h2 className="text-lg font-black uppercase tracking-tight mb-6 flex items-center gap-2 text-emerald-700">
           <Calendar size={20} /> Bước 1: Chọn bài viết chờ
@@ -366,7 +408,7 @@ function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], schedule
             <p className="text-xs text-slate-400">Sang tab "Lịch đăng bài" để tạo nhé!</p>
           </div>
         ) : (
-          <div className="space-y-4 max-h-[550px] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
             {scheduledPosts.map(post => {
               const pageName = accounts.find(a => a.platformId === post.userId)?.accountName || "Fanpage";
               
@@ -388,6 +430,7 @@ function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], schedule
         )}
       </div>
 
+      {/* BƯỚC 2: CHỌN HỘI NHÓM ĐÍCH */}
       <div className="bg-white p-8 rounded-[36px] border shadow-xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-black uppercase tracking-tight flex items-center gap-2 text-emerald-700">
@@ -395,29 +438,63 @@ function PostGroupsTab({ accounts, scheduledPosts }: { accounts: any[], schedule
           </h2>
           <button 
             onClick={toggleAllGroups}
-            className="text-[11px] bg-slate-100 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-100 transition-colors"
+            disabled={groups.length === 0}
+            className="text-[11px] bg-slate-100 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
           >
-            {selectedGroups.length === MOCK_GROUPS.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+            {selectedGroups.length === groups.length && groups.length > 0 ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
           </button>
         </div>
         
-        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar mb-8">
-          {MOCK_GROUPS.map(group => (
-            <div 
-              key={group.id} 
-              onClick={() => setSelectedGroups(prev => prev.includes(group.id) ? prev.filter(id => id !== group.id) : [...prev, group.id])}
-              className={`p-5 rounded-2xl border-2 cursor-pointer flex items-center justify-between transition-all ${selectedGroups.includes(group.id) ? 'border-emerald-500 bg-emerald-50' : 'border-slate-100 hover:border-emerald-200 hover:bg-slate-50'}`}
-            >
-              <div>
-                <p className="font-bold text-[15px] text-slate-800">{group.name}</p>
-                <p className="text-[11px] font-black uppercase tracking-widest text-emerald-600 opacity-70 mt-1">{group.members} Thành viên</p>
-              </div>
-              {selectedGroups.includes(group.id) ? <CheckCircle2 size={20} className="text-emerald-600" /> : <Square size={20} className="text-slate-300" />}
-            </div>
-          ))}
+        {/* DROPDOWN CHỌN FANPAGE */}
+        <div className="mb-6">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">1. Chọn Fanpage gửi bài:</label>
+          <select 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white focus:border-emerald-500 transition-all cursor-pointer appearance-none"
+            value={selectedPage}
+            onChange={(e) => setSelectedPage(e.target.value)}
+          >
+            <option value="">-- Bấm để chọn Fanpage --</option>
+            {accounts.map(acc => (
+              <option key={acc.id} value={acc.platformId || acc.id}>{acc.accountName}</option>
+            ))}
+          </select>
         </div>
 
-        <button disabled={!selectedPost || selectedGroups.length === 0} className="w-full bg-emerald-600 text-white px-6 py-5 rounded-[24px] font-black text-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 disabled:opacity-40 active:scale-95 shadow-xl shadow-emerald-200">
+        {/* DANH SÁCH NHÓM ĐÃ THAM GIA CỦA FANPAGE ĐÓ */}
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">2. Tích chọn nhóm:</label>
+        
+        {isLoadingGroups ? (
+          <div className="flex justify-center p-10"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>
+        ) : !selectedPage ? (
+          <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-medium text-sm">
+            Vui lòng chọn Fanpage ở trên để hiển thị danh sách nhóm.
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-medium text-sm">
+            Fanpage này chưa có nhóm nào trong hệ thống.
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar mb-8">
+            {groups.map(group => (
+              <div 
+                key={group.id} 
+                onClick={() => setSelectedGroups(prev => prev.includes(group.id) ? prev.filter(id => id !== group.id) : [...prev, group.id])}
+                className={`p-5 rounded-2xl border-2 cursor-pointer flex items-center justify-between transition-all ${selectedGroups.includes(group.id) ? 'border-emerald-500 bg-emerald-50' : 'border-slate-100 hover:border-emerald-200 hover:bg-slate-50'}`}
+              >
+                <div>
+                  <p className="font-bold text-[15px] text-slate-800">{group.groupName || group.name}</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-emerald-600 opacity-70 mt-1">{group.members || '1K+'} Thành viên</p>
+                </div>
+                {selectedGroups.includes(group.id) ? <CheckCircle2 size={20} className="text-emerald-600" /> : <Square size={20} className="text-slate-300" />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button 
+          disabled={!selectedPost || selectedGroups.length === 0} 
+          className="w-full mt-4 bg-emerald-600 text-white px-6 py-5 rounded-[24px] font-black text-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 disabled:opacity-40 active:scale-95 shadow-xl shadow-emerald-200"
+        >
           <Send size={24} /> Bắn bài vào {selectedGroups.length} nhóm
         </button>
       </div>
