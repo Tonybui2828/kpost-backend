@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import puppeteer, { Browser, Page } from 'puppeteer';
+import { PrismaService } from '../prisma.service'; // 🚀 Nhúng Prisma để lưu DB
 
 @Injectable()
 export class GroupBotService {
   private readonly logger = new Logger(GroupBotService.name);
+
+  // 🚀 Bổ sung PrismaService vào Constructor
+  constructor(private readonly prisma: PrismaService) {}
 
   // 🕒 Hàm mô phỏng độ trễ của người thật (Chống Spam)
   private async delay(min: number, max: number) {
@@ -20,8 +24,8 @@ export class GroupBotService {
         '--no-sandbox', 
         '--disable-setuid-sandbox', 
         '--disable-notifications',
-        '--disable-gpu', // 🚀 Tắt tính năng card màn hình vì server Linux không có
-        '--disable-dev-shm-usage' // 🚀 Chống crash văng Bot khi Server bị đầy RAM chia sẻ
+        '--disable-gpu', 
+        '--disable-dev-shm-usage' 
       ]
     });
     
@@ -43,7 +47,7 @@ export class GroupBotService {
   }
 
   // ==========================================
-  // TÍNH NĂNG 1: TỰ ĐỘNG THAM GIA NHÓM
+  // TÍNH NĂNG 1: TỰ ĐỘNG THAM GIA & QUÉT NHÓM
   // ==========================================
   async joinGroups(cookieString: string, groupUrls: string[], pageIds: string[] = []) {
     const { browser, page } = await this.initBrowser(cookieString);
@@ -53,7 +57,13 @@ export class GroupBotService {
     let failCount = 0;
     const logs = [];
 
-    // Nếu người dùng không chọn page nào, gán mặc định là tham gia bằng Profile Cá nhân
+    // Lấy WorkspaceId (Tạm thời tìm từ bảng account dựa trên pageId đầu tiên để lưu DB)
+    let currentWorkspaceId = "workspace-01";
+    if (pageIds.length > 0) {
+       const acc = await this.prisma.socialAccount.findFirst({ where: { platformId: pageIds[0] } });
+       if (acc) currentWorkspaceId = acc.workspaceId;
+    }
+
     const targetPages = pageIds.length > 0 ? pageIds : ['Profile Cá Nhân'];
 
     try {
@@ -78,47 +88,92 @@ export class GroupBotService {
             // Nghỉ ngơi 3-5s như người thật đang đọc trang web
             await this.delay(3000, 5000);
 
-            // 🚀 BÍ KÍP DEBUG: In ra màn hình console tiêu đề của trang web Bot đang thấy
+            // Lấy tiêu đề trang web, ví dụ: "Cộng đồng KPost Việt Nam | Facebook"
             const pageTitle = await page.title();
             this.logger.log(`🏷️ Tiêu đề trang Bot đang thấy: "${pageTitle}"`);
             
-            // Kiểm tra xem Cookie có bị chết văng ra ngoài màn hình đăng nhập không
+            // Tách lấy tên nhóm sạch (Bỏ chữ " | Facebook")
+            let groupName = pageTitle.replace(' | Facebook', '').trim();
+            // Nếu tiêu đề bị dính notification ví dụ "(1) Cộng đồng KPost" thì cắt bỏ (1)
+            groupName = groupName.replace(/^\(\d+\)\s*/, ''); 
+            
+            // Lấy Group ID (Chuỗi số) từ URL để lưu vào DB (Thường URL là /groups/123456789)
+            let groupIdNumber = url.match(/\/groups\/(\d+)/)?.[1] || `grp_${Date.now()}`;
+
+            // Kiểm tra xem Cookie có bị chết văng ra ngoài không
             if (pageTitle.toLowerCase().includes('log in') || pageTitle.toLowerCase().includes('đăng nhập')) {
                this.logger.error(`❌ COOKIE ĐÃ CHẾT! Bot bị đá văng ra màn hình Đăng Nhập.`);
                failCount++;
                logs.push({ pageName: pageId, groupId: url, status: 'error', message: 'Cookie lỗi/Bị văng đăng nhập' });
-               continue; // Chuyển sang URL tiếp theo
+               continue; 
             }
 
-            // Tìm nút "Tham gia nhóm" hoặc "Join Group" (Bao quát cả Tiếng Anh và Tiếng Việt)
+            // 🚀 BƯỚC 1: TÌM XEM ĐÃ THAM GIA CHƯA (Quét các nút: Đã tham gia, Mời, Joined)
+            const alreadyJoinedButton = await page.$('[aria-label="Đã tham gia"], [aria-label="Joined"], [aria-label="Mời"], [aria-label="Invite"]');
+            
+            if (alreadyJoinedButton) {
+                this.logger.log(`✅ Tuyệt! Page này đã nằm trong nhóm "${groupName}" từ trước.`);
+                
+                // Lưu/Update thẳng vào Database để Web hiển thị
+                await this.prisma.socialGroup.upsert({
+                  where: { groupId_pageId: { groupId: groupIdNumber, pageId: pageId } },
+                  update: { groupName: groupName },
+                  create: {
+                    workspaceId: currentWorkspaceId,
+                    pageId: pageId,
+                    groupId: groupIdNumber,
+                    groupName: groupName,
+                    platform: 'facebook'
+                  }
+                });
+
+                successCount++;
+                logs.push({
+                  pageName: pageId, 
+                  groupId: url,
+                  status: 'success', 
+                  message: `Thành công: Đã có sẵn trong nhóm [${groupName}]`
+                });
+                continue; // Chuyển sang URL tiếp theo luôn, không cần quét nút Tham Gia nữa
+            }
+
+            // 🚀 BƯỚC 2: NẾU CHƯA, TÌM NÚT THAM GIA VÀ CLICK
             const joinButton = await page.$('[aria-label="Tham gia nhóm"], [aria-label="Join Group"], [aria-label="Tham gia"], [aria-label="Join"]');
             
             if (joinButton) {
               await joinButton.click();
-              this.logger.log(`✅ Đã ấn Tham gia nhóm: ${url}`);
+              this.logger.log(`✅ Đã ấn gửi yêu cầu Tham gia nhóm: ${groupName}`);
               
-              /* 
-                ⚠️ LƯU Ý CHO DEV BACKEND: 
-                Khi bấm tham gia, Facebook có thể hiện Popup hỏi "Tham gia với tư cách nào" (Profile hay Fanpage).
-                Nếu bạn cần bot chọn đúng Page, bạn sẽ cần code thêm logic Puppeteer click vào popup đó dựa trên pageId ở đây.
-              */
+              // Cứ lưu sẵn vào DB. Khi nào Admin Group duyệt thì tính sau
+              await this.prisma.socialGroup.upsert({
+                where: { groupId_pageId: { groupId: groupIdNumber, pageId: pageId } },
+                update: { groupName: groupName },
+                create: {
+                  workspaceId: currentWorkspaceId,
+                  pageId: pageId,
+                  groupId: groupIdNumber,
+                  groupName: groupName,
+                  platform: 'facebook'
+                }
+              });
 
               successCount++;
               logs.push({
                 pageName: pageId, 
                 groupId: url,
-                status: 'success', // Chữ 'success' để Frontend hiện icon màu Xanh
-                message: 'Đã gửi yêu cầu tham gia thành công'
+                status: 'success',
+                message: `Đã gửi yêu cầu tham gia [${groupName}] thành công`
               });
 
             } else {
-              this.logger.warn(`⚠️ Không tìm thấy nút tham gia. Có thể đã tham gia rồi hoặc nhóm ẩn.`);
+              // Đến đây mà không thấy nút gì hết, tức là nhóm bị riêng tư/ẩn cmnr
+              this.logger.warn(`⚠️ Không tìm thấy nút tham gia. Nhóm có thể bị ẩn.`);
               failCount++;
               logs.push({
                 pageName: pageId, 
                 groupId: url,
-                status: 'error', // Chữ 'error' để Frontend hiện icon màu Đỏ
-                message: 'Đã tham gia hoặc chờ duyệt / Lỗi nút'
+                status: 'error',
+                message: 'Nhóm ẩn hoặc sai định dạng'
               });
             }
           } catch (err) {
@@ -132,20 +187,18 @@ export class GroupBotService {
             });
           }
 
-          // 🕒 THUẬT TOÁN CHỐNG CHECKPOINT: Nghỉ ngơi từ 10 đến 25 giây trước khi sang nhóm tiếp theo
+          // 🕒 THUẬT TOÁN CHỐNG CHECKPOINT
           this.logger.log(`⏳ Đang nghỉ ngơi giải lao chờ nhóm tiếp theo...`);
-          await this.delay(10000, 25000); 
+          await this.delay(5000, 15000); // Rút ngắn thời gian nghỉ một tí cho quét nhanh
         }
       }
     } catch (error) {
       this.logger.error(`❌ Lỗi nghiêm trọng của Bot: ${error.message}`);
     } finally {
-      // Xong việc phải đóng trình duyệt để giải phóng RAM cho Server
       await browser.close();
       this.logger.log('🛑 Đã đóng Bot Trình duyệt.');
     }
 
-    // 🚀 TRẢ VỀ ĐÚNG FORMAT MÀ GIAO DIỆN (FRONTEND) ĐANG ĐỢI
     return {
       success: successCount,
       fail: failCount,
