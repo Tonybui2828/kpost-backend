@@ -24,25 +24,20 @@ export class ShippingService {
   // 1. Lấy ID Tỉnh
   private async getProvinceId(provinceName: string): Promise<number> {
     if (!provinceName) return 0;
-    if (!isNaN(Number(provinceName)) && Number(provinceName) > 0) {
-      return Number(provinceName);
-    }
+    if (!isNaN(Number(provinceName)) && Number(provinceName) > 0) return Number(provinceName);
 
     try {
       if (this.provincesCache.length === 0) {
         const res = await axios.get('https://partner.viettelpost.vn/v2/categories/listProvince');
         this.provincesCache = res.data?.data || [];
       }
-
       const target = this.cleanName(provinceName);
       const found = this.provincesCache.find(p => {
         const pName = this.cleanName(p.PROVINCE_NAME);
         return pName === target || pName.includes(target) || target.includes(pName);
       });
-
       return found ? found.PROVINCE_ID : 0;
     } catch (err) {
-      this.logger.error('Lỗi lấy danh mục Tỉnh VTP:', err.message);
       return 0;
     }
   }
@@ -50,26 +45,21 @@ export class ShippingService {
   // 2. Lấy ID Huyện
   private async getDistrictId(provinceId: number, districtName: string): Promise<number> {
     if (!provinceId || !districtName) return 0;
-    if (!isNaN(Number(districtName)) && Number(districtName) > 0) {
-      return Number(districtName);
-    }
+    if (!isNaN(Number(districtName)) && Number(districtName) > 0) return Number(districtName);
 
     try {
       if (!this.districtsCache.has(provinceId)) {
         const res = await axios.get(`https://partner.viettelpost.vn/v2/categories/listDistrict?provinceId=${provinceId}`);
         this.districtsCache.set(provinceId, res.data?.data || []);
       }
-
       const list = this.districtsCache.get(provinceId) || [];
       const target = this.cleanName(districtName);
       const found = list.find(d => {
         const dName = this.cleanName(d.DISTRICT_NAME);
         return dName === target || dName.includes(target) || target.includes(dName);
       });
-
       return found ? found.DISTRICT_ID : 0;
     } catch (err) {
-      this.logger.error('Lỗi lấy danh mục Huyện VTP:', err.message);
       return 0;
     }
   }
@@ -77,63 +67,66 @@ export class ShippingService {
   // 3. Lấy ID Xã
   private async getWardId(districtId: number, wardName: string): Promise<number> {
     if (!districtId || !wardName) return 0;
-    if (!isNaN(Number(wardName)) && Number(wardName) > 0) {
-      return Number(wardName);
-    }
+    if (!isNaN(Number(wardName)) && Number(wardName) > 0) return Number(wardName);
 
     try {
       if (!this.wardsCache.has(districtId)) {
         const res = await axios.get(`https://partner.viettelpost.vn/v2/categories/listWards?districtId=${districtId}`);
         this.wardsCache.set(districtId, res.data?.data || []);
       }
-
       const list = this.wardsCache.get(districtId) || [];
       const target = this.cleanName(wardName);
       const found = list.find(w => {
         const wName = this.cleanName(w.WARDS_NAME);
         return wName === target || wName.includes(target) || target.includes(wName);
       });
-
       return found ? found.WARDS_ID : 0;
     } catch (err) {
       return 0;
     }
   }
 
-  // Hàm phụ trợ: Lấy Token VTP mới bằng User/Pass
-  public async getNewVTPToken(vtpUsername: string, vtpPassword: string): Promise<string> {
+  // Hàm phụ trợ: Lấy Token VTP mới bằng User/Pass (ĐÃ NÂNG CẤP LOẠI BỎ KHOẢNG TRẮNG)
+  public async getNewVTPToken(vtpUsername?: string, vtpPassword?: string): Promise<string> {
     try {
-      const loginUrl = 'https://partner.viettelpost.vn/v2/user/Login';
-      const payload = {
-        USERNAME: vtpUsername,
-        PASSWORD: vtpPassword,
-      };
+      // LOẠI BỎ TOÀN BỘ KHOẢNG TRẮNG Ở ĐẦU VÀ CUỐI ĐỂ TRÁNH LỖI VTP
+      const cleanUser = (vtpUsername || '').trim();
+      const cleanPass = (vtpPassword || '').trim();
 
-      const res = await axios.post(loginUrl, payload, {
+      this.logger.log(`--- 🔄 Bắt đầu xin Token mới cho SĐT: ${cleanUser || 'TRỐNG'}`);
+
+      // NẾU CHƯA CÓ TRONG DATABASE THÌ BÁO LỖI LUÔN, KHÔNG GỬI LÊN VTP CHO MẤT CÔNG
+      if (!cleanUser || !cleanPass) {
+         throw new Error("Tài khoản chưa được cấu hình. Vui lòng vào Cài đặt vận chuyển để lưu Số điện thoại & Mật khẩu!");
+      }
+
+      const loginUrl = 'https://partner.viettelpost.vn/v2/user/Login';
+      const res = await axios.post(loginUrl, {
+        USERNAME: cleanUser,
+        PASSWORD: cleanPass,
+      }, {
         headers: { 'Content-Type': 'application/json' },
       });
 
       if (res.data && res.data.data && res.data.data.token) {
-        this.logger.log('--- 🔄 Đã làm mới Token VTP thành công');
+        this.logger.log('--- ✅ Đã làm mới Token VTP thành công');
         return res.data.data.token;
       }
-      throw new Error(res.data?.message || 'Login VTP thất bại');
+      throw new Error(res.data?.message || 'Sai Số điện thoại hoặc Mật khẩu');
     } catch (error) {
-      this.logger.error('Lỗi khi lấy lại Token VTP:', error.message);
-      throw new Error('Không thể làm mới Token Viettel Post. Vui lòng kiểm tra lại tài khoản.');
+      const msg = error.response?.data?.message || error.message || 'Lỗi không xác định';
+      this.logger.error(`❌ Lỗi khi lấy lại Token VTP: ${msg}`);
+      throw new Error(msg); // Ném lỗi ra để popup hiển thị chi tiết cho người dùng
     }
   }
 
-
   // 4. Tạo đơn sang Viettel Post (ĐÃ NÂNG CẤP AUTO REFRESH TOKEN)
-  // Lưu ý: Mình thêm tham số vtpUsername và vtpPassword vào hàm này. 
-  // Bạn cần truyền nó từ file gọi hàm (Controller) vào đây.
   async createVTPOrder(
     order: any, 
     token: string, 
     shopId: string | number,
-    vtpUsername?: string, // <--- Thêm tham số Tài khoản VTP
-    vtpPassword?: string  // <--- Thêm tham số Mật khẩu VTP
+    vtpUsername?: string,
+    vtpPassword?: string
   ) {
     const createUrl = 'https://partner.viettelpost.vn/v2/order/createOrder';
     let currentToken = token ? token.replace(/\s/g, '').trim() : '';
@@ -142,7 +135,6 @@ export class ShippingService {
       throw new HttpException('Viettel Post Token không hợp lệ hoặc bị thiếu', HttpStatus.UNAUTHORIZED);
     }
 
-    // Tự động tìm ID số từ tên chữ
     const rawProvince = order.provinceId || order.province || order.RECEIVER_PROVINCE || '';
     const rawDistrict = order.districtId || order.district || order.RECEIVER_DISTRICT || '';
     const rawWard = order.wardId || order.ward || order.RECEIVER_WARDS || '';
@@ -152,24 +144,15 @@ export class ShippingService {
     const receiverWard = await this.getWardId(receiverDistrict, String(rawWard));
 
     if (!receiverProvince || !receiverDistrict) {
-      throw new HttpException(
-        `Không tìm thấy Tỉnh/Huyện tương ứng trên VTP: "${rawProvince}" - "${rawDistrict}"`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Không tìm thấy Tỉnh/Huyện tương ứng: "${rawProvince}" - "${rawDistrict}"`, HttpStatus.BAD_REQUEST);
     }
 
     let detailedAddress = (order.customerAddress || order.address || '').trim();
     if (!detailedAddress || detailedAddress.length < 5 || detailedAddress.includes('Xem trong đoạn chat')) {
-      const addressParts = [rawWard, rawDistrict, rawProvince]
-        .filter(part => part && String(part).trim().length > 0)
-        .map(part => String(part).trim());
+      const addressParts = [rawWard, rawDistrict, rawProvince].filter(p => p && String(p).trim().length > 0);
       detailedAddress = addressParts.length > 0 ? addressParts.join(', ') : 'Khu vực trung tâm';
     }
-
     detailedAddress = detailedAddress.replace(/^[,\s\-\.\/]+|[,\s\-\.\/]+$/g, '').trim();
-    if (detailedAddress.length < 5) {
-      detailedAddress = `Khu vực ${detailedAddress}`;
-    }
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -183,7 +166,7 @@ export class ShippingService {
       GROUPADDRESS_ID: Number(shopId) || 0,
       CUS_ID: 0,
       DELIVERY_DATE: deliveryDate,
-      SENDER_FULLNAME: order.senderName || "Dropbuy Việt Nam",
+      SENDER_FULLNAME: order.senderName || "Cửa Hàng",
       SENDER_PHONE: order.senderPhone || "0928912828",
       SENDER_ADDRESS: order.senderAddress || "Kho hàng",
       RECEIVER_FULLNAME: (order.customerName || "Khách Hàng").trim(),
@@ -217,67 +200,49 @@ export class ShippingService {
       ],
     };
 
-    // Hàm gọi API thực tế (bọc lại để gọi được nhiều lần)
     const executePost = async (validToken: string) => {
-      const response = await axios.post(createUrl, payload, {
-        headers: {
-          Token: validToken,
-          'Content-Type': 'application/json',
-        },
+      return await axios.post(createUrl, payload, {
+        headers: { Token: validToken, 'Content-Type': 'application/json' },
         timeout: 15000,
       });
-      return response;
     };
 
     try {
-      this.logger.log(`--- 🚀 ĐẨY ĐƠN SANG VTP: ${payload.ORDER_NUMBER} - ĐỊA CHỈ: ${detailedAddress}`);
-      let response = await executePost(currentToken);
+      this.logger.log(`--- 🚀 ĐẨY ĐƠN SANG VTP: ${payload.ORDER_NUMBER}`);
+      const response = await executePost(currentToken);
 
-      // Nếu API trả về 200 nhưng VTP báo Token invalid trong chuỗi JSON
       if (response.data?.error === true && response.data?.message?.toLowerCase().includes('token')) {
-         throw new Error("Token invalid"); // Cố tình ném lỗi để nhảy vào catch bên dưới
+         throw new Error("Token invalid"); 
       }
 
       if (response.data && (response.data.status === 200 || response.data.error === false)) {
         return response.data;
       } else {
-        const errorMsg = response.data?.message || JSON.stringify(response.data);
-        this.logger.error(`--- ❌ VTP TỪ CHỐI: ${errorMsg}`);
-        throw new HttpException(`Lỗi VTP: ${errorMsg}`, HttpStatus.BAD_REQUEST);
+        throw new Error(response.data?.message || JSON.stringify(response.data));
       }
     } catch (error) {
-      // KIỂM TRA XEM CÓ PHẢI LỖI TOKEN KHÔNG
       const errorMsg = error.response?.data?.message || error.message || '';
       const isTokenError = errorMsg.toLowerCase().includes('token') || error.response?.status === 401;
 
-      // NẾU LỖI TOKEN VÀ CÓ USER/PASS THÌ TỰ ĐỘNG ĐĂNG NHẬP LẠI
-      if (isTokenError && vtpUsername && vtpPassword) {
+      if (isTokenError) {
         this.logger.warn(`--- ⚠️ Phát hiện Token hết hạn, đang tự động lấy Token mới...`);
         try {
-          // Lấy token mới
+          // BƯỚC NÀY SẼ GỌI HÀM LẤY TOKEN VÀ NẾU CÓ LỖI (SAI PASS), NÓ SẼ VĂNG LỖI LÊN TRÊN
           const newToken = await this.getNewVTPToken(vtpUsername, vtpPassword);
-          
-          // GỌI LẠI TẠO ĐƠN LẦN 2 VỚI TOKEN MỚI
           const retryResponse = await executePost(newToken);
           
           if (retryResponse.data && (retryResponse.data.status === 200 || retryResponse.data.error === false)) {
-            // (Tuỳ chọn) Nếu bạn lưu token vào DB, bạn nên có đoạn code update token mới vào DB ở đây.
-            // Ví dụ: await this.userRepository.update({id: userId}, {vtpToken: newToken})
-            
             return retryResponse.data;
           } else {
-             throw new HttpException(`Lỗi VTP (Sau khi refresh): ${retryResponse.data?.message}`, HttpStatus.BAD_REQUEST);
+             throw new Error(retryResponse.data?.message || "Lỗi tạo đơn VTP");
           }
         } catch (retryError) {
-           this.logger.error(`--- ❌ Lỗi khi thử lại sau khi refresh token: ${retryError.message}`);
-           throw new HttpException(`Lỗi đẩy đơn VTP: Không thể làm mới phiên đăng nhập`, HttpStatus.BAD_REQUEST);
+           // Đẩy chính xác thông báo lỗi từ hàm login ra màn hình
+           throw new HttpException(`Lỗi kết nối ViettelPost: ${retryError.message}`, HttpStatus.BAD_REQUEST);
         }
       }
 
-      // Nếu không phải lỗi token, văng lỗi ra cho Front-end
-      const detailMsg = error.response?.data?.message || error.response?.data?.data || error.message || 'Lỗi không xác định khi kết nối VTP';
-      this.logger.error(`--- ❌ LỖI VTP: ${JSON.stringify(detailMsg)}`);
-      throw new HttpException(`Lỗi đẩy đơn VTP: ${detailMsg}`, HttpStatus.BAD_REQUEST);
+      throw new HttpException(`Lỗi đẩy đơn VTP: ${errorMsg}`, HttpStatus.BAD_REQUEST);
     }
   }
 }
