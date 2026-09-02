@@ -40,7 +40,9 @@ model Workspace {
   isAutoPay      Boolean           @default(false)  
   balance        Float             @default(0)      
   
-  vtpToken       String?           
+  vtpPhone       String?           // <--- THÊM MỚI (Lưu SĐT Viettel Post)
+  vtpPassword    String?           // <--- THÊM MỚI (Lưu Pass Viettel Post)
+  vtpToken       String?           // <--- GIỮ NGUYÊN (Lưu Token để dùng)
   vtpShopId      String?           
   senderAddress  String?           
   senderProvince String?           

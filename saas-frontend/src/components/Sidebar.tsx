@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { 
   LayoutDashboard, PenTool, Package, MessageSquare, 
   Settings, Share2, LogOut, LogIn, Clock, MessageCircle, 
-  Users, ShoppingBag, Truck, Sparkles 
+  ShoppingBag, Truck, Sparkles 
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,7 +21,6 @@ const menuItems = [
   { name: "Lịch đăng bài", icon: <Clock size={20} />, href: "/schedule" }, 
   { name: "Hộp thư Inbox", icon: <MessageSquare size={20} />, href: "/inbox" },
   { name: "Quản lý Bình luận", icon: <MessageCircle size={20} />, href: "/comments" }, 
-  { name: "Chiến dịch Nhóm", icon: <Users size={20} />, href: "/groups" },
   { name: "Quản lý Đơn hàng", icon: <ShoppingBag size={20} />, href: "/orders" },
   { name: "Cấu hình vận chuyển", icon: <Truck size={20} />, href: "/shipping" },
   { name: "Kết nối MXH", icon: <Share2 size={20} />, href: "/social" },

@@ -12,7 +12,8 @@ export default function ShippingPage() {
   const [saved, setSaved] = useState(false);
   
   const [config, setConfig] = useState({
-    vtpToken: '',
+    vtpPhone: '',
+    vtpPassword: '',
     vtpShopId: '',
   });
 
@@ -35,7 +36,8 @@ export default function ShippingPage() {
         const data = await response.json();
         if (data) {
           setConfig({
-            vtpToken: data.vtpToken || '',
+            vtpPhone: data.vtpPhone || '',
+            vtpPassword: data.vtpPassword || '', // Backend có thể trả về chuỗi rỗng để bảo mật pass
             vtpShopId: data.vtpShopId || '',
           });
         }
@@ -55,8 +57,8 @@ export default function ShippingPage() {
   }, [workspaceId, API_URL]);
 
   const handleSave = async () => {
-    if (!config.vtpToken || !config.vtpShopId) {
-      alert("Vui lòng nhập đầy đủ Token và Mã kho hàng!");
+    if (!config.vtpPhone || !config.vtpPassword || !config.vtpShopId) {
+      alert("Vui lòng nhập đầy đủ Số điện thoại, Mật khẩu và Mã kho hàng!");
       return;
     }
 
@@ -70,10 +72,10 @@ export default function ShippingPage() {
 
       if (response.ok) {
         setSaved(true);
-        alert("✅ Cấu hình vận chuyển đã được lưu thành công!");
+        alert("✅ Kết nối Viettel Post đã được lưu thành công!");
         setTimeout(() => setSaved(false), 3000);
       } else {
-        alert("❌ Lỗi lưu cấu hình từ máy chủ.");
+        alert("❌ Lỗi lưu cấu hình! Vui lòng kiểm tra lại tài khoản Viettel Post.");
       }
     } catch (error) {
       alert("❌ Lỗi kết nối đến hệ thống xử lý.");
@@ -88,12 +90,12 @@ export default function ShippingPage() {
     <div className="p-8 max-w-4xl text-slate-800 font-sans">
       <div className="mb-10">
         <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3 italic uppercase tracking-tighter text-black">
-          <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-100">
+          <div className="bg-red-600 p-2 rounded-xl text-white shadow-lg shadow-red-100">
             <Truck size={28} />
           </div>
           Cấu hình Vận chuyển
         </h1>
-        <p className="text-slate-400 mt-2 font-bold uppercase text-[10px] tracking-widest ml-14">Kết nối trực tiếp với Viettel Post Partner API</p>
+        <p className="text-slate-400 mt-2 font-bold uppercase text-[10px] tracking-widest ml-14">Kết nối tài khoản Viettel Post tự động</p>
       </div>
 
       <div className="grid grid-cols-1 gap-8">
@@ -101,21 +103,34 @@ export default function ShippingPage() {
           <div className="flex items-center gap-4 mb-10 pb-6 border-b border-slate-50">
             <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center font-black text-red-600 text-xl shadow-inner border border-red-100">VTP</div>
             <div>
-              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight text-black">Viettel Post Integration</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID Không gian: {workspaceId}</p>
+              <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight text-black">Tài khoản Viettel Post</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Hệ thống tự động gia hạn mã kết nối API</p>
             </div>
           </div>
 
           <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Mã API Token cá nhân</label>
-              <input 
-                type="password"
-                placeholder="Dán mã Token từ trang quản trị ViettelPost..."
-                className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all font-bold text-black"
-                value={config.vtpToken}
-                onChange={(e) => setConfig({...config, vtpToken: e.target.value})}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Số điện thoại VTP</label>
+                 <input 
+                   type="text"
+                   placeholder="VD: 0987654321"
+                   className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-50 transition-all font-bold text-black"
+                   value={config.vtpPhone}
+                   onChange={(e) => setConfig({...config, vtpPhone: e.target.value})}
+                 />
+               </div>
+
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Mật khẩu</label>
+                 <input 
+                   type="password"
+                   placeholder="Mật khẩu đăng nhập app"
+                   className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-50 transition-all font-bold text-black"
+                   value={config.vtpPassword}
+                   onChange={(e) => setConfig({...config, vtpPassword: e.target.value})}
+                 />
+               </div>
             </div>
 
             <div className="space-y-2">
@@ -123,7 +138,7 @@ export default function ShippingPage() {
               <input 
                 type="text"
                 placeholder="Ví dụ: 16983116"
-                className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all font-bold text-black"
+                className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-50 transition-all font-bold text-black"
                 value={config.vtpShopId}
                 onChange={(e) => setConfig({...config, vtpShopId: e.target.value})}
               />
@@ -134,16 +149,16 @@ export default function ShippingPage() {
             onClick={handleSave}
             disabled={loading}
             className={`mt-12 w-full py-5 rounded-[24px] font-black uppercase italic text-lg flex items-center justify-center gap-3 transition-all active:scale-95 shadow-2xl ${
-              loading ? "bg-slate-100 text-slate-300 shadow-none" : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+              loading ? "bg-slate-100 text-slate-300 shadow-none" : "bg-red-600 text-white hover:bg-red-700 shadow-red-200"
             }`}
           >
-            {loading ? "ĐANG XỬ LÝ..." : saved ? <><ShieldCheck size={24}/> ĐÃ CẬP NHẬT</> : <><Save size={24}/> LƯU CẤU HÌNH VẬN CHUYỂN</>}
+            {loading ? "ĐANG KẾT NỐI..." : saved ? <><ShieldCheck size={24}/> ĐÃ LƯU KẾT NỐI</> : <><Save size={24}/> LƯU & KẾT NỐI VIETTEL POST</>}
           </button>
 
-          <div className="mt-8 p-6 bg-blue-50/50 rounded-3xl border border-blue-100 flex items-start gap-4">
-             <Info className="text-blue-600 shrink-0" size={20} />
-             <p className="text-[11px] text-blue-800/70 font-medium leading-relaxed italic">
-                Lưu ý: Mã Token và Shop ID lấy tại trang <strong>viettelpost.vn</strong> (Phần cấu hình kết nối API). Hãy đảm bảo mã chính xác để có thể đẩy đơn hàng tự động.
+          <div className="mt-8 p-6 bg-red-50/50 rounded-3xl border border-red-100 flex items-start gap-4">
+             <Info className="text-red-600 shrink-0" size={20} />
+             <p className="text-[11px] text-red-800/70 font-medium leading-relaxed italic">
+                Lưu ý: Hãy sử dụng <strong>Số điện thoại</strong> và <strong>Mật khẩu</strong> bạn đang dùng để đăng nhập vào ứng dụng Viettel Post trên điện thoại. Hệ thống sẽ tự động khởi tạo và duy trì kết nối API mãi mãi, giúp bạn đẩy đơn mượt mà không bị gián đoạn.
              </p>
           </div>
         </div>
