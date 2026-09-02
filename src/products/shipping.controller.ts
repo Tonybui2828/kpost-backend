@@ -1,13 +1,12 @@
 import { Controller, Get, Param, Patch, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-// Nhớ import ShippingService vào (bạn kiểm tra lại đường dẫn cho đúng với thư mục của bạn nhé)
 import { ShippingService } from './shipping.service'; 
 
 @Controller('shipping')
 export class ShippingController {
   constructor(
     private prisma: PrismaService,
-    private shippingService: ShippingService // <--- Inject (Tiêm) ShippingService vào đây
+    private shippingService: ShippingService
   ) {}
 
   // 1. API Lấy cấu hình (Khi vừa mở trang web)
@@ -16,8 +15,8 @@ export class ShippingController {
     return this.prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { 
-        vtpPhone: true,       // Đổi thành lấy Phone
-        vtpPassword: true,    // Lấy Pass để điền sẵn vào ô input cho khách
+        vtpPhone: true,       
+        vtpPassword: true,    
         vtpShopId: true,
         senderProvince: true,
         senderDistrict: true
@@ -33,27 +32,34 @@ export class ShippingController {
     try {
       let newToken = "";
       
-      // Nếu khách có nhập SĐT và Mật khẩu, tiến hành gọi sang Viettel Post kiểm tra
-      if (vtpPhone && vtpPassword) {
-        // Tự động Login VTP để lấy Token
+      // KIỂM TRA: Khách có nhập Pass mới không? (Khác rỗng và khác chuỗi ********)
+      const isNewPassword = vtpPassword && vtpPassword !== '********' && vtpPassword.trim() !== '';
+      
+      // 🚀 BƯỚC 1: NẾU CÓ PASS MỚI -> TEST ĐĂNG NHẬP NGAY & LUÔN
+      if (vtpPhone && isNewPassword) {
+        // Nếu sai SĐT/Pass, nó sẽ ném lỗi chữ đỏ và nhảy thẳng xuống khối catch bên dưới
         newToken = await this.shippingService.getNewVTPToken(vtpPhone, vtpPassword);
       }
 
-      // Chuẩn bị dữ liệu cập nhật
+      // 💾 BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỂ LƯU DATABASE
       const updateData: any = {
         vtpPhone: vtpPhone,
-        vtpPassword: vtpPassword,
         vtpShopId: vtpShopId,
         ...(senderProvince && { senderProvince }),
         ...(senderDistrict && { senderDistrict })
       };
 
-      // Chỉ cập nhật token vào DB nếu lấy được token mới từ VTP
+      // QUAN TRỌNG: Chỉ lưu đè Mật khẩu vào Database nếu đó là mật khẩu mới
+      if (isNewPassword) {
+        updateData.vtpPassword = vtpPassword;
+      }
+
+      // Nếu giật được token mới thì lưu luôn
       if (newToken) {
         updateData.vtpToken = newToken;
       }
 
-      // Lưu tất cả vào DB
+      // Tiến hành lưu
       await this.prisma.workspace.update({
         where: { id: workspaceId },
         data: updateData
@@ -62,7 +68,7 @@ export class ShippingController {
       return { success: true, message: "Lưu cấu hình và kết nối VTP thành công!" };
 
     } catch (error) {
-      // Nếu Mật khẩu sai, Viettel post từ chối -> Ném lỗi về cho giao diện hiển thị đỏ lên
+      // ❌ BƯỚC 3: NẾU TEST PASS THẤT BẠI HOẶC LỖI DB -> BÁO LỖI VỀ GIAO DIỆN
       throw new HttpException(
         error.message || 'Tài khoản hoặc mật khẩu Viettel Post không đúng!', 
         HttpStatus.BAD_REQUEST
