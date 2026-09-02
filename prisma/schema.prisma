@@ -157,11 +157,13 @@ model SocialGroup {
   id           String    @id @default(uuid())
   workspaceId  String
   platform     String    
-  groupId      String    @unique
+  groupId      String    
   groupName    String
   pageId       String    
   createdAt    DateTime  @default(now())
   workspace    Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([groupId, pageId]) // 🚀 Cập nhật ở đây: Khóa kết hợp cho phép nhiều page chung 1 nhóm
 }
 
 // 11. Bảng Đơn hàng
