@@ -78,14 +78,22 @@ export class OrdersController {
 
       const vtpToken = (order.workspace as any)?.vtpToken;
       const vtpShopId = (order.workspace as any)?.vtpShopId;
+      // LẤY THÊM SĐT VÀ MẬT KHẨU TỪ DATABASE
+      const vtpPhone = (order.workspace as any)?.vtpPhone;
+      const vtpPassword = (order.workspace as any)?.vtpPassword;
 
       if (!vtpToken || !vtpShopId) {
         throw new HttpException("Cửa hàng chưa cấu hình Token hoặc Mã kho ViettelPost", HttpStatus.BAD_REQUEST);
       }
 
-      // Gọi sang ShippingService để xử lý API ViettelPost
-      // Lưu ý: ShippingService của bạn cần đặt TYPE_ORDER: 3 để vào đơn nháp
-      const shipRes = await this.shippingService.createVTPOrder(order, vtpToken, vtpShopId);
+      // TRUYỀN FULL BỘ DỮ LIỆU SANG SHIPPING SERVICE ĐỂ TỰ ĐỘNG REFRESH TOKEN NẾU LỖI
+      const shipRes = await this.shippingService.createVTPOrder(
+        order, 
+        vtpToken, 
+        vtpShopId,
+        vtpPhone,       // <--- TRUYỀN THÊM VÀO ĐÂY
+        vtpPassword     // <--- TRUYỀN THÊM VÀO ĐÂY
+      );
       
       const vtpOrderNumber = shipRes.data?.ORDER_NUMBER || shipRes.ORDER_NUMBER;
 
@@ -100,7 +108,6 @@ export class OrdersController {
       });
     } catch (error) {
       console.error("LỖI ĐẨY ĐƠN VTP:", error.message);
-      // Trả về lỗi chi tiết cho Frontend để hiện thông báo thay vì lỗi 500 chung chung
       throw new HttpException(
         error.message || "Lỗi hệ thống khi kết nối ViettelPost", 
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -113,7 +120,12 @@ export class OrdersController {
   async getShippingSettings(@Param('workspaceId') workspaceId: string) {
     return this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { vtpToken: true, vtpShopId: true }
+      select: { 
+        vtpToken: true, 
+        vtpShopId: true,
+        vtpPhone: true,       // Bổ sung lấy Phone
+        vtpPassword: true     // Bổ sung lấy Pass
+      }
     });
   }
 
@@ -123,10 +135,22 @@ export class OrdersController {
     @Param('workspaceId') workspaceId: string,
     @Body() body: any
   ) {
-    const { vtpToken, vtpShopId } = body;
+    const { vtpToken, vtpShopId, vtpPhone, vtpPassword } = body;
+    
+    // Nếu FE gửi lên mật khẩu là ******** thì giữ nguyên pass cũ, không ghi đè
+    const updateData: any = {
+      vtpToken,
+      vtpShopId,
+      vtpPhone
+    };
+    
+    if (vtpPassword && vtpPassword !== '********') {
+      updateData.vtpPassword = vtpPassword;
+    }
+
     return this.prisma.workspace.update({
       where: { id: workspaceId },
-      data: { vtpToken, vtpShopId },
+      data: updateData,
     });
   }
 

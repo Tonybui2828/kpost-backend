@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { Truck, Save, ShieldCheck, Info } from 'lucide-react';
 
 export default function ShippingPage() {
-  // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   
   const [workspaceId, setWorkspaceId] = useState<string>("");
@@ -17,27 +16,27 @@ export default function ShippingPage() {
     vtpShopId: '',
   });
 
-  // Lấy Workspace ID từ máy người dùng khi vừa mở trang
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId");
     if (savedId) {
       setWorkspaceId(savedId);
     } else {
-      setWorkspaceId("workspace-01"); // Dự phòng nếu chưa login
+      setWorkspaceId("workspace-01"); 
     }
   }, []);
 
-  // Hàm lấy cấu hình cũ
   const fetchConfig = async () => {
     if (!workspaceId) return;
     try {
-      const response = await fetch(`${API_URL}/orders/shipping-settings/${workspaceId}`);
+      // ĐÃ SỬA LẠI ĐƯỜNG DẪN API CHUẨN
+      const response = await fetch(`${API_URL}/shipping/${workspaceId}`);
       if (response.ok) {
         const data = await response.json();
         if (data) {
           setConfig({
             vtpPhone: data.vtpPhone || '',
-            vtpPassword: data.vtpPassword || '', // Backend có thể trả về chuỗi rỗng để bảo mật pass
+            // NẾU CÓ PASS TỪ DB, HIỂN THỊ DẤU *** ĐỂ BẢO MẬT
+            vtpPassword: data.vtpPassword ? '********' : '', 
             vtpShopId: data.vtpShopId || '',
           });
         }
@@ -49,7 +48,6 @@ export default function ShippingPage() {
     }
   };
 
-  // Tự động tải cấu hình khi đã xác định được workspaceId
   useEffect(() => {
     if (workspaceId) {
       fetchConfig();
@@ -64,10 +62,20 @@ export default function ShippingPage() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/orders/shipping-settings/${workspaceId}`, {
+      // TẠO PAYLOAD RIÊNG: NẾU PASS LÀ *** THÌ KHÔNG GỬI LÊN DB ĐỂ TRÁNH GHI ĐÈ LỖI
+      const payload: any = {
+        vtpPhone: config.vtpPhone,
+        vtpShopId: config.vtpShopId,
+      };
+      if (config.vtpPassword !== '********') {
+        payload.vtpPassword = config.vtpPassword;
+      }
+
+      // ĐÃ SỬA LẠI ĐƯỜNG DẪN API CHUẨN
+      const response = await fetch(`${API_URL}/shipping/${workspaceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
