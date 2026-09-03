@@ -83,13 +83,11 @@ export class ShippingService {
     const districtId = await this.getDistrictId(provinceId, order.district);
     const wardId = await this.getWardId(districtId, order.ward);
 
-    // Xử lý địa chỉ cực kỳ cẩn thận cho ViettelPost
     let detailedAddress = (order.customerAddress || '').trim();
     if (!detailedAddress || detailedAddress.length < 3 || detailedAddress.toLowerCase() === 'chưa có địa chỉ') {
       detailedAddress = "Không có số nhà";
     }
 
-    // Nối cả Phường, Quận, Tỉnh vào chuỗi Address
     const fullAddress = `${detailedAddress}, ${order.ward || ''}, ${order.district || ''}, ${order.province || ''}`
       .replace(/,\s*,/g, ',')
       .replace(/(,\s*)+$/, '')
@@ -106,14 +104,15 @@ export class ShippingService {
       SENDER_ADDRESS: "Kho hàng",
       RECEIVER_FULLNAME: (order.customerName || "Khách Hàng").trim(),
       RECEIVER_PHONE: String(order.customerPhone || "0987654321").replace(/[^0-9]/g, '').slice(-10),
-      
-      // FIX LỖI INVALID Ở ĐÂY
       RECEIVER_ADDRESS: fullAddress,
       RECEIVER_PROVINCE: provinceId,
       RECEIVER_DISTRICT: districtId,
       RECEIVER_WARD: wardId,
       RECEIVER_WARDS: wardId,
 
+      // ĐÃ BỔ SUNG TRƯỜNG BỊ THIẾU Ở ĐÂY
+      PRODUCT_TYPE: "HH", 
+      
       PRODUCT_NAME: "Hàng hóa tổng hợp",
       PRODUCT_WEIGHT: 500, 
       PRODUCT_PRICE: codAmount,
