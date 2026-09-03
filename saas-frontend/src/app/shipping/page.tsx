@@ -62,28 +62,31 @@ export default function ShippingPage() {
 
     setLoading(true);
     try {
-      // TẠO PAYLOAD RIÊNG: NẾU PASS LÀ *** THÌ KHÔNG GỬI LÊN DB ĐỂ TRÁNH GHI ĐÈ LỖI
+      // TẠO PAYLOAD CƠ BẢN
       const payload: any = {
-        vtpPhone: config.vtpPhone,
-        vtpShopId: config.vtpShopId,
+        vtpPhone: config.vtpPhone.trim(),
+        vtpShopId: config.vtpShopId.trim(),
       };
-      if (config.vtpPassword !== '********') {
-        payload.vtpPassword = config.vtpPassword;
+      
+      // 🚀 BƯỚC QUYẾT ĐỊNH: NẾU KHÁCH XÓA CHUỖI ******** VÀ GÕ PASS MỚI, TA SẼ GỬI PASS ĐÓ LÊN
+      if (config.vtpPassword && config.vtpPassword !== '********') {
+        payload.vtpPassword = config.vtpPassword.trim();
       }
 
-      // ĐÃ SỬA LẠI ĐƯỜNG DẪN API CHUẨN
       const response = await fetch(`${API_URL}/shipping/${workspaceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
+      const data = await response.json().catch(() => ({})); 
+
       if (response.ok) {
         setSaved(true);
-        alert("✅ Kết nối Viettel Post đã được lưu thành công!");
+        alert("✅ Kết nối Viettel Post đã được cập nhật bằng MẬT KHẨU MỚI thành công!");
         setTimeout(() => setSaved(false), 3000);
       } else {
-        alert("❌ Lỗi lưu cấu hình! Vui lòng kiểm tra lại tài khoản Viettel Post.");
+        alert(`❌ THẤT BẠI: ${data.message || "Tài khoản hoặc mật khẩu Viettel Post không đúng!"}`);
       }
     } catch (error) {
       alert("❌ Lỗi kết nối đến hệ thống xử lý.");
@@ -119,7 +122,7 @@ export default function ShippingPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Số điện thoại VTP</label>
+                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nhập Email VTP</label>
                  <input 
                    type="text"
                    placeholder="VD: 0987654321"

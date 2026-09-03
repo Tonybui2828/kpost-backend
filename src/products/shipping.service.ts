@@ -153,6 +153,11 @@ export class ShippingService {
       detailedAddress = addressParts.length > 0 ? addressParts.join(', ') : 'Khu vực trung tâm';
     }
     detailedAddress = detailedAddress.replace(/^[,\s\-\.\/]+|[,\s\-\.\/]+$/g, '').trim();
+    
+    // 🚀 CHỐNG MÓM: Đảm bảo địa chỉ không bao giờ bị trống hoặc quá ngắn
+    if (!detailedAddress || detailedAddress.length < 5) {
+      detailedAddress = "Liên hệ khách để lấy địa chỉ chi tiết";
+    }
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');

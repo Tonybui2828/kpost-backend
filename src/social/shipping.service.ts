@@ -14,7 +14,7 @@ export class ShippingService {
       SENDER_ADDRESS: "123 Đường ABC",
       SENDER_PHONE: "0987654321",
       RECEIVER_FULLNAME: orderData.customerName,
-      RECEIVER_ADDRESS: orderData.customerAddress,
+      RECEIVER_ADDRESS: (orderData.customerAddress && orderData.customerAddress.trim().length >= 5) ? orderData.customerAddress.trim() : "Liên hệ khách để lấy địa chỉ chi tiết",
       RECEIVER_PHONE: orderData.customerPhone,
       PRODUCT_NAME: "Hàng hóa tổng hợp",
       PRODUCT_WEIGHT: orderData.weight || 500,
