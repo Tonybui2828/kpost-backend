@@ -16,44 +16,55 @@ export class ShippingService {
     return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.)\s+/g, '').replace(/\s+/g, ' ').trim();
   }
 
+  // ✅ SỬA LỖI ĐỊA CHỈ "RÂU ÔNG NỌ CẮM CẰM BÀ KIA": Tự bốc địa chỉ hợp lệ đầu tiên nếu khách thiếu
   private async getProvinceId(provinceName: string): Promise<number> {
-    if (!provinceName) return 2; 
     try {
       if (this.provincesCache.length === 0) {
         const res = await axios.get(`${this.vtpUrl}/categories/listProvince`);
         this.provincesCache = res.data?.data || [];
       }
+      if (!provinceName) return this.provincesCache.length > 0 ? this.provincesCache[0].PROVINCE_ID : 2;
       const target = this.cleanName(provinceName);
       const found = this.provincesCache.find(p => this.cleanName(p.PROVINCE_NAME).includes(target));
-      return found ? found.PROVINCE_ID : 2;
+      return found ? found.PROVINCE_ID : (this.provincesCache.length > 0 ? this.provincesCache[0].PROVINCE_ID : 2);
     } catch (err) { return 2; }
   }
 
   private async getDistrictId(provinceId: number, districtName: string): Promise<number> {
-    if (!provinceId || !districtName) return 33; 
+    if (!provinceId) return 33; 
     try {
       if (!this.districtsCache.has(provinceId)) {
         const res = await axios.get(`${this.vtpUrl}/categories/listDistrict?provinceId=${provinceId}`);
         this.districtsCache.set(provinceId, res.data?.data || []);
       }
       const list = this.districtsCache.get(provinceId) || [];
+      if (list.length === 0) return 33;
+      
+      // Khách không điền Huyện -> Lấy bừa Huyện đầu tiên của Tỉnh đó
+      if (!districtName) return list[0].DISTRICT_ID;
+
       const target = this.cleanName(districtName);
       const found = list.find(d => this.cleanName(d.DISTRICT_NAME).includes(target));
-      return found ? found.DISTRICT_ID : 33;
+      return found ? found.DISTRICT_ID : list[0].DISTRICT_ID;
     } catch (err) { return 33; }
   }
 
   private async getWardId(districtId: number, wardName: string): Promise<number> {
-    if (!districtId || !wardName) return 645; 
+    if (!districtId) return 645; 
     try {
       if (!this.wardsCache.has(districtId)) {
         const res = await axios.get(`${this.vtpUrl}/categories/listWards?districtId=${districtId}`);
         this.wardsCache.set(districtId, res.data?.data || []);
       }
       const list = this.wardsCache.get(districtId) || [];
+      if (list.length === 0) return 645;
+      
+      // KHÁCH KHÔNG ĐIỀN XÃ -> LẤY BỪA XÃ ĐẦU TIÊN CỦA HUYỆN ĐÓ (KHÔNG ĐƯỢC LẤY 645 NỮA)
+      if (!wardName) return list[0].WARDS_ID;
+
       const target = this.cleanName(wardName);
       const found = list.find(w => this.cleanName(w.WARDS_NAME).includes(target));
-      return found ? found.WARDS_ID : 645;
+      return found ? found.WARDS_ID : list[0].WARDS_ID;
     } catch (err) { return 645; }
   }
 
@@ -106,7 +117,6 @@ export class ShippingService {
         throw new HttpException('Vui lòng tạo ít nhất 1 kho hàng trên app/web ViettelPost trước khi tạo đơn.', HttpStatus.BAD_REQUEST);
     }
 
-    // Bắt lỗi kho người dùng quên cài đặt Tỉnh/Huyện thì mặc định cho về Hà Nội để chống văng lỗi
     const senderProvince = inventory.provinceId || inventory.PROVINCE_ID || 1;
     const senderDistrict = inventory.districtId || inventory.DISTRICT_ID || 1;
     const senderWard = inventory.wardsId || inventory.WARDS_ID || 1;
@@ -146,7 +156,7 @@ export class ShippingService {
       PRODUCT_PRICE: codAmount,
       MONEY_COLLECTION: codAmount, 
       TYPE_ORDER: 3, 
-      ORDER_PAYMENT: codAmount > 0 ? 2 : 1, // 2: Khách trả ship, 1: Shop trả ship
+      ORDER_PAYMENT: codAmount > 0 ? 2 : 1, 
       ORDER_SERVICE: "VCN",
       LIST_ITEM: [{
           PRODUCT_NAME: "Hàng hóa",
@@ -164,34 +174,30 @@ export class ShippingService {
       });
     };
 
-    // 🚀 AUTO FALLBACK: NẾU GÓI NHANH BỊ LỖI TUYẾN ĐƯỜNG, TỰ ĐỘNG ĐỔI SANG GÓI TIẾT KIỆM / BƯU KIỆN
     const servicesToTry = ["VCN", "VTK", "VBD"]; 
     let lastErrorMessage = "Lỗi tạo đơn VTP";
 
     for (const serviceCode of servicesToTry) {
         try {
-            this.logger.log(`--- 🚀 THỬ TẠO NHÁP VTP (Gói ${serviceCode}): ${payload.ORDER_NUMBER}`);
+            this.logger.log(`--- 🚀 THỬ TẠO ĐƠN VTP (Gói ${serviceCode}): ${payload.ORDER_NUMBER}`);
             let response = await executePost(currentToken, serviceCode);
             
-            // Xử lý nếu Token hết hạn giữa chừng
             if (response.data?.error === true && response.data?.message?.toLowerCase().includes('token')) {
                 currentToken = await this.getNewVTPToken(vtpUsername, vtpPassword);
                 response = await executePost(currentToken, serviceCode);
             }
 
             if (response.data && (response.data.status === 200 || response.data.error === false)) {
-                this.logger.log(`--- ✅ TẠO ĐƠN NHÁP THÀNH CÔNG VỚI GÓI: ${serviceCode}`);
-                return response.data; // THÀNH CÔNG RỒI, THOÁT LUÔN!
+                this.logger.log(`--- ✅ TẠO ĐƠN THÀNH CÔNG VỚI GÓI: ${serviceCode}`);
+                return response.data;
             }
 
             lastErrorMessage = response.data?.message || JSON.stringify(response.data);
             
-            // NẾU LÀ LỖI TUYẾN ĐƯỜNG -> TIẾP TỤC VÒNG LẶP ĐỂ THỬ GÓI CƯỚC KHÁC
-            if (lastErrorMessage.toLowerCase().includes('price') || lastErrorMessage.toLowerCase().includes('itinerary')) {
+            if (lastErrorMessage.toLowerCase().includes('price') || lastErrorMessage.toLowerCase().includes('itinerary') || lastErrorMessage.toLowerCase().includes('không được hỗ trợ')) {
                 this.logger.warn(`--- ⚠️ Gói ${serviceCode} không hỗ trợ, đang tự đổi sang gói khác...`);
                 continue;
             } else {
-                // Lỗi khác (vd thiếu SĐT khách) thì quăng lỗi ra app
                 throw new Error(lastErrorMessage);
             }
 
@@ -211,7 +217,7 @@ export class ShippingService {
                  lastErrorMessage = errorMsg;
             }
             
-            if (lastErrorMessage.toLowerCase().includes('price') || lastErrorMessage.toLowerCase().includes('itinerary')) {
+            if (lastErrorMessage.toLowerCase().includes('price') || lastErrorMessage.toLowerCase().includes('itinerary') || lastErrorMessage.toLowerCase().includes('không được hỗ trợ')) {
                 this.logger.warn(`--- ⚠️ Gói ${serviceCode} không hỗ trợ, đang tự đổi sang gói khác...`);
                 continue;
             } else {
@@ -220,7 +226,6 @@ export class ShippingService {
         }
     }
 
-    // Đã thử cả 3 gói mà vẫn lỗi
-    throw new HttpException(`Viettel Post từ chối tạo đơn: Tuyến đường từ kho của bạn đến khách hàng không được hỗ trợ giao hàng.`, HttpStatus.BAD_REQUEST);
+    throw new HttpException(`Viettel Post từ chối tạo đơn: Không tìm thấy gói cước phù hợp cho tuyến đường này. Vui lòng kiểm tra lại địa chỉ.`, HttpStatus.BAD_REQUEST);
   }
 }
