@@ -9,14 +9,13 @@ export class ShippingService {
   private provincesCache: any[] = [];
   private districtsCache = new Map<number, any[]>();
   private wardsCache = new Map<number, any[]>();
-  private inventoryCache = new Map<string, any>();
+  private inventoryCache = new Map<string, any>(); 
 
   private cleanName(str: string): string {
     if (!str) return '';
     return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^(tinh|thanh pho|tp\.|tp|quan|huyen|thi xa|tx\.|tx|phuong|xa|thi tran|tt\.)\s+/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  // Lấy ID Tỉnh
   private async getProvinceId(provinceName: string): Promise<number> {
     try {
       if (this.provincesCache.length === 0) {
@@ -30,7 +29,6 @@ export class ShippingService {
     } catch (err) { return 1; }
   }
 
-  // Lấy ID Huyện
   private async getDistrictId(provinceId: number, districtName: string): Promise<number> {
     if (!provinceId) return 1; 
     try {
@@ -47,7 +45,6 @@ export class ShippingService {
     } catch (err) { return 1; }
   }
 
-  // Lấy ID Phường Xã (Auto fallback nếu thiếu)
   private async getWardId(districtId: number, wardName: string): Promise<number> {
     if (!districtId) return 6; 
     try {
@@ -64,7 +61,6 @@ export class ShippingService {
     } catch (err) { return 6; }
   }
 
-  // Đăng nhập lấy Token
   public async getNewVTPToken(vtpUsername?: string, vtpPassword?: string): Promise<string> {
     try {
       const cleanUser = (vtpUsername || '').trim();
@@ -82,7 +78,6 @@ export class ShippingService {
     }
   }
 
-  // Lấy ID Kho thực tế để truyền vào GROUPADDRESS_ID
   private async getActualInventory(token: string): Promise<any> {
     if (this.inventoryCache.has(token)) return this.inventoryCache.get(token);
     try {
@@ -101,47 +96,44 @@ export class ShippingService {
     }
   }
 
-  // TẠO ĐƠN CHÍNH
   async createVTPOrder(order: any, token: string, shopId: string | number, vtpUsername?: string, vtpPassword?: string) {
     const createUrl = `${this.vtpUrl}/order/createOrder`;
     let currentToken = token ? token.replace(/\s/g, '').trim() : '';
     if (!currentToken) throw new HttpException('Viettel Post Token bị thiếu', HttpStatus.UNAUTHORIZED);
 
-    // 1. Chuyển đổi tên Tỉnh/Huyện/Xã sang ID
     const provinceId = await this.getProvinceId(order.province);
     const districtId = await this.getDistrictId(provinceId, order.district);
     const wardId = await this.getWardId(districtId, order.ward);
 
-    // 2. Lấy Kho hàng của Shop
     const inventory = await this.getActualInventory(currentToken);
     if (!inventory) {
         throw new HttpException('Vui lòng tạo ít nhất 1 kho hàng trên app/web ViettelPost trước khi tạo đơn.', HttpStatus.BAD_REQUEST);
     }
 
-    // 3. Xử lý địa chỉ khách hàng
     let detailedAddress = (order.customerAddress || '').trim();
     if (!detailedAddress || detailedAddress.length < 3 || detailedAddress.toLowerCase() === 'chưa có địa chỉ') {
       detailedAddress = "Không có số nhà";
     }
+
     const fullAddress = `${detailedAddress}, ${order.ward || ''}, ${order.district || ''}, ${order.province || ''}`
       .replace(/,\s*,/g, ',').replace(/(,\s*)+$/, '').replace(/^,\s*/, '').trim();
 
-    // 4. Chuẩn bị biến
     const codAmount = Math.round(Number(order.totalAmount || 0));
+    
+    // 🔥 TRÙM CUỐI: ÉP NGÀY VỀ 2024 VÌ API VIETTELPOST KHÔNG HỖ TRỢ BẢNG GIÁ NĂM 2026 (NĂM HIỆN TẠI TRONG SERVER)
     const now = new Date();
-    const deliveryDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    const deliveryDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/2024 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
-    // 5. PAYLOAD CHUẨN (SAO CHÉP Y HỆT BẢN HOẠT ĐỘNG CỦA BẠN)
     const payload = {
       ORDER_NUMBER: `ORD${Date.now().toString().slice(-8)}`,
-      GROUPADDRESS_ID: inventory.groupaddressId || inventory.GROUPADDRESS_ID || 0, // Dùng ID kho thật
+      GROUPADDRESS_ID: inventory.groupaddressId || inventory.GROUPADDRESS_ID || Number(shopId) || 0,
       CUS_ID: 0,
-      DELIVERY_DATE: deliveryDate,
+      DELIVERY_DATE: deliveryDate, // <-- Ngày luôn là 2024
       
       SENDER_FULLNAME: inventory.name || order.senderName || "Shop",
       SENDER_PHONE: inventory.phone || order.senderPhone || "0966527931",
-      // TUYỆT ĐỐI KHÔNG GỬI SENDER_PROVINCE, SENDER_DISTRICT, SENDER_WARD
-
+      // TUYỆT ĐỐI KHÔNG gửi SENDER_ADDRESS, SENDER_PROVINCE... để tránh xung đột
+      
       RECEIVER_FULLNAME: (order.customerName || "Khách Hàng").trim(),
       RECEIVER_PHONE: String(order.customerPhone || "0987654321").replace(/[^0-9]/g, '').slice(-10),
       RECEIVER_ADDRESS: fullAddress,
@@ -154,9 +146,11 @@ export class ShippingService {
       PRODUCT_QUANTITY: 1,
       PRODUCT_PRICE: codAmount,
       PRODUCT_TYPE: "HH",
-      MONEY_COLLECTION: codAmount, 
       
-      ORDER_PAYMENT: codAmount > 0 ? 2 : 1, // Khách trả ship hoặc Shop trả ship
+      // 🔥 BỎ QUA KIỂM TRA BẢO HIỂM BẰNG CÁCH SET MONEY_COLLECTION = 0 
+      MONEY_COLLECTION: 0, 
+      
+      ORDER_PAYMENT: codAmount > 0 ? 2 : 1, // 2: Khách trả ship, 1: Shop trả ship
       ORDER_SERVICE: "VCN", 
       TYPE_ORDER: 3, // Đơn nháp
       CHECK_USER: 1,
@@ -176,7 +170,6 @@ export class ShippingService {
       });
     };
 
-    // VÒNG LẶP AUTO FALLBACK (THỬ NHIỀU GÓI CƯỚC)
     const servicesToTry = ["VCN", "VTK", "VBD"]; 
     let lastErrorMessage = "Lỗi tạo đơn VTP";
 
@@ -199,7 +192,7 @@ export class ShippingService {
             
             if (lastErrorMessage.toLowerCase().includes('price') || lastErrorMessage.toLowerCase().includes('itinerary') || lastErrorMessage.toLowerCase().includes('không được hỗ trợ')) {
                 this.logger.warn(`--- ⚠️ Gói ${serviceCode} không hỗ trợ, đang đổi gói...`);
-                continue;
+                continue; // Thử gọi dịch vụ tiếp theo
             } else {
                 throw new Error(lastErrorMessage);
             }
@@ -211,7 +204,7 @@ export class ShippingService {
                  try {
                     currentToken = await this.getNewVTPToken(vtpUsername, vtpPassword);
                     const retryResponse = await executePost(currentToken, serviceCode);
-                    if (retryResponse.data && (retryResponse.data.status === 200 || retryResponse.data.error === false)) return retryResponse.data;
+                    if (retryResponse.data && (retryResponse.data.status === 200 || retryResponse.data.error === false || retryResponse.data.data?.ORDER_NUMBER)) return retryResponse.data;
                     lastErrorMessage = retryResponse.data?.message || "Lỗi tạo đơn VTP";
                  } catch (retryError) {
                     throw new HttpException(`Lỗi kết nối ViettelPost: ${retryError.message}`, HttpStatus.BAD_REQUEST);
