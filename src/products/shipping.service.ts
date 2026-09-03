@@ -9,6 +9,8 @@ export class ShippingService {
   private provincesCache: any[] = [];
   private districtsCache = new Map<number, any[]>();
   private wardsCache = new Map<number, any[]>();
+  // Bộ nhớ đệm lưu ID kho theo Token để tránh gọi API nhiều lần
+  private inventoryCache = new Map<string, number>(); 
 
   private cleanName(str: string): string {
     if (!str) return '';
@@ -73,6 +75,29 @@ export class ShippingService {
     }
   }
 
+  // HÀM MỚI: TỰ ĐỘNG LẤY ID KHO THỰC TẾ CỦA KHÁCH HÀNG TỪ VIETTEL POST
+  private async getActualInventoryId(token: string): Promise<number> {
+    if (this.inventoryCache.has(token)) {
+      return this.inventoryCache.get(token);
+    }
+    try {
+      const res = await axios.get(`${this.vtpUrl}/user/listInventory`, {
+        headers: { Token: token, 'Content-Type': 'application/json' }
+      });
+      // Lấy ID của kho đầu tiên (thường là kho mặc định của shop)
+      if (res.data && res.data.data && res.data.data.length > 0) {
+        const khoId = res.data.data[0].groupaddressId;
+        this.inventoryCache.set(token, khoId);
+        return khoId;
+      }
+      throw new Error("Không tìm thấy kho hàng nào trong tài khoản ViettelPost");
+    } catch (error) {
+       this.logger.error("Lỗi lấy danh sách kho: " + error.message);
+       // Nếu lỗi gọi API, fallback tạm về một ID kho giả để khỏi văng app, nhưng thường sẽ gọi API tạo đơn lỗi.
+       return 0; 
+    }
+  }
+
   async createVTPOrder(order: any, token: string, shopId: string | number, vtpUsername?: string, vtpPassword?: string) {
     const createUrl = `${this.vtpUrl}/order/createOrder`;
     let currentToken = token ? token.replace(/\s/g, '').trim() : '';
@@ -82,6 +107,12 @@ export class ShippingService {
     const provinceId = await this.getProvinceId(order.province);
     const districtId = await this.getDistrictId(provinceId, order.district);
     const wardId = await this.getWardId(districtId, order.ward);
+
+    // LẤY ID KHO ĐỘNG THEO ACCOUNT (Tránh lỗi sai tuyến đường)
+    const actualInventoryId = await this.getActualInventoryId(currentToken);
+    if (actualInventoryId === 0) {
+        throw new HttpException('Vui lòng tạo ít nhất 1 kho hàng trên app/web ViettelPost trước khi tạo đơn.', HttpStatus.BAD_REQUEST);
+    }
 
     let detailedAddress = (order.customerAddress || '').trim();
     if (!detailedAddress || detailedAddress.length < 3 || detailedAddress.toLowerCase() === 'chưa có địa chỉ') {
@@ -98,21 +129,22 @@ export class ShippingService {
 
     const payload = {
       ORDER_NUMBER: `ORD${Date.now().toString().slice(-8)}`,
-      GROUPADDRESS_ID: Number(shopId) || 0,
-      SENDER_FULLNAME: "Shop Bán Hàng",
-      SENDER_PHONE: "0966527931",
-      SENDER_ADDRESS: "Kho hàng",
+      
+      // ✅ ĐÃ FIX ĐỘNG: Gắn chuẩn ID Kho của từng shop vào
+      GROUPADDRESS_ID: actualInventoryId, 
+      
+      SENDER_FULLNAME: order.senderName || "Shop Bán Hàng",
+      SENDER_PHONE: order.senderPhone || "0966527931",
+      SENDER_ADDRESS: order.senderAddress || "Kho hàng",
+
       RECEIVER_FULLNAME: (order.customerName || "Khách Hàng").trim(),
       RECEIVER_PHONE: String(order.customerPhone || "0987654321").replace(/[^0-9]/g, '').slice(-10),
       RECEIVER_ADDRESS: fullAddress,
       RECEIVER_PROVINCE: provinceId,
       RECEIVER_DISTRICT: districtId,
       RECEIVER_WARD: wardId,
-      RECEIVER_WARDS: wardId,
 
-      // ĐÃ BỔ SUNG TRƯỜNG BỊ THIẾU Ở ĐÂY
       PRODUCT_TYPE: "HH", 
-      
       PRODUCT_NAME: "Hàng hóa tổng hợp",
       PRODUCT_WEIGHT: 500, 
       PRODUCT_PRICE: codAmount,
