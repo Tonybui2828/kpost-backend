@@ -200,6 +200,67 @@ export class SocialController {
     }
     return res.status(200).json({ error: 0, message: "Done" });
   }
+  // ==========================================
+  // 🚀 API WEBHOOK DÀNH CHO PAYOS
+  // ==========================================
+  @Post('payos-webhook')
+  async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
+    try {
+      // PayOS khi có giao dịch sẽ gửi data vào body.data
+      const payloadData = body.data;
+      
+      // Nếu không có mô tả giao dịch (có thể là PayOS gửi test xác nhận Webhook) thì bỏ qua
+      if (!payloadData || !payloadData.description) {
+         return res.status(200).json({ success: true, message: "Webhook received" });
+      }
+
+      // 1. Lấy nội dung chuyển khoản do PayOS gửi về
+      const description = String(payloadData.description).toUpperCase();
+      
+      // 2. Tìm mã đơn hàng (VD: SAASAI1234) trong nội dung chuyển khoản
+      const match = description.match(/SAASAI(\d+)/i);
+      
+      if (match) {
+        const billCode = match[0];
+        
+        // 3. Tìm giao dịch đang "pending" trong DB
+        const dbTrans = await this.prisma.transaction.findFirst({ 
+          where: { 
+             description: { contains: billCode, mode: 'insensitive' }, 
+             status: 'pending' 
+          } 
+        });
+
+        if (dbTrans) {
+          // 4. Cập nhật trạng thái giao dịch thành công
+          await this.prisma.transaction.update({ 
+            where: { id: dbTrans.id }, 
+            data: { status: 'success' } 
+          });
+          
+          // 5. Nâng cấp gói cho Không gian làm việc (cộng 30 ngày)
+          // Bạn có thể tùy chỉnh lại nếu khách mua 3 tháng, 6 tháng (tạm thời đang +30)
+          const exp = new Date(); 
+          exp.setDate(exp.getDate() + 30);
+          
+          await this.prisma.workspace.update({ 
+            where: { id: dbTrans.workspaceId }, 
+            data: { plan: dbTrans.planName, planExpiry: exp } 
+          });
+          
+          // 6. Bắn tín hiệu qua Socket.io để Frontend tự động tắt mã QR và báo Thành Công
+          this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
+        }
+      }
+      
+      // Bắt buộc phải trả về success: true cho PayOS, nếu không PayOS sẽ gọi lại liên tục
+      return res.status(200).json({ success: true, message: "Processed" });
+      
+    } catch (error) {
+      console.error("Lỗi Webhook PayOS:", error);
+      return res.status(200).json({ success: true, message: "Error handled" });
+    }
+  }
 
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
