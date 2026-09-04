@@ -143,6 +143,45 @@ export class SocialController {
     return this.prisma.transaction.findFirst({ where: { description: { contains: billCode, mode: 'insensitive' } }, select: { status: true, planName: true } });
   }
 
+  // ==========================================
+  // 🚀 API KIỂM TRA MÃ GIẢM GIÁ TỪ FRONTEND
+  // ==========================================
+  @Post('check-voucher')
+  async checkVoucher(@Body('code') code: string) {
+    if (!code) {
+      return { valid: false, message: 'Vui lòng nhập mã giảm giá' };
+    }
+
+    try {
+      // Tìm voucher trong DB Prisma dựa theo tên mã
+      // Giả định bảng của bạn tên là "voucher"
+      // (Nếu DB báo lỗi Prisma không có bảng "voucher" lúc compile thì bạn phải đổi thành tên bảng chính xác như "discount", "coupon")
+      const voucherRecord = await this.prisma.voucher.findFirst({
+        where: {
+          code: code.toUpperCase(),
+        },
+      });
+
+      if (voucherRecord) {
+        return {
+          valid: true,
+          // Đảm bảo tên trường khớp với cấu trúc DB (thường là discountValue, discountType)
+          discountValue: (voucherRecord as any).discountValue || (voucherRecord as any).value || 0,
+          discountType: (voucherRecord as any).discountType || (voucherRecord as any).type || 'percent'
+        };
+      }
+
+      return { valid: false, message: 'Mã không tồn tại hoặc đã hết hạn' };
+    } catch (error) {
+      console.error("Lỗi khi kiểm tra voucher:", error);
+      // Ném lỗi 400 để Frontend hiển thị "Mã không hợp lệ" màu đỏ
+      throw new HttpException(
+        'Mã không tồn tại hoặc lỗi hệ thống', 
+        HttpStatus.BAD_REQUEST
+      );
+    }
+  }
+
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
     const transactions = body.data;
