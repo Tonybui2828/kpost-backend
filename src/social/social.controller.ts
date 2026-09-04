@@ -146,6 +146,7 @@ export class SocialController {
   // ==========================================
   // 🚀 API KIỂM TRA MÃ GIẢM GIÁ TỪ FRONTEND
   // ==========================================
+
   @Post('check-voucher')
   async checkVoucher(@Body('code') code: string) {
     if (!code) {
@@ -153,28 +154,26 @@ export class SocialController {
     }
 
     try {
-      // Tìm voucher trong DB Prisma dựa theo tên mã
-      // Giả định bảng của bạn tên là "voucher"
-      // (Nếu DB báo lỗi Prisma không có bảng "voucher" lúc compile thì bạn phải đổi thành tên bảng chính xác như "discount", "coupon")
+      // Tìm voucher trong DB Prisma theo mã
       const voucherRecord = await this.prisma.voucher.findFirst({
         where: {
           code: code.toUpperCase(),
+          isActive: true // Đảm bảo mã đang có hiệu lực
         },
       });
 
       if (voucherRecord) {
+        // Đã sửa lại khớp chính xác 100% với file schema.prisma của bạn
         return {
           valid: true,
-          // Đảm bảo tên trường khớp với cấu trúc DB (thường là discountValue, discountType)
-          discountValue: (voucherRecord as any).discountValue || (voucherRecord as any).value || 0,
-          discountType: (voucherRecord as any).discountType || (voucherRecord as any).type || 'percent'
+          discountValue: voucherRecord.discount, 
+          discountType: voucherRecord.type 
         };
       }
 
       return { valid: false, message: 'Mã không tồn tại hoặc đã hết hạn' };
     } catch (error) {
       console.error("Lỗi khi kiểm tra voucher:", error);
-      // Ném lỗi 400 để Frontend hiển thị "Mã không hợp lệ" màu đỏ
       throw new HttpException(
         'Mã không tồn tại hoặc lỗi hệ thống', 
         HttpStatus.BAD_REQUEST
