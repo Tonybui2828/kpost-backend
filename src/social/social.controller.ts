@@ -204,26 +204,35 @@ export class SocialController {
   // 🚀 API WEBHOOK DÀNH CHO PAYOS
   // ==========================================
   @Post('payos-webhook')
+  // ==========================================
+  // 🚀 API WEBHOOK DÀNH CHO PAYOS
+  // ==========================================
+  @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
     try {
-      // PayOS khi có giao dịch sẽ gửi data vào body.data
+      console.log("🔔 [PayOS Webhook] Nhận được dữ liệu:", JSON.stringify(body, null, 2));
+
+      // PayOS sẽ trả về dữ liệu nằm trong biến 'data'
       const payloadData = body.data;
-      
-      // Nếu không có mô tả giao dịch (có thể là PayOS gửi test xác nhận Webhook) thì bỏ qua
+
+      // Nếu đây là webhook verify (xác nhận) hoặc không có dữ liệu giao dịch thì trả về OK
       if (!payloadData || !payloadData.description) {
+         console.log("ℹ️ [PayOS Webhook] Bỏ qua vì không có nội dung description");
          return res.status(200).json({ success: true, message: "Webhook received" });
       }
 
-      // 1. Lấy nội dung chuyển khoản do PayOS gửi về
+      // Xử lý mô tả chuyển khoản
       const description = String(payloadData.description).toUpperCase();
+      console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản:", description);
       
-      // 2. Tìm mã đơn hàng (VD: SAASAI1234) trong nội dung chuyển khoản
+      // Tìm đoạn SAASAI kèm 4 số (VD: SAASAI1234) trong nội dung chuyển khoản
       const match = description.match(/SAASAI(\d+)/i);
       
       if (match) {
         const billCode = match[0];
+        console.log(`✅ [PayOS Webhook] Tìm thấy mã đơn hàng: ${billCode}`);
         
-        // 3. Tìm giao dịch đang "pending" trong DB
+        // Tìm đơn hàng đang chờ thanh toán
         const dbTrans = await this.prisma.transaction.findFirst({ 
           where: { 
              description: { contains: billCode, mode: 'insensitive' }, 
@@ -232,14 +241,15 @@ export class SocialController {
         });
 
         if (dbTrans) {
-          // 4. Cập nhật trạng thái giao dịch thành công
+          console.log(`⏳ [PayOS Webhook] Đang xử lý nâng cấp cho Workspace: ${dbTrans.workspaceId}`);
+          
+          // 1. Cập nhật giao dịch thành công
           await this.prisma.transaction.update({ 
             where: { id: dbTrans.id }, 
             data: { status: 'success' } 
           });
           
-          // 5. Nâng cấp gói cho Không gian làm việc (cộng 30 ngày)
-          // Bạn có thể tùy chỉnh lại nếu khách mua 3 tháng, 6 tháng (tạm thời đang +30)
+          // 2. Nâng cấp hạn dùng gói cho user
           const exp = new Date(); 
           exp.setDate(exp.getDate() + 30);
           
@@ -248,16 +258,21 @@ export class SocialController {
             data: { plan: dbTrans.planName, planExpiry: exp } 
           });
           
-          // 6. Bắn tín hiệu qua Socket.io để Frontend tự động tắt mã QR và báo Thành Công
+          console.log(`🎉 [PayOS Webhook] Xong! Bắn tín hiệu Socket.io lên Frontend...`);
+          // 3. Kích hoạt Socket cho frontend tắt bảng mã QR, hiện thông báo
           this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
+        } else {
+           console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending có mã ${billCode}`);
         }
+      } else {
+         console.log("❌ [PayOS Webhook] Không tìm thấy mã SAASAI trong mô tả!");
       }
       
-      // Bắt buộc phải trả về success: true cho PayOS, nếu không PayOS sẽ gọi lại liên tục
+      // LUÔN LUÔN trả về success cho PayOS để PayOS không lặp lại yêu cầu
       return res.status(200).json({ success: true, message: "Processed" });
       
     } catch (error) {
-      console.error("Lỗi Webhook PayOS:", error);
+      console.error("🚨 Lỗi Webhook PayOS:", error);
       return res.status(200).json({ success: true, message: "Error handled" });
     }
   }
