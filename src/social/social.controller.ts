@@ -207,32 +207,40 @@ export class SocialController {
   // ==========================================
   // 🚀 API WEBHOOK DÀNH CHO PAYOS
   // ==========================================
+  // ==========================================
+  // 🚀 API WEBHOOK DÀNH CHO PAYOS (Đã sửa lại để lấy mô tả chính xác từ VietQR)
+  // ==========================================
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
     try {
-      console.log("🔔 [PayOS Webhook] Nhận được dữ liệu:", JSON.stringify(body, null, 2));
-
-      // PayOS sẽ trả về dữ liệu nằm trong biến 'data'
+      console.log("🔔 [PayOS Webhook] Bắt đầu nhận dữ liệu");
+      
       const payloadData = body.data;
 
-      // Nếu đây là webhook verify (xác nhận) hoặc không có dữ liệu giao dịch thì trả về OK
-      if (!payloadData || !payloadData.description) {
-         console.log("ℹ️ [PayOS Webhook] Bỏ qua vì không có nội dung description");
-         return res.status(200).json({ success: true, message: "Webhook received" });
+      if (!payloadData) {
+         return res.status(200).json({ success: true, message: "Webhook received but no data" });
       }
 
-      // Xử lý mô tả chuyển khoản
-      const description = String(payloadData.description).toUpperCase();
-      console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản:", description);
+      // Xử lý đọc nội dung chuyển khoản từ PayOS
+      let description = "";
       
-      // Tìm đoạn SAASAI kèm 4 số (VD: SAASAI1234) trong nội dung chuyển khoản
+      // PayOS thường trả về nội dung chuyển khoản ở trường 'description' hoặc nằm trong 'transactions' array (tùy định dạng)
+      if (payloadData.description) {
+         description = String(payloadData.description).toUpperCase();
+      } else if (payloadData.transactions && payloadData.transactions.length > 0) {
+         // Nếu PayOS trả về 1 mảng các giao dịch nhỏ bên trong
+         description = String(payloadData.transactions[0].description).toUpperCase();
+      }
+
+      console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
+      
+      // Tìm mã giao dịch SAASAI kèm số (VD: SAASAI1234)
       const match = description.match(/SAASAI(\d+)/i);
       
       if (match) {
         const billCode = match[0];
-        console.log(`✅ [PayOS Webhook] Tìm thấy mã đơn hàng: ${billCode}`);
+        console.log(`✅ [PayOS Webhook] Phát hiện mã đơn hàng: ${billCode}`);
         
-        // Tìm đơn hàng đang chờ thanh toán
         const dbTrans = await this.prisma.transaction.findFirst({ 
           where: { 
              description: { contains: billCode, mode: 'insensitive' }, 
@@ -241,16 +249,16 @@ export class SocialController {
         });
 
         if (dbTrans) {
-          console.log(`⏳ [PayOS Webhook] Đang xử lý nâng cấp cho Workspace: ${dbTrans.workspaceId}`);
+          console.log(`⏳ [PayOS Webhook] Tiến hành nâng cấp cho Workspace: ${dbTrans.workspaceId}`);
           
-          // 1. Cập nhật giao dịch thành công
           await this.prisma.transaction.update({ 
             where: { id: dbTrans.id }, 
             data: { status: 'success' } 
           });
           
-          // 2. Nâng cấp hạn dùng gói cho user
           const exp = new Date(); 
+          // Bạn có thể tùy biến số ngày cộng thêm dựa vào gói cước (dbTrans.planName)
+          // Tạm thời mình fix cứng cộng thêm 30 ngày
           exp.setDate(exp.getDate() + 30);
           
           await this.prisma.workspace.update({ 
@@ -258,22 +266,22 @@ export class SocialController {
             data: { plan: dbTrans.planName, planExpiry: exp } 
           });
           
-          console.log(`🎉 [PayOS Webhook] Xong! Bắn tín hiệu Socket.io lên Frontend...`);
-          // 3. Kích hoạt Socket cho frontend tắt bảng mã QR, hiện thông báo
+          console.log(`🎉 [PayOS Webhook] Hoàn thành nâng cấp! Kích hoạt Socket.io`);
+          
+          // Emit sự kiện socket để báo cho Frontend tắt popup QR
           this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
         } else {
-           console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending có mã ${billCode}`);
+           console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending nào mang mã ${billCode}`);
         }
       } else {
-         console.log("❌ [PayOS Webhook] Không tìm thấy mã SAASAI trong mô tả!");
+         console.log("❌ [PayOS Webhook] Nội dung chuyển khoản KHÔNG chứa mã SAASAI hợp lệ!");
       }
       
-      // LUÔN LUÔN trả về success cho PayOS để PayOS không lặp lại yêu cầu
-      return res.status(200).json({ success: true, message: "Processed" });
+      return res.status(200).json({ success: true, message: "Processed successfully" });
       
     } catch (error) {
-      console.error("🚨 Lỗi Webhook PayOS:", error);
-      return res.status(200).json({ success: true, message: "Error handled" });
+      console.error("🚨 Lỗi khi xử lý Webhook PayOS:", error);
+      return res.status(200).json({ success: true, message: "Error handled gracefully" });
     }
   }
 
