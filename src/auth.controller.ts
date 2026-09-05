@@ -1,4 +1,3 @@
-// src/auth.controller.ts
 import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 
@@ -8,6 +7,7 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() body: any) {
-    return this.authService.register(body.email, body.password, body.name);
+    // Truyền thêm affiliateBy vào service
+    return this.authService.register(body.email, body.password, body.name, body.affiliateBy);
   }
 }

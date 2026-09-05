@@ -8,7 +8,7 @@ import {
   X, Copy, Smartphone, PartyPopper, Rocket, Loader2, Sparkles, CheckCircle2,
   Mail, KeyRound, UserPlus, LogIn, LogOut, ShieldCheck, Fingerprint,
   ShieldAlert, AlertCircle, FileText, Check, MessageCircle, XCircle, Share2,
-  MousePointerClick, Users, ShoppingCart, DollarSign, TrendingUp, CheckCircle
+  MousePointerClick, Users, ShoppingCart, DollarSign, TrendingUp, CheckCircle, Clock, Ticket
 } from "lucide-react";
 
 // --- 1. KẾT NỐI SOCKET ĐỘNG ---
@@ -37,8 +37,16 @@ export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [isFetchingUser, setIsFetchingUser] = useState(true);
 
+  // --- BẮT LINK AFFILIATE TRÊN URL ---
   useEffect(() => {
-    // 1. Lấy thông tin User
+    const urlParams = new URLSearchParams(window.location.search);
+    const refCode = urlParams.get('ref');
+    if (refCode) {
+      localStorage.setItem("kpost_affiliate_ref", refCode);
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchProfile = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -56,7 +64,6 @@ export default function SettingsPage() {
     };
     fetchProfile();
 
-    // 2. Logic Thanh toán Socket
     socket.on("paymentSuccess", (data: any) => {
       if (data.billCode === paymentInfo.memo) {
         setPaymentStatus("success");
@@ -67,16 +74,22 @@ export default function SettingsPage() {
       }
     });
 
-    let interval: any;
-    if (showQR && paymentStatus === "pending") {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (showQR && paymentStatus === "pending" && paymentInfo.memo) {
         interval = setInterval(async () => {
             try {
-                const res = await axios.get(`${API_URL}/social/check-transaction/${paymentInfo.memo}`);
+                const res = await axios.get(`${API_URL}/social/check-transaction/${paymentInfo.memo}?t=${new Date().getTime()}`);
                 if (res.data && res.data.status === "success") {
                     setPaymentStatus("success");
-                    clearInterval(interval);
+                    if (interval) clearInterval(interval);
+                    
+                    try {
+                        const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3");
+                        audio.play();
+                    } catch (e) { console.log("Audio play blocked"); }
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error("Poll Error:", e); }
         }, 5000);
     }
 
@@ -93,7 +106,6 @@ export default function SettingsPage() {
         workspaceId, planName, amount: amount
       });
       
-      // Lấy chính xác description (billCode) từ Backend tạo ra
       const { description } = res.data; 
       
       const qrUrl = `https://img.vietqr.io/image/MB-0966527931-compact.png?amount=${amount}&addInfo=${description}&accountName=BUI%20VAN%20KY`;
@@ -110,7 +122,7 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
-      {/* POPUP QUÉT MÃ QR THANH TOÁN (SAU KHI ĐÃ XÁC NHẬN) */}
+      {/* POPUP QUÉT MÃ QR THANH TOÁN */}
       {showQR && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
             <div className="bg-white rounded-[50px] p-10 max-w-md w-full text-center shadow-2xl relative border border-white/20 text-black">
@@ -150,7 +162,6 @@ export default function SettingsPage() {
            <div className="mb-10 px-4 text-black text-center lg:text-left">
               <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">Settings</h1>
               
-              {/* HIỂN THỊ DỮ LIỆU USER ĐỘNG */}
               {isFetchingUser ? (
                   <div className="h-4 w-32 bg-slate-200 animate-pulse rounded mt-2 mx-auto lg:mx-0"></div>
               ) : user ? (
@@ -212,16 +223,32 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const [formData, setFormData] = useState({ email: "", password: "", name: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const getRemainingDays = (expiryDate: string | null) => {
+        if (!expiryDate) return null;
+        const diffTime = new Date(expiryDate).getTime() - new Date().getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays > 0 ? diffDays : 0;
+    };
+
     const handleManualAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
+            const payload: any = { ...formData };
+            if (authMode === "register") {
+                const savedRef = localStorage.getItem("kpost_affiliate_ref");
+                if (savedRef) {
+                    payload.affiliateBy = savedRef; 
+                }
+            }
+
             const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
-            const res = await axios.post(`${API_URL}${endpoint}`, formData);
+            const res = await axios.post(`${API_URL}${endpoint}`, payload);
+            
             if (authMode === "login") {
                 localStorage.setItem("token", res.data.token);
                 localStorage.setItem("workspaceId", res.data.wid);
-                window.location.href = "/dashboard"; // Có thể đổi lại là /settings nếu muốn
+                window.location.href = "/dashboard"; 
             } else {
                 alert("Đăng ký thành công! Mời bạn đăng nhập.");
                 setAuthMode("login");
@@ -233,29 +260,45 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
 
     if (loading) return <div className="p-10 text-center animate-pulse font-black text-slate-300 uppercase">Đang kết nối hệ thống...</div>;
 
-    if (user) return (
-        <div className="space-y-10 animate-in fade-in text-black">
-            <div className="flex items-center gap-6">
-                <div className="w-20 h-20 bg-blue-600 rounded-[30px] flex items-center justify-center text-white font-black text-3xl shadow-xl">
-                  {user.name?.[0]?.toUpperCase()}
+    if (user) {
+        const remainingDays = getRemainingDays(user.planExpiry);
+
+        return (
+            <div className="space-y-10 animate-in fade-in text-black">
+                <div className="flex items-center gap-6">
+                    <div className="w-20 h-20 bg-blue-600 rounded-[30px] flex items-center justify-center text-white font-black text-3xl shadow-xl">
+                      {user.name?.[0]?.toUpperCase()}
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-black italic uppercase tracking-tighter">{user.name}</h2>
+                      <p className="text-slate-400 font-bold">{user.email}</p>
+                    </div>
                 </div>
-                <div>
-                  <h2 className="text-3xl font-black italic uppercase tracking-tighter">{user.name}</h2>
-                  <p className="text-slate-400 font-bold">{user.email}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-6 bg-slate-50 rounded-3xl border">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Gói hiện tại</p>
+                        <div className="flex items-center gap-3">
+                            <p className="text-xl font-black text-blue-600 italic uppercase">{user.plan || "FREE"} MEMBER</p>
+                            {remainingDays !== null && remainingDays > 0 && (
+                                <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase ${remainingDays <= 5 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'}`}>
+                                    <Clock size={12} /> Còn {remainingDays} ngày
+                                </span>
+                            )}
+                            {remainingDays === 0 && user.plan && user.plan.toLowerCase() !== "free" && (
+                                <span className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase bg-slate-200 text-slate-500">
+                                    Đã hết hạn
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <div className="p-6 bg-slate-50 rounded-3xl border">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Không gian</p>
+                      <p className="text-sm font-mono font-bold text-slate-600 truncate">{user.currentWorkspaceId || "Chưa có"}</p>
+                    </div>
                 </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="p-6 bg-slate-50 rounded-3xl border">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Gói hiện tại</p>
-                  <p className="text-xl font-black text-blue-600 italic">{user.plan || "FREE"} MEMBER</p>
-                </div>
-                <div className="p-6 bg-slate-50 rounded-3xl border">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Không gian</p>
-                  <p className="text-sm font-mono font-bold text-slate-600 truncate">{user.currentWorkspaceId || "Chưa có"}</p>
-                </div>
-            </div>
-        </div>
-    );
+        );
+    }
 
     return (
         <div className="max-w-md mx-auto text-black">
@@ -288,12 +331,36 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
 }
 
 function AffiliateTab({ user }: { user: any }) {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   const [copySuccess, setCopySuccess] = useState(false);
   const [timeFilter, setTimeFilter] = useState('month');
+  
+  // State lưu trữ dữ liệu thống kê thật từ Backend
+  const [stats, setStats] = useState({ clicks: 0, signups: 0, orders: 0, revenue: 0 });
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Gán link Affiliate động theo WorkspaceID của tài khoản đang đăng nhập
+  // Gán link Affiliate động
   const affiliateId = user?.currentWorkspaceId || user?._id || "GUEST";
   const dynamicAffiliateLink = `https://kpost.vn/?ref=KPOST_${affiliateId}`;
+
+  // Gọi API lấy dữ liệu thống kê khi tab được load
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!user?.currentWorkspaceId) {
+        setIsLoadingStats(false);
+        return;
+      }
+      try {
+        const res = await axios.get(`${API_URL}/social/affiliate/stats?workspaceId=${user.currentWorkspaceId}`);
+        setStats(res.data);
+      } catch (error) {
+        console.error("Lỗi lấy dữ liệu Affiliate:", error);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+    fetchStats();
+  }, [user?.currentWorkspaceId, API_URL]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(dynamicAffiliateLink);
@@ -355,18 +422,30 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
-       {/* THỐNG KÊ (Placeholder: Đợi API thực tế từ backend sau) */}
+       {/* THỐNG KÊ TỪ BACKEND */}
        <div>
           <div className="flex items-center justify-between mb-4">
              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Tổng quan thống kê</h3>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 opacity-50">
-             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100"><div className="flex items-center gap-2 mb-2 text-blue-500"><MousePointerClick size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Lượt nhấp</span></div><p className="text-2xl font-black italic">0</p></div>
-             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100"><div className="flex items-center gap-2 mb-2 text-indigo-500"><Users size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Đăng ký mới</span></div><p className="text-2xl font-black italic">0</p></div>
-             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100"><div className="flex items-center gap-2 mb-2 text-purple-500"><ShoppingCart size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Đã mua gói</span></div><p className="text-2xl font-black italic">0</p></div>
-             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100"><div className="flex items-center gap-2 mb-2 text-green-500"><DollarSign size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Lợi nhuận</span></div><p className="text-xl font-black italic">0đ</p></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-2 text-blue-500"><MousePointerClick size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Lượt nhấp</span></div>
+                {isLoadingStats ? <div className="h-8 w-16 bg-slate-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-slate-900">{stats.clicks.toLocaleString()}</p>}
+             </div>
+             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-2 text-indigo-500"><Users size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Đăng ký mới</span></div>
+                {isLoadingStats ? <div className="h-8 w-16 bg-slate-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-slate-900">{stats.signups.toLocaleString()}</p>}
+             </div>
+             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-2 text-purple-500"><ShoppingCart size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Đã mua gói</span></div>
+                {isLoadingStats ? <div className="h-8 w-16 bg-slate-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-slate-900">{stats.orders.toLocaleString()}</p>}
+             </div>
+             <div className="p-5 rounded-2xl bg-green-50 border border-green-100 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-2 text-green-600"><DollarSign size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Số dư hoa hồng</span></div>
+                {isLoadingStats ? <div className="h-8 w-24 bg-green-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-green-700">{stats.revenue.toLocaleString()}đ</p>}
+             </div>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-2 italic">* Số liệu sẽ được cập nhật tự động khi có dữ liệu thật.</p>
+          <p className="text-[10px] font-bold text-slate-400 mt-2 italic">* Số liệu được cập nhật theo thời gian thực từ hệ thống.</p>
        </div>
 
        {/* BÁO CÁO DOANH THU THEO THỜI GIAN */}
@@ -448,7 +527,7 @@ function BillingTab({ onUpgrade }: any) {
     const [selectedPlan, setSelectedPlan] = useState<any>(null);
     const [voucher, setVoucher] = useState("");
     const [discount, setDiscount] = useState(0); 
-    const [isPercentage, setIsPercentage] = useState(true); // Biến kiểm tra xem giảm % hay giảm số tiền trực tiếp
+    const [isPercentage, setIsPercentage] = useState(true);
     const [voucherMessage, setVoucherMessage] = useState("");
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
 
@@ -485,15 +564,13 @@ function BillingTab({ onUpgrade }: any) {
         
         try {
             const token = localStorage.getItem("token");
-            // GỌI API THỰC TẾ LÊN BACKEND ĐỂ CHECK VOUCHER
             const res = await axios.post(`${API_URL}/social/check-voucher`, { code: voucher.toUpperCase() }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
-            // Backend trả về hợp lệ
             if (res.data && res.data.valid) {
                 const discountValue = res.data.discountValue; 
-                const discountType = res.data.discountType; // 'percent' (giảm %) hoặc 'fixed' (giảm tiền VNĐ)
+                const discountType = res.data.discountType;
                 
                 setDiscount(discountValue);
                 setIsPercentage(discountType === 'percent');
@@ -505,28 +582,25 @@ function BillingTab({ onUpgrade }: any) {
             }
         } catch (error: any) {
             setDiscount(0);
-            // Xử lý báo lỗi từ Backend nếu mã lỗi
             setVoucherMessage(`❌ ${error.response?.data?.message || "Mã không hợp lệ hoặc đã hết hạn"}`);
         } finally {
             setIsCheckingVoucher(false);
         }
     };
 
-    // Hàm tính toán giá cuối cùng dựa trên kiểu giảm giá
     const getFinalPrice = () => {
         if (!selectedPlan) return 0;
         let finalPrice = selectedPlan.price;
         if (discount > 0) {
             if (isPercentage) {
-                finalPrice = finalPrice * (1 - (discount / 100)); // Nếu discount là 30 -> giảm 30%
+                finalPrice = finalPrice * (1 - (discount / 100));
             } else {
-                finalPrice = finalPrice - discount; // Nếu discount là 100000 -> giảm trực tiếp 100k
+                finalPrice = finalPrice - discount;
             }
         }
-        return finalPrice > 0 ? finalPrice : 0; // Không để giá âm
+        return finalPrice > 0 ? finalPrice : 0;
     };
     
-    // Hàm tính toán số tiền được giảm để hiển thị
     const getDiscountAmount = () => {
         if (!selectedPlan || discount <= 0) return 0;
         if (isPercentage) {
@@ -594,7 +668,6 @@ function BillingTab({ onUpgrade }: any) {
                 })}
             </div>
 
-            {/* MODAL XÁC NHẬN VÀ NHẬP VOUCHER */}
             {selectedPlan && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-[40px] p-8 max-w-sm w-full shadow-2xl relative flex flex-col animate-in zoom-in-95 duration-200 border border-white/20">
@@ -622,7 +695,6 @@ function BillingTab({ onUpgrade }: any) {
                                 <span className="text-slate-900 font-black">{selectedPlan.price.toLocaleString()}đ</span>
                             </div>
                             
-                            {/* Hiển thị dòng trừ tiền nếu mã hợp lệ */}
                             {discount > 0 && (
                                 <div className="flex justify-between items-center text-sm font-black text-green-600">
                                     <span>Giảm giá ({isPercentage ? discount + '%' : discount.toLocaleString() + 'đ'}):</span>
@@ -667,7 +739,107 @@ function BillingTab({ onUpgrade }: any) {
     )
 }
 
-function VoucherTab() { return <div className="p-10 text-center text-black animate-in fade-in"><Gift size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Bạn chưa có mã giảm giá nào.</p></div> }
+function VoucherTab() { 
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const [code, setCode] = useState("");
+    const [isChecking, setIsChecking] = useState(false);
+    const [message, setMessage] = useState("");
+    
+    const [savedVouchers, setSavedVouchers] = useState<any[]>([]);
+
+    const handleSaveVoucher = async () => {
+        if (!code.trim()) return;
+        setIsChecking(true);
+        setMessage("Đang kiểm tra...");
+        try {
+            const token = localStorage.getItem("token");
+            const res = await axios.post(`${API_URL}/social/check-voucher`, { code: code.toUpperCase() }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.data && res.data.valid) {
+                if (!savedVouchers.find(v => v.code === code.toUpperCase())) {
+                    setSavedVouchers([{
+                        code: code.toUpperCase(),
+                        discountValue: res.data.discountValue,
+                        discountType: res.data.discountType,
+                        validUntil: "Vô thời hạn" 
+                    }, ...savedVouchers]);
+                    setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
+                } else {
+                    setMessage("⚠️ Mã này đã được lưu trong ví của bạn.");
+                }
+                setCode("");
+            } else {
+                setMessage("❌ Mã không hợp lệ hoặc đã hết hạn");
+            }
+        } catch (error: any) {
+            setMessage(`❌ ${error.response?.data?.message || "Mã không tồn tại"}`);
+        } finally {
+            setIsChecking(false);
+        }
+    };
+
+    return (
+        <div className="text-black animate-in fade-in">
+            <h2 className="text-2xl font-black italic uppercase mb-8">Ví mã giảm giá</h2>
+            
+            <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 mb-10 max-w-lg">
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Thêm mã giảm giá mới</label>
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={code} 
+                        onChange={(e) => setCode(e.target.value.toUpperCase())}
+                        placeholder="Nhập mã KPOST..." 
+                        className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors uppercase placeholder:normal-case"
+                    />
+                    <button 
+                        onClick={handleSaveVoucher} 
+                        disabled={isChecking} 
+                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase hover:bg-blue-700 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center"
+                    >
+                        {isChecking ? <Loader2 size={18} className="animate-spin" /> : "LƯU MÃ"}
+                    </button>
+                </div>
+                {message && (
+                    <p className={`text-xs font-bold mt-4 ${message.includes('❌') ? 'text-red-500' : message.includes('⚠️') ? 'text-amber-500' : 'text-green-600'}`}>
+                        {message}
+                    </p>
+                )}
+            </div>
+
+            {savedVouchers.length === 0 ? (
+                <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50">
+                    <Gift size={48} className="mx-auto text-slate-300 mb-4" />
+                    <p className="font-black text-slate-400 uppercase italic">Ví của bạn hiện đang trống.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {savedVouchers.map((v, index) => (
+                        <div key={index} className="flex items-center gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                            <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 bg-slate-50 rounded-full border-r border-slate-200"></div>
+                            
+                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
+                                <Ticket size={28} />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-xl font-black italic text-slate-900 tracking-tighter">
+                                    Giảm {v.discountType === 'percent' ? v.discountValue + '%' : v.discountValue.toLocaleString() + 'đ'}
+                                </p>
+                                <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600">{v.code}</span></p>
+                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest flex items-center gap-1">
+                                    <Clock size={12}/> {v.validUntil}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    ) 
+}
+
 function GuideTab() { return <div className="p-10 text-center text-black animate-in fade-in"><BookOpen size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Tài liệu đang được cập nhật...</p></div> }
 
 function TermsTab() {
@@ -841,7 +1013,7 @@ function TermsTab() {
               <p className="text-xs text-slate-600 leading-relaxed"><strong>Khách hàng:</strong> Toàn bộ dữ liệu do Khách hàng tải lên hệ thống thuộc quyền sở hữu hợp pháp của Khách hàng.</p>
            </div>
            <div className="border-t border-slate-200 pt-4">
-              <h4 className="font-bold text-slate-900 mb-2 uppercase tracking-tighter flex gap-2"><span className="text-blue-500">8.</span> Lưu Trữ & Xóa Dữ Liệu</h4>
+              <h4 className="font-bold text-slate-900 mb-2 uppercase tracking-tighter flex gap-2"><span className="text-blue-500">8.</span> Lưu Trữ & Xóa Dữ Lưu</h4>
               <p className="text-xs text-slate-600 leading-relaxed">Sau 30 ngày kể từ khi hết hạn gói cước mà không gia hạn, Kpost có quyền xóa vĩnh viễn dữ liệu để giải phóng máy chủ. Kpost không chịu trách nhiệm bồi thường cho mất mát dữ liệu do chậm trễ gia hạn.</p>
            </div>
         </div>

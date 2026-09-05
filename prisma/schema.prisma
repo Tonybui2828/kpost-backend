@@ -40,13 +40,19 @@ model Workspace {
   isAutoPay      Boolean           @default(false)  
   balance        Float             @default(0)      
   
-  vtpPhone       String?           // <--- THÊM MỚI (Lưu SĐT Viettel Post)
-  vtpPassword    String?           // <--- THÊM MỚI (Lưu Pass Viettel Post)
-  vtpToken       String?           // <--- GIỮ NGUYÊN (Lưu Token để dùng)
+  vtpPhone       String?           
+  vtpPassword    String?           
+  vtpToken       String?           
   vtpShopId      String?           
   senderAddress  String?           
   senderProvince String?           
   senderDistrict String?           
+
+  // --- THÊM CÁC CỘT AFFILIATE TẠI ĐÂY ---
+  referredBy     String?           // Lưu mã người giới thiệu (ví dụ KPOST_123)
+  commission     Float             @default(0) // Số dư hoa hồng Affiliate
+  totalSignups   Int               @default(0) // Tổng số người đăng ký qua link
+  totalOrders    Int               @default(0) // Tổng số đơn hàng mua qua link
   
   members        WorkspaceMember[] 
   socialAccounts SocialAccount[] 
@@ -56,7 +62,19 @@ model Workspace {
   socialGroups   SocialGroup[]     
   orders         Order[]           
   transactions   Transaction[]     
+  affiliateHistories AffiliateHistory[] // Lịch sử nhận hoa hồng
   createdAt      DateTime          @default(now())
+}
+
+// BẢNG MỚI: Lịch sử hoa hồng Affiliate
+model AffiliateHistory {
+  id            String    @id @default(uuid())
+  workspaceId   String    // Người nhận hoa hồng
+  sourceId      String    // Giao dịch phát sinh hoa hồng
+  amount        Float     // Tiền nhận được
+  note          String    
+  createdAt     DateTime  @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 // 3. BẢNG GIAO DỊCH
@@ -123,15 +141,15 @@ model Post {
   createdAt   DateTime  @default(now())
 }
 
-// 8. Bảng Sản phẩm (Đã nâng cấp Mô tả và Nhiều ảnh)
+// 8. Bảng Sản phẩm
 model Product {
   id           String    @id @default(uuid())
   workspaceId  String
   name         String
-  description  String?   @db.Text // Cho phép nhập mô tả chi tiết sản phẩm rất dài
+  description  String?   @db.Text 
   price        Float?
-  imageUrl     String?   // Vẫn giữ để code cũ không lỗi
-  images       String[]  @default([]) // Mảng lưu tối đa 10 đường dẫn ảnh sản phẩm
+  imageUrl     String?   
+  images       String[]  @default([]) 
   productUrl   String?   
   skuInternal  String    @unique
   totalStock   Int       @default(0)
@@ -165,7 +183,7 @@ model SocialGroup {
   createdAt    DateTime  @default(now())
   workspace    Workspace @relation(fields: [workspaceId], references: [id])
 
-  @@unique([groupId, pageId]) // 🚀 Cập nhật ở đây: Khóa kết hợp cho phép nhiều page chung 1 nhóm
+  @@unique([groupId, pageId]) 
 }
 
 // 11. Bảng Đơn hàng

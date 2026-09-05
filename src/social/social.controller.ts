@@ -23,6 +23,27 @@ export class SocialController {
     private readonly groupBotService: GroupBotService 
   ) {}
 
+  // ==========================================
+  // 🚀 API LẤY THỐNG KÊ AFFILIATE
+  // ==========================================
+  @Get('affiliate/stats')
+  async getAffiliateStats(@Query('workspaceId') workspaceId: string) {
+    if (!workspaceId) return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
+    try {
+      const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+      if (!ws) return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
+      
+      return {
+        clicks: ws.totalSignups * 3, // Giả lập tỷ lệ chuyển đổi 1/3
+        signups: ws.totalSignups,
+        orders: ws.totalOrders,
+        revenue: ws.commission
+      };
+    } catch (e) {
+      return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
+    }
+  }
+
   @Post('accounts') 
   async saveAccount(@Body() data: any) { 
     const workspace = await this.prisma.workspace.findUnique({
@@ -193,7 +214,11 @@ export class SocialController {
       );
     }
   }
-@Post('casso-webhook')
+
+  // ==========================================
+  // 🚀 API WEBHOOK CASSO
+  // ==========================================
+  @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
     try {
       console.log("🔔 [Casso Webhook] Nhận dữ liệu:", JSON.stringify(body));
@@ -207,7 +232,6 @@ export class SocialController {
         const description = String(trans.description).toUpperCase();
         console.log("🔍 [Casso Webhook] Nội dung CK:", description);
 
-        // Regex mới: Hỗ trợ khoảng trắng giữa SAASAI và số
         const match = description.match(/SAASAI\s*(\d+)/i);
         
         if (match) {
@@ -232,11 +256,27 @@ export class SocialController {
             const exp = new Date(); 
             exp.setDate(exp.getDate() + 30);
             
-            await this.prisma.workspace.update({ 
+            const workspaceInfo = await this.prisma.workspace.update({ 
               where: { id: dbTrans.workspaceId }, 
               data: { plan: dbTrans.planName, planExpiry: exp } 
             });
             
+            // XỬ LÝ TRÍCH HOA HỒNG AFFILIATE (10%)
+            if (workspaceInfo.referredBy) {
+               const refId = workspaceInfo.referredBy.replace('KPOST_', '');
+               const referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
+               if (referrer) {
+                  const comm = dbTrans.amount * 0.10;
+                  await this.prisma.workspace.update({
+                      where: { id: refId },
+                      data: { commission: { increment: comm }, totalOrders: { increment: 1 } }
+                  });
+                  await this.prisma.affiliateHistory.create({
+                      data: { workspaceId: refId, sourceId: dbTrans.id, amount: comm, note: `Hoa hồng từ đơn ${dbTrans.description}` }
+                  });
+               }
+            }
+
             // Bắn socket cho Frontend
             this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
           } else {
@@ -252,7 +292,7 @@ export class SocialController {
   }
 
   // ==========================================
-  // 🚀 API WEBHOOK DÀNH CHO PAYOS
+  // 🚀 API WEBHOOK PAYOS
   // ==========================================
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
@@ -275,7 +315,6 @@ export class SocialController {
 
       console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
       
-      // TÌM MÃ GIAO DỊCH (Cho phép có dấu cách giữa SAASAI và số)
       const match = description.match(/SAASAI\s*(\d+)/i);
       
       if (match) {
@@ -300,10 +339,26 @@ export class SocialController {
           const exp = new Date(); 
           exp.setDate(exp.getDate() + 30);
           
-          await this.prisma.workspace.update({ 
+          const workspaceInfo = await this.prisma.workspace.update({ 
             where: { id: dbTrans.workspaceId }, 
             data: { plan: dbTrans.planName, planExpiry: exp } 
           });
+
+          // XỬ LÝ TRÍCH HOA HỒNG AFFILIATE (10%)
+          if (workspaceInfo.referredBy) {
+            const refId = workspaceInfo.referredBy.replace('KPOST_', '');
+            const referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
+            if (referrer) {
+               const comm = dbTrans.amount * 0.10;
+               await this.prisma.workspace.update({
+                   where: { id: refId },
+                   data: { commission: { increment: comm }, totalOrders: { increment: 1 } }
+               });
+               await this.prisma.affiliateHistory.create({
+                   data: { workspaceId: refId, sourceId: dbTrans.id, amount: comm, note: `Hoa hồng từ đơn ${dbTrans.description}` }
+               });
+            }
+          }
           
           console.log(`🎉 [PayOS Webhook] Hoàn thành nâng cấp! Kích hoạt Socket.io`);
           
@@ -469,10 +524,6 @@ export class SocialController {
     const result = await this.groupBotService.joinGroups(body.cookie, body.groupUrls, body.pageIds);
     return result; 
   }
-
-  // ==========================================
-  // 🚀 TÍNH NĂNG ĐĂNG NHẬP FACEBOOK LẤY PAGE TỰ ĐỘNG
-  // ==========================================
 
   @Get('auth/facebook')
   async facebookLogin(@Query('workspaceId') workspaceId: string, @Res() res: Response) {
