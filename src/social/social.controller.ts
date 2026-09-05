@@ -134,8 +134,8 @@ export class SocialController {
 
   @Post('create-transaction')
   async createTransaction(@Body() body: any) {
-    // 1. Tạo một mã đơn hàng duy nhất
-    const billCode = `SAASAI${Math.floor(1000 + Math.random() * 8999)}`;
+    // 1. Tạo một mã đơn hàng duy nhất bằng timestamp để không trùng
+    const billCode = `SAASAI${Date.now().toString().slice(-6)}`;
     
     // 2. Lưu vào DB
     await this.prisma.transaction.create({ 
@@ -148,7 +148,7 @@ export class SocialController {
       } 
     });
     
-    // 3. TRẢ VỀ BILL CODE CHO FRONTEND BIẾT ĐỂ TẠO MÃ QR VÀ POLL DỮ LIỆU
+    // 3. TRẢ VỀ BILL CODE CHO FRONTEND
     return {
       description: billCode
     };
@@ -215,7 +215,7 @@ export class SocialController {
   }
 
   // ==========================================
-  // 🚀 API WEBHOOK DÀNH CHO PAYOS (Đã dọn dẹp)
+  // 🚀 API WEBHOOK DÀNH CHO PAYOS
   // ==========================================
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
@@ -238,15 +238,16 @@ export class SocialController {
 
       console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
       
-      const match = description.match(/SAASAI(\d+)/i);
+      // TÌM MÃ GIAO DỊCH (Cho phép có dấu cách giữa SAASAI và số)
+      const match = description.match(/SAASAI\s*(\d+)/i);
       
       if (match) {
-        const billCode = match[0];
+        const billCode = `SAASAI${match[1]}`;
         console.log(`✅ [PayOS Webhook] Phát hiện mã đơn hàng: ${billCode}`);
         
         const dbTrans = await this.prisma.transaction.findFirst({ 
           where: { 
-             description: { contains: billCode, mode: 'insensitive' }, 
+             description: billCode, 
              status: 'pending' 
           } 
         });
