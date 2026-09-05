@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express'; 
-import axios from 'axios'; // 🚀 Khai báo thêm axios để gọi API Facebook
+import axios from 'axios'; 
 import { FacebookService } from './facebook.service';
 import { PrismaService } from '../prisma.service';
 import { ChatGateway } from './chat.gateway';
@@ -146,7 +146,6 @@ export class SocialController {
   // ==========================================
   // 🚀 API KIỂM TRA MÃ GIẢM GIÁ TỪ FRONTEND
   // ==========================================
-
   @Post('check-voucher')
   async checkVoucher(@Body('code') code: string) {
     if (!code) {
@@ -154,16 +153,14 @@ export class SocialController {
     }
 
     try {
-      // Tìm voucher trong DB Prisma theo mã
       const voucherRecord = await this.prisma.voucher.findFirst({
         where: {
           code: code.toUpperCase(),
-          isActive: true // Đảm bảo mã đang có hiệu lực
+          isActive: true 
         },
       });
 
       if (voucherRecord) {
-        // Đã sửa lại khớp chính xác 100% với file schema.prisma của bạn
         return {
           valid: true,
           discountValue: voucherRecord.discount, 
@@ -200,15 +197,9 @@ export class SocialController {
     }
     return res.status(200).json({ error: 0, message: "Done" });
   }
+
   // ==========================================
-  // 🚀 API WEBHOOK DÀNH CHO PAYOS
-  // ==========================================
-  @Post('payos-webhook')
-  // ==========================================
-  // 🚀 API WEBHOOK DÀNH CHO PAYOS
-  // ==========================================
-  // ==========================================
-  // 🚀 API WEBHOOK DÀNH CHO PAYOS (Đã sửa lại để lấy mô tả chính xác từ VietQR)
+  // 🚀 API WEBHOOK DÀNH CHO PAYOS (Đã dọn dẹp)
   // ==========================================
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
@@ -221,20 +212,16 @@ export class SocialController {
          return res.status(200).json({ success: true, message: "Webhook received but no data" });
       }
 
-      // Xử lý đọc nội dung chuyển khoản từ PayOS
       let description = "";
       
-      // PayOS thường trả về nội dung chuyển khoản ở trường 'description' hoặc nằm trong 'transactions' array (tùy định dạng)
       if (payloadData.description) {
          description = String(payloadData.description).toUpperCase();
       } else if (payloadData.transactions && payloadData.transactions.length > 0) {
-         // Nếu PayOS trả về 1 mảng các giao dịch nhỏ bên trong
          description = String(payloadData.transactions[0].description).toUpperCase();
       }
 
       console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
       
-      // Tìm mã giao dịch SAASAI kèm số (VD: SAASAI1234)
       const match = description.match(/SAASAI(\d+)/i);
       
       if (match) {
@@ -257,8 +244,6 @@ export class SocialController {
           });
           
           const exp = new Date(); 
-          // Bạn có thể tùy biến số ngày cộng thêm dựa vào gói cước (dbTrans.planName)
-          // Tạm thời mình fix cứng cộng thêm 30 ngày
           exp.setDate(exp.getDate() + 30);
           
           await this.prisma.workspace.update({ 
@@ -268,7 +253,6 @@ export class SocialController {
           
           console.log(`🎉 [PayOS Webhook] Hoàn thành nâng cấp! Kích hoạt Socket.io`);
           
-          // Emit sự kiện socket để báo cho Frontend tắt popup QR
           this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
         } else {
            console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending nào mang mã ${billCode}`);
@@ -436,25 +420,16 @@ export class SocialController {
   // 🚀 TÍNH NĂNG ĐĂNG NHẬP FACEBOOK LẤY PAGE TỰ ĐỘNG
   // ==========================================
 
-  // 1. Tạo Link để khách bấm vào đăng nhập
   @Get('auth/facebook')
   async facebookLogin(@Query('workspaceId') workspaceId: string, @Res() res: Response) {
     const appId = process.env.FACEBOOK_APP_ID;
     const redirectUri = `${process.env.BACKEND_URL}/social/auth/facebook/callback`;
-    
-    // Lưu tạm workspaceId vào state để lát Facebook gọi về mình biết là của khách nào
     const state = JSON.stringify({ workspaceId });
-    
-    // Yêu cầu các quyền cần thiết để đăng bài, nhắn tin, đọc comment
     const scope = 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging';
-    
     const fbAuthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
-    
-    // Đẩy khách hàng sang trang đăng nhập của Facebook
     return res.redirect(fbAuthUrl);
   }
 
-  // 2. Facebook trả mã về đây -> Đổi ra Token -> Quét Page -> Lưu DB
   @Get('auth/facebook/callback')
   async facebookCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     try {
@@ -465,33 +440,26 @@ export class SocialController {
       const appSecret = process.env.FACEBOOK_APP_SECRET;
       const redirectUri = `${process.env.BACKEND_URL}/social/auth/facebook/callback`;
 
-      // Bước A: Đổi 'code' lấy 'User Token' (Sống 2 tiếng)
       const tokenRes = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&redirect_uri=${redirectUri}&client_secret=${appSecret}&code=${code}`);
       const shortLivedToken = tokenRes.data.access_token;
 
-      // Bước B: Đổi 'User Token ngắn' lấy 'User Token dài hạn' (Sống 60 ngày)
       const longLivedRes = await axios.get(`https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortLivedToken}`);
       const longLivedToken = longLivedRes.data.access_token;
 
-      // Bước C: Quét toàn bộ Fanpage mà User này quản lý (Mỗi page sẽ có Token vĩnh viễn riêng)
       const pagesRes = await axios.get(`https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedToken}`);
       const pages = pagesRes.data.data;
 
-      // Bước D: Lưu thẳng vào Database của hệ thống
       for (const page of pages) {
-        // Kiểm tra xem Page này đã có trong Database của khách chưa
         const existingPage = await this.prisma.socialAccount.findFirst({
           where: { platformId: page.id, workspaceId: workspaceId }
         });
 
         if (existingPage) {
-          // Nếu có rồi thì chỉ việc cập nhật Access Token mới nhất
           await this.prisma.socialAccount.update({
             where: { id: existingPage.id },
             data: { accessToken: page.access_token, accountName: page.name }
           });
         } else {
-          // Nếu chưa có thì tạo mới
           await this.prisma.socialAccount.create({
             data: {
               workspaceId,
@@ -499,17 +467,15 @@ export class SocialController {
               accountName: page.name,
               accessToken: page.access_token,
               platform: 'facebook',
-              isAiAutoReply: false // Mặc định tắt AI, để khách tự bật
+              isAiAutoReply: false 
             }
           });
         }
       }
       
-      // Xong xuôi, điều hướng khách quay lại trang Quản lý Fanpage báo thành công
       return res.redirect(`${process.env.FRONTEND_URL}/social?success=true`);
     } catch (error) {
       console.error("Lỗi đăng nhập FB:", error.response?.data || error.message);
-      // Điều hướng về báo lỗi
       return res.redirect(`${process.env.FRONTEND_URL}/social?error=true`);
     }
   }
