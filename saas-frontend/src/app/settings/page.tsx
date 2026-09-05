@@ -92,7 +92,10 @@ export default function SettingsPage() {
       const res = await axios.post(`${API_URL}/social/create-transaction`, {
         workspaceId, planName, amount: amount
       });
+      
+      // Lấy chính xác description (billCode) từ Backend tạo ra
       const { description } = res.data; 
+      
       const qrUrl = `https://img.vietqr.io/image/MB-0966527931-compact.png?amount=${amount}&addInfo=${description}&accountName=BUI%20VAN%20KY`;
       setPaymentInfo({ qr: qrUrl, memo: description, amount: amount, plan: planName });
       setPaymentStatus("pending");

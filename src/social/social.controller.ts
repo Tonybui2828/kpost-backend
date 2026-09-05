@@ -134,8 +134,24 @@ export class SocialController {
 
   @Post('create-transaction')
   async createTransaction(@Body() body: any) {
+    // 1. Tạo một mã đơn hàng duy nhất
     const billCode = `SAASAI${Math.floor(1000 + Math.random() * 8999)}`;
-    return this.prisma.transaction.create({ data: { workspaceId: body.workspaceId, planName: body.planName, amount: body.amount, description: billCode, status: 'pending' } });
+    
+    // 2. Lưu vào DB
+    await this.prisma.transaction.create({ 
+      data: { 
+        workspaceId: body.workspaceId, 
+        planName: body.planName, 
+        amount: body.amount, 
+        description: billCode, 
+        status: 'pending' 
+      } 
+    });
+    
+    // 3. TRẢ VỀ BILL CODE CHO FRONTEND BIẾT ĐỂ TẠO MÃ QR VÀ POLL DỮ LIỆU
+    return {
+      description: billCode
+    };
   }
 
   @Get('check-transaction/:billCode')
