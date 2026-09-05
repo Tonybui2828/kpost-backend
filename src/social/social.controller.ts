@@ -193,25 +193,62 @@ export class SocialController {
       );
     }
   }
-
-  @Post('casso-webhook')
+@Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
-    const transactions = body.data;
-    if (!transactions) return res.status(200).send();
-    for (const trans of transactions) {
-      const match = trans.description.toUpperCase().match(/SAASAI(\d+)/i);
-      if (match) {
-        const billCode = match[0];
-        const dbTrans = await this.prisma.transaction.findFirst({ where: { description: { contains: billCode, mode: 'insensitive' }, status: 'pending' } });
-        if (dbTrans) {
-          await this.prisma.transaction.update({ where: { id: dbTrans.id }, data: { status: 'success' } });
-          const exp = new Date(); exp.setDate(exp.getDate() + 30);
-          await this.prisma.workspace.update({ where: { id: dbTrans.workspaceId }, data: { plan: dbTrans.planName, planExpiry: exp } });
-          this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
+    try {
+      console.log("🔔 [Casso Webhook] Nhận dữ liệu:", JSON.stringify(body));
+      const transactions = body.data;
+      
+      if (!transactions || transactions.length === 0) {
+        return res.status(200).send();
+      }
+
+      for (const trans of transactions) {
+        const description = String(trans.description).toUpperCase();
+        console.log("🔍 [Casso Webhook] Nội dung CK:", description);
+
+        // Regex mới: Hỗ trợ khoảng trắng giữa SAASAI và số
+        const match = description.match(/SAASAI\s*(\d+)/i);
+        
+        if (match) {
+          const billCode = `SAASAI${match[1]}`;
+          console.log(`✅ [Casso Webhook] Phát hiện mã: ${billCode}`);
+          
+          const dbTrans = await this.prisma.transaction.findFirst({ 
+            where: { 
+              description: { contains: billCode, mode: 'insensitive' }, 
+              status: 'pending' 
+            } 
+          });
+
+          if (dbTrans) {
+            console.log(`⏳ [Casso Webhook] Cập nhật Workspace: ${dbTrans.workspaceId}`);
+            
+            await this.prisma.transaction.update({ 
+              where: { id: dbTrans.id }, 
+              data: { status: 'success' } 
+            });
+            
+            const exp = new Date(); 
+            exp.setDate(exp.getDate() + 30);
+            
+            await this.prisma.workspace.update({ 
+              where: { id: dbTrans.workspaceId }, 
+              data: { plan: dbTrans.planName, planExpiry: exp } 
+            });
+            
+            // Bắn socket cho Frontend
+            this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
+          } else {
+             console.log(`⚠️ [Casso Webhook] Không tìm thấy đơn Pending mã ${billCode}`);
+          }
         }
       }
+      return res.status(200).json({ error: 0, message: "Done" });
+    } catch (error) {
+      console.error("🚨 [Casso Webhook] Lỗi:", error);
+      return res.status(200).json({ error: 0, message: "Error handled" });
     }
-    return res.status(200).json({ error: 0, message: "Done" });
   }
 
   // ==========================================
