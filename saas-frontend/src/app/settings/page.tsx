@@ -340,7 +340,8 @@ function AffiliateTab({ user }: { user: any }) {
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   // Gán link Affiliate động
-  const affiliateId = user?.currentWorkspaceId || user?._id || "GUEST";
+  const wsId = user?.currentWorkspaceId || user?.wid || localStorage.getItem("workspaceId");
+  const affiliateId = wsId || "GUEST";
   const dynamicAffiliateLink = `https://kpost.vn/?ref=KPOST_${affiliateId}`;
 
   // Gọi API lấy dữ liệu thống kê khi tab được load

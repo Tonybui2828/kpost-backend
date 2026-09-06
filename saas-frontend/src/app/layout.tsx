@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import Script from "next/script"; // <-- Import thêm Script của Next.js
 import "./globals.css";
 import Sidebar from "../components/Sidebar"; 
 
@@ -15,8 +16,22 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="vi">
-      {/* suppressHydrationWarning giúp web không bị lỗi khi bốc dữ liệu từ localStorage lúc vừa load trang */}
       <body className={`${geist.className} bg-slate-50 text-slate-900`} suppressHydrationWarning={true}>
+        
+        {/* ĐOẠN SCRIPT CHẠY NGẦM ĐỂ BẮT MÃ AFFILIATE TỪ MỌI ĐƯỜNG LINK */}
+        <Script id="affiliate-tracker" strategy="afterInteractive">
+          {`
+            try {
+              const urlParams = new URLSearchParams(window.location.search);
+              const refCode = urlParams.get('ref');
+              if (refCode) {
+                localStorage.setItem('kpost_affiliate_ref', refCode);
+                console.log('✅ Đã bắt thành công mã Affiliate:', refCode);
+              }
+            } catch(e) {}
+          `}
+        </Script>
+
         <div className="flex min-h-screen">
           
           {/* 1. Thanh Sidebar cố định bên trái (Rộng 256px) */}

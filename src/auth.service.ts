@@ -12,6 +12,9 @@ export class AuthService {
 
   // 1. Logic Đăng ký
   async register(email: string, pass: string, name: string, affiliateBy?: string) {
+    console.log("🚀 [REGISTER] Khách mới đang đăng ký:", email);
+    console.log("🏷️ [AFFILIATE] Mã giới thiệu gửi lên từ web:", affiliateBy || "Không có");
+
     // Kiểm tra xem email đã có người dùng chưa
     const userExists = await this.prisma.user.findUnique({ where: { email } });
     if (userExists) throw new BadRequestException('Email này đã được sử dụng!');
@@ -19,18 +22,37 @@ export class AuthService {
     // Mã hóa mật khẩu
     const hashedPassword = await bcrypt.hash(pass, 10);
 
-    // XỬ LÝ AFFILIATE
+    // XỬ LÝ AFFILIATE THÔNG MINH (Chống trượt mã 100%)
     let referrerWorkspaceId = null;
     if (affiliateBy && affiliateBy.startsWith('KPOST_')) {
       const refId = affiliateBy.replace('KPOST_', '');
-      const referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
+      console.log("🔍 [AFFILIATE] Đang tìm hệ thống với ID gốc:", refId);
+      
+      let referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
+      
+      // BỘ DÒ TÌM: Nếu ID Frontend gửi lên là User ID (thay vì Workspace ID), ta tự đi tìm lại!
+      if (!referrer) {
+         const userRef = await this.prisma.user.findUnique({ 
+             where: { id: refId }, 
+             include: { workspaces: { include: { workspace: true } } } 
+         });
+         if (userRef && userRef.workspaces.length > 0) {
+             referrer = userRef.workspaces[0].workspace;
+             console.log("🔄 [AFFILIATE] Tìm thấy ID qua User. ID Workspace thật là:", referrer.id);
+         }
+      }
+
       if (referrer) {
-        referrerWorkspaceId = refId;
+        referrerWorkspaceId = referrer.id;
+        console.log("✅ [AFFILIATE] TÌM THẤY! Đang cộng 1 Lượt Đăng Ký Mới cho:", referrerWorkspaceId);
+        
         // Cộng 1 vào số lượt đăng ký của người giới thiệu
         await this.prisma.workspace.update({
-          where: { id: refId },
+          where: { id: referrerWorkspaceId },
           data: { totalSignups: { increment: 1 } }
         });
+      } else {
+         console.log("❌ [AFFILIATE] Bó tay! Không tìm thấy ID này trong Database.");
       }
     }
 
@@ -39,14 +61,15 @@ export class AuthService {
       data: {
         email,
         name,
-        password: hashedPassword, // Đã thêm mật khẩu
+        password: hashedPassword,
         workspaces: {
           create: {
             workspace: {
               create: {
                 name: `Workspace của ${name || 'Bạn'}`,
                 ownerId: 'temp', 
-                referredBy: referrerWorkspaceId ? affiliateBy : null, // Lưu mã giới thiệu vào Workspace
+                // Lưu lại mã giới thiệu chuẩn chỉ vào Workspace
+                referredBy: referrerWorkspaceId ? `KPOST_${referrerWorkspaceId}` : null,
               }
             },
             role: 'admin'
@@ -63,6 +86,7 @@ export class AuthService {
       data: { ownerId: user.id }
     });
 
+    console.log("🎉 [REGISTER] Hoàn tất! Đã tạo xong tài khoản.");
     return { message: 'Đăng ký thành công!', userId: user.id, wid: newWorkspace.id };
   }
 
