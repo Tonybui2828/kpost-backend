@@ -47,19 +47,25 @@ export class AutomatorService {
       // -------------------------------------------------------------
       let productImageUrl = "";
       try {
-        const products = await this.prisma.product.findMany({ 
-          where: { workspaceId: account.workspaceId },
-          select: { name: true, image: true } // Hoặc 'imageUrl' tuỳ schema DB của bạn
+        // Lấy toàn bộ sản phẩm (bỏ select để tránh lỗi Prisma Strict Type)
+        const rawProducts = await this.prisma.product.findMany({ 
+          where: { workspaceId: account.workspaceId }
         });
         
-        if (products.length > 0) {
+        if (rawProducts.length > 0) {
+           // Lọc bớt dữ liệu rác để gửi cho AI (Tự động thích nghi với tên cột ảnh của DB)
+           const productsForAi = rawProducts.map((p: any) => ({
+               name: p.name,
+               imageUrl: p.images || p.imageUrl || p.image || p.thumbnail || ""
+           }));
+
            // Dùng AI rà soát xem trong câu trả lời (hoặc câu hỏi) có nhắc tới tên sản phẩm nào không
            const imgRes = await (this.aiService as any).openai.chat.completions.create({
               model: "gpt-4o-mini",
               messages: [
                 { 
                   role: "system", 
-                  content: `Khách hỏi: "${content}". AI trả lời: "${aiReply}". Trong kho có các sản phẩm: ${JSON.stringify(products)}. 
+                  content: `Khách hỏi: "${content}". AI trả lời: "${aiReply}". Trong kho có các sản phẩm: ${JSON.stringify(productsForAi)}. 
                   Dựa vào ngữ cảnh, AI đang tư vấn sản phẩm nào? 
                   Trả về định dạng JSON: {"imageUrl": "link_anh_sản_phẩm"} hoặc {"imageUrl": ""} nếu không cần gửi ảnh.` 
                 }
@@ -78,7 +84,7 @@ export class AutomatorService {
       if (type === 'comment') {
         await this.fbService.replyToComment(platformId, account.accessToken, aiReply);
       } else {
-        // Truyền thêm productImageUrl vào hàm sendReply (Ép kiểu as any để tránh lỗi Typescript nếu file FB service chưa lưu)
+        // Truyền thêm productImageUrl vào hàm sendReply
         await (this.fbService as any).sendReply(pageId, account.accessToken, senderId, aiReply, productImageUrl);
       }
 
