@@ -5,11 +5,10 @@ import {
   MessageSquare, RefreshCw, Send, Loader2, Sparkles, 
   ShoppingCart, X, Package, CheckCircle, User, CheckCircle2,
   Trash2, Plus, Minus, Search, MapPin, Phone, Flag,
-  Filter, Clock, AlertCircle // <-- THÊM ICON MỚI CHO BỘ LỌC
+  Filter, Clock, AlertCircle, ImageIcon // <-- Đã thêm ImageIcon
 } from "lucide-react";
 
 export default function InboxPage() {
- // --- 1. LẤY URL API ĐỘNG ---
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   const [messages, setMessages] = useState<any[]>([]);
@@ -22,6 +21,9 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // --- STATE MỚI: Bật/Tắt khung chọn ảnh sản phẩm ---
+  const [showProductPicker, setShowProductPicker] = useState(false); 
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -29,9 +31,8 @@ export default function InboxPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // --- BỘ LỌC MỚI ---
   const [filterUnread, setFilterUnread] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc"); // desc: Mới nhất, asc: Chờ lâu nhất
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc"); 
 
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const chatEndRef = useRef<null | HTMLDivElement>(null);
@@ -53,7 +54,6 @@ export default function InboxPage() {
     }
   }, [showOrderModal, selectedMsg]);
 
-  // --- 2. ĐỒNG BỘ & LẤY TIN NHẮN ---
   const fetchConversations = async () => {
     setLoading(true);
     try {
@@ -101,6 +101,36 @@ export default function InboxPage() {
       setReplyText("");
     } catch (error: any) { 
       alert("FACEBOOK TỪ CHỐI: " + (error.response?.data?.message || "Lỗi")); 
+    } finally { setSending(false); }
+  };
+
+  // --- HÀM MỚI: Xử lý gửi ảnh sản phẩm trực tiếp vào Chat ---
+  const handleSendProduct = async (product: any) => {
+    if (!selectedMsg) return;
+    setSending(true);
+    try {
+      const productImageUrl = product.image || product.imageUrl || product.thumbnail; 
+      const text = `Dạ shop gửi anh/chị thông tin sản phẩm:\n📦 ${product.name}\n💰 Giá: ${Number(product.price).toLocaleString()}đ`;
+      
+      await axios.post(`${API_URL}/social/reply`, {
+        workspaceId, 
+        senderId: selectedMsg.senderId, 
+        text: text, 
+        imageUrl: productImageUrl, // Bắn field imageUrl xuống backend để gửi qua Graph API
+        pageName: selectedMsg.pageName,
+        type: selectedMsg.type, 
+        platformId: selectedMsg.platformId
+      });
+      
+      setChatHistory(prev => [...prev, { 
+        content: text, 
+        imageUrl: productImageUrl, 
+        type: 'outbound', 
+        createdAt: new Date() 
+      }]);
+      setShowProductPicker(false); // Đóng bảng chọn
+    } catch (error: any) { 
+      alert("LỖI GỬI ẢNH: " + (error.response?.data?.message || "Lỗi mạng")); 
     } finally { setSending(false); }
   };
 
@@ -153,17 +183,20 @@ export default function InboxPage() {
     } finally { setSending(false); }
   };
 
-  // --- XỬ LÝ LỌC & SẮP XẾP DỮ LIỆU INBOX ---
   const displayedMessages = messages
-    .filter(msg => msg.type?.toLowerCase() !== 'comment') // 1. Bỏ loại comment
-    .filter(msg => filterUnread ? !msg.isReplied : true)  // 2. Lọc chưa trả lời
-    .sort((a, b) => {                                     // 3. Sắp xếp thời gian
+    .filter(msg => msg.type?.toLowerCase() !== 'comment')
+    .filter(msg => {
+       // FIX 1: Lọc bỏ tên AI Assistant và Bạn (Admin) khỏi Inbox
+       const sName = (msg.senderName || "").toLowerCase();
+       return !sName.includes("ai assistant") && !sName.includes("bạn (admin)");
+    })
+    .filter(msg => filterUnread ? !msg.isReplied : true)
+    .sort((a, b) => {
       const timeA = new Date(a.updatedAt || a.timestamp || a.createdAt || 0).getTime();
       const timeB = new Date(b.updatedAt || b.timestamp || b.createdAt || 0).getTime();
       return sortOrder === "desc" ? timeB - timeA : timeA - timeB;
     });
 
-  // Tính thời gian chờ
   const getTimeAgo = (dateStr: string) => {
     if (!dateStr) return "Vừa xong";
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -190,8 +223,6 @@ export default function InboxPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-black font-medium">
         {/* DANH SÁCH HỘI THOẠI BÊN TRÁI */}
         <div className="lg:col-span-1 bg-white rounded-[40px] shadow-sm border border-slate-100 h-[75vh] flex flex-col overflow-hidden">
-           
-           {/* TIÊU ĐỀ & KHUNG LỌC MỚI */}
            <div className="p-6 border-b bg-slate-50/50 flex flex-col gap-3">
               <div className="font-black text-slate-400 text-[10px] uppercase tracking-widest">
                  Hội thoại ({displayedMessages.length})
@@ -231,7 +262,6 @@ export default function InboxPage() {
                     </div>
                     <p className="text-sm text-slate-500 truncate italic mb-3">"{msg.content}"</p>
                     
-                    {/* THỜI GIAN VÀ TRẠNG THÁI */}
                     <div className="flex justify-between items-center text-[10px] font-bold">
                        <span className="text-slate-400 flex items-center gap-1">
                           <Clock size={12}/> {getTimeAgo(msg.updatedAt || msg.timestamp || msg.createdAt)}
@@ -248,7 +278,7 @@ export default function InboxPage() {
            </div>
         </div>
 
-        {/* CHI TIẾT TIN NHẮN BÊN PHẢI (GIỮ NGUYÊN) */}
+        {/* CHI TIẾT TIN NHẮN BÊN PHẢI */}
         <div className="lg:col-span-2 bg-white rounded-[40px] shadow-xl border border-slate-100 flex flex-col h-[75vh] overflow-hidden relative text-black">
             {selectedMsg ? (
               <>
@@ -268,16 +298,66 @@ export default function InboxPage() {
                 <div className="flex-1 p-8 overflow-y-auto bg-slate-50/20 flex flex-col gap-4 custom-scrollbar">
                     {chatHistory.map((chat: any, index: number) => (
                       <div key={index} className={`flex ${chat.type === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`p-4 rounded-2xl max-w-[85%] font-bold whitespace-pre-wrap ${chat.type === 'outbound' ? 'bg-blue-600 text-white rounded-tr-none shadow-md' : 'bg-white text-slate-700 border rounded-tl-none shadow-sm'}`}>{chat.content}</div>
+                        {/* FIX 2: Render thêm Ảnh nếu chat có imageUrl đính kèm */}
+                        <div className={`p-4 rounded-2xl max-w-[85%] font-bold whitespace-pre-wrap ${chat.type === 'outbound' ? 'bg-blue-600 text-white rounded-tr-none shadow-md' : 'bg-white text-slate-700 border rounded-tl-none shadow-sm'}`}>
+                          {(chat.image || chat.imageUrl) && (
+                             <img src={chat.image || chat.imageUrl} alt="Sản phẩm" className="w-full max-w-[250px] rounded-xl mb-3 object-cover shadow-sm border border-black/10" />
+                          )}
+                          {chat.content}
+                        </div>
                       </div>
                     ))}
                     <div ref={chatEndRef} />
                 </div>
 
-                <div className="p-8 border-t bg-white">
-                   <div className="flex gap-4">
+                <div className="p-8 border-t bg-white relative">
+                   <div className="flex gap-4 items-center">
+                      
+                      {/* NÚT CHỌN ẢNH SẢN PHẨM TỪ KHO */}
+                      <div className="relative">
+                        <button 
+                          onClick={() => setShowProductPicker(!showProductPicker)} 
+                          className={`p-4 rounded-xl transition-all ${showProductPicker ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                          title="Gửi ảnh sản phẩm"
+                        >
+                          <Package size={22} />
+                        </button>
+
+                        {/* Bảng Popup hiển thị kho sản phẩm */}
+                        {showProductPicker && (
+                          <div className="absolute bottom-[120%] left-0 w-80 bg-white border border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-[24px] p-4 z-50 flex flex-col max-h-[350px] animate-in fade-in slide-in-from-bottom-4">
+                            <div className="flex justify-between items-center mb-3 pb-2 border-b">
+                               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kho Sản Phẩm</h3>
+                               <button onClick={() => setShowProductPicker(false)} className="text-slate-400 hover:text-red-500"><X size={16}/></button>
+                            </div>
+                            <div className="overflow-y-auto flex-1 space-y-2 custom-scrollbar">
+                              {products.length === 0 ? (
+                                 <p className="text-sm text-slate-400 italic text-center p-4">Kho đang trống</p>
+                              ) : (
+                                 products.map(p => (
+                                   <div key={p.id} onClick={() => handleSendProduct(p)} className="flex items-center gap-3 p-2 bg-white hover:bg-blue-50 rounded-xl cursor-pointer group transition-all border border-transparent hover:border-blue-200">
+                                      {(p.image || p.imageUrl || p.thumbnail) ? (
+                                         <img src={p.image || p.imageUrl || p.thumbnail} alt={p.name} className="w-12 h-12 object-cover rounded-lg shadow-sm border border-slate-100" />
+                                      ) : (
+                                         <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400"><ImageIcon size={16}/></div>
+                                      )}
+                                      <div className="flex-1 overflow-hidden">
+                                         <p className="text-sm font-bold text-slate-800 truncate">{p.name}</p>
+                                         <p className="text-xs text-blue-600 font-black">{Number(p.price).toLocaleString()}đ</p>
+                                      </div>
+                                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                         <Send size={14} className="text-blue-600" />
+                                      </div>
+                                   </div>
+                                 ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <input className="flex-1 p-4 bg-slate-100 rounded-xl outline-none text-slate-900 font-bold" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Nhập tin nhắn phản hồi..." onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
-                      <button onClick={handleSend} disabled={sending} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-800 transition-all shadow-md">
+                      <button onClick={handleSend} disabled={sending} className="bg-blue-600 text-white px-8 py-4 rounded-xl font-black flex items-center gap-2 hover:bg-blue-800 transition-all shadow-md">
                         {sending ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />} GỬI
                       </button>
                    </div>
@@ -287,7 +367,7 @@ export default function InboxPage() {
               <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic font-bold">Chọn hội thoại để bắt đầu quản lý</div>
             )}
 
-            {/* MODAL CHI TIẾT ĐƠN HÀNG (GIỮ NGUYÊN 100%) */}
+            {/* MODAL CHI TIẾT ĐƠN HÀNG (GIỮ NGUYÊN) */}
             {showOrderModal && (
               <div className="absolute inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300 text-black">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50">

@@ -37,12 +37,17 @@ export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [isFetchingUser, setIsFetchingUser] = useState(true);
 
-  // --- BẮT LINK AFFILIATE TRÊN URL ---
+  // --- BẮT LINK AFFILIATE TRÊN URL (ĐÃ FIX CHUẨN) ---
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const refCode = urlParams.get('ref');
-    if (refCode) {
-      localStorage.setItem("kpost_affiliate_ref", refCode);
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      if (refCode) {
+        localStorage.setItem("kpost_affiliate_ref", refCode);
+        console.log("✅ Đã bắt và lưu mã Affiliate:", refCode);
+      }
+    } catch (error) {
+      console.error("Lỗi bắt mã Affiliate:", error);
     }
   }, []);
 
@@ -219,9 +224,13 @@ export default function SettingsPage() {
 
 function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    // Thêm trạng thái forgot-password
     const [authMode, setAuthMode] = useState("login"); 
     const [formData, setFormData] = useState({ email: "", password: "", name: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // State cho Quên mật khẩu
+    const [forgotEmail, setForgotEmail] = useState("");
 
     const getRemainingDays = (expiryDate: string | null) => {
         if (!expiryDate) return null;
@@ -235,10 +244,14 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         setIsSubmitting(true);
         try {
             const payload: any = { ...formData };
+            
             if (authMode === "register") {
-                const savedRef = localStorage.getItem("kpost_affiliate_ref");
+                let savedRef = localStorage.getItem("kpost_affiliate_ref");
                 if (savedRef) {
-                    payload.affiliateBy = savedRef; 
+                    if (savedRef.startsWith("KPOST_")) {
+                        savedRef = savedRef.replace("KPOST_", "");
+                    }
+                    payload.referredBy = savedRef; 
                 }
             }
 
@@ -256,6 +269,23 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         } catch (error: any) {
             alert(error.response?.data?.message || "Lỗi xử lý xác thực!");
         } finally { setIsSubmitting(false); }
+    };
+
+    // Hàm gọi API Quên mật khẩu
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!forgotEmail) return alert("Vui lòng nhập email của bạn!");
+        setIsSubmitting(true);
+        try {
+            await axios.post(`${API_URL}/auth/forgot-password`, { email: forgotEmail });
+            alert("✅ Đã gửi hướng dẫn khôi phục mật khẩu vào email của bạn. Vui lòng kiểm tra hộp thư (Cả mục Spam/Thư rác)!");
+            setAuthMode("login"); // Gửi xong quay về màn hình đăng nhập
+            setForgotEmail("");
+        } catch (error: any) {
+            alert(error.response?.data?.message || "Lỗi hệ thống: Không thể gửi email khôi phục!");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     if (loading) return <div className="p-10 text-center animate-pulse font-black text-slate-300 uppercase">Đang kết nối hệ thống...</div>;
@@ -300,18 +330,65 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         );
     }
 
+    // GIAO DIỆN QUÊN MẬT KHẨU
+    if (authMode === 'forgot-password') {
+        return (
+            <div className="max-w-md mx-auto text-black animate-in fade-in">
+                <h2 className="text-3xl font-black italic uppercase mb-2 text-center tracking-tighter">Quên Mật Khẩu</h2>
+                <p className="text-center text-sm font-bold text-slate-500 mb-8">Nhập email đã đăng ký để nhận liên kết khôi phục</p>
+                
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                    <input 
+                        className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold text-slate-700" 
+                        type="email" 
+                        placeholder="Ví dụ: example@gmail.com..." 
+                        value={forgotEmail} 
+                        onChange={e => setForgotEmail(e.target.value)} 
+                        required 
+                    />
+                    <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-[25px] shadow-xl shadow-blue-600/20 flex justify-center items-center gap-3 active:scale-95 transition-all disabled:opacity-50">
+                        {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Mail size={20}/>} 
+                        GỬI YÊU CẦU KHÔI PHỤC
+                    </button>
+                </form>
+
+                <div className="mt-8 text-center">
+                  <button onClick={() => setAuthMode('login')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 underline transition-colors"> 
+                    QUAY LẠI ĐĂNG NHẬP
+                  </button>
+                </div>
+            </div>
+        )
+    }
+
+    // GIAO DIỆN ĐĂNG NHẬP & ĐĂNG KÝ
     return (
-        <div className="max-w-md mx-auto text-black">
+        <div className="max-w-md mx-auto text-black animate-in fade-in">
             <h2 className="text-3xl font-black italic uppercase mb-10 text-center tracking-tighter">{authMode === 'login' ? 'Đăng Nhập' : 'Tạo Tài Khoản'}</h2>
             <form onSubmit={handleManualAuth} className="space-y-4">
                 {authMode === 'register' && <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" placeholder="Họ và tên" onChange={e => setFormData({...formData, name: e.target.value})} required />}
+                
                 <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" type="email" placeholder="Email" onChange={e => setFormData({...formData, email: e.target.value})} required />
-                <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" type="password" placeholder="Mật khẩu" onChange={e => setFormData({...formData, password: e.target.value})} required />
-                <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-black text-white font-black rounded-[25px] shadow-2xl flex justify-center items-center gap-3 active:scale-95 transition-all disabled:opacity-50">
+                
+                <div>
+                    <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" type="password" placeholder="Mật khẩu" onChange={e => setFormData({...formData, password: e.target.value})} required />
+                    
+                    {/* NÚT QUÊN MẬT KHẨU Ở ĐÂY */}
+                    {authMode === 'login' && (
+                        <div className="flex justify-end mt-3">
+                            <button type="button" onClick={() => setAuthMode('forgot-password')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors">
+                                Quên mật khẩu?
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-black text-white font-black rounded-[25px] shadow-2xl flex justify-center items-center gap-3 active:scale-95 transition-all disabled:opacity-50 mt-2">
                   {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : authMode === 'login' ? <LogIn size={20}/> : <UserPlus size={20}/>} 
                   {authMode === 'login' ? 'VÀO HỆ THỐNG' : 'ĐĂNG KÝ NGAY'}
                 </button>
             </form>
+
             <div className="mt-8 text-center">
               <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 underline"> 
                 {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'} 

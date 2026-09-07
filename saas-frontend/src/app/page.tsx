@@ -38,6 +38,20 @@ function AiMarketingContent() {
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
 
+  // 👉 1. ĐOẠN CODE BẮT LINK AFFILIATE (MÌNH VỪA CHÈN VÀO ĐÂY GIÚP BẠN)
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      if (refCode) {
+        localStorage.setItem("kpost_affiliate_ref", refCode);
+        console.log("✅ Đã bắt và lưu mã Affiliate thành công:", refCode);
+      }
+    } catch (error) {
+      console.error("Lỗi bắt mã Affiliate:", error);
+    }
+  }, []);
+
   // LẤY DỮ LIỆU TỪ LOCAL STORAGE KHI LOAD TRANG
   useEffect(() => {
     const savedId = localStorage.getItem("workspaceId") || "workspace-01";

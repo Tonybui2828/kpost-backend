@@ -495,12 +495,23 @@ export class SocialController {
     try {
       const account = await this.prisma.socialAccount.findFirst({ where: { workspaceId: body.workspaceId, accountName: body.pageName } });
       if (!account) throw new Error("Không tìm thấy Fanpage");
+      
+      // ✅ THÊM body.imageUrl VÀO HÀM SEND REPLY
       let fbRes = body.type === 'comment' 
         ? await this.facebookService.replyToComment(body.platformId, account.accessToken, body.text)
-        : await this.facebookService.sendReply(account.platformId, account.accessToken, body.senderId, body.text);
+        : await this.facebookService.sendReply(account.platformId, account.accessToken, body.senderId, body.text, body.imageUrl);
       
       await this.prisma.inboxMessage.create({ 
-          data: { workspaceId: body.workspaceId, platform: 'facebook', type: 'outbound', senderName: 'Bạn (Admin)', senderId: body.senderId, content: body.text, pageName: body.pageName, platformId: `out_${Date.now()}` } 
+          data: { 
+             workspaceId: body.workspaceId, 
+             platform: 'facebook', 
+             type: 'outbound', 
+             senderName: 'Bạn (Admin)', 
+             senderId: body.senderId, 
+             content: body.text, 
+             pageName: body.pageName, 
+             platformId: `out_${Date.now()}` 
+          } 
         });
       return fbRes;
     } catch (e) { throw new HttpException(e.message, HttpStatus.BAD_REQUEST); }

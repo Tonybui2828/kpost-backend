@@ -207,14 +207,41 @@ export class FacebookService {
   // ==========================================
   // 3. CÁC HÀM PHỤ TRỢ
   // ==========================================
-  async sendReply(pageId: string, accessToken: string, recipientId: string, text: string): Promise<any> {
-    const url = `${this.graphUrl}/${pageId}/messages`;
-    const payload = {
-      recipient: { id: recipientId.trim() },
-      message: { text: text },
-      access_token: this.clean(accessToken)
-    };
-    return (await axios.post(url, payload)).data;
+  async sendReply(pageId: string, accessToken: string, senderId: string, text: string, imageUrl?: string) {
+    try {
+      // ✅ MẶC ĐỊNH LÀ GỬI TEXT
+      let messagePayload: any = { text: text };
+
+      // ✅ NẾU CÓ URL ẢNH THÌ ĐỔI CẤU TRÚC SANG GỬI ẢNH
+      if (imageUrl && imageUrl.trim() !== '') {
+        messagePayload = {
+          attachment: {
+            type: "image",
+            payload: {
+              url: imageUrl,
+              is_reusable: true
+            }
+          }
+        };
+      }
+
+      const response = await axios.post(
+        `https://graph.facebook.com/v19.0/me/messages`,
+        {
+          recipient: { id: senderId },
+          message: messagePayload,
+          messaging_type: "RESPONSE"
+        },
+        {
+          params: { access_token: accessToken }
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error("Lỗi gửi tin nhắn FB:", error.response?.data || error.message);
+      throw error;
+    }
   }
 
   async replyToComment(commentId: string, accessToken: string, text: string): Promise<any> {
