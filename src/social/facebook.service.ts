@@ -212,8 +212,8 @@ export class FacebookService {
       // ✅ MẶC ĐỊNH LÀ GỬI TEXT
       let messagePayload: any = { text: text };
 
-      // ✅ NẾU CÓ URL ẢNH THÌ ĐỔI CẤU TRÚC SANG GỬI ẢNH
-      if (imageUrl && imageUrl.trim() !== '') {
+      // ✅ NẾU CÓ URL ẢNH THÌ ĐỔI CẤU TRÚC SANG GỬI ẢNH (Bảo vệ lỗi type)
+      if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
         messagePayload = {
           attachment: {
             type: "image",
