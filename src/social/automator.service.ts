@@ -15,7 +15,7 @@ export class AutomatorService {
   ) {}
 
   // ==========================================
-  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7
+  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (CÓ HỖ TRỢ GỬI ẢNH)
   // ==========================================
   async processIncomingMessage(
     pageId: string, 
@@ -38,15 +38,48 @@ export class AutomatorService {
         return;
       }
 
-      // 1. Nhờ AI soạn câu trả lời (Dựa trên kịch bản chốt đơn và phí ship)
+      // 1. Nhờ AI soạn câu trả lời văn bản (Dựa trên kịch bản chốt đơn và phí ship của hàm CŨ)
       const aiReply = await this.aiService.suggestReply(content, account.workspaceId);
       if (!aiReply) return;
+
+      // -------------------------------------------------------------
+      // --- LOGIC MỚI: TÌM ẢNH SẢN PHẨM TRONG KHO ĐỂ ĐÍNH KÈM ---
+      // -------------------------------------------------------------
+      let productImageUrl = "";
+      try {
+        const products = await this.prisma.product.findMany({ 
+          where: { workspaceId: account.workspaceId },
+          select: { name: true, image: true } // Hoặc 'imageUrl' tuỳ schema DB của bạn
+        });
+        
+        if (products.length > 0) {
+           // Dùng AI rà soát xem trong câu trả lời (hoặc câu hỏi) có nhắc tới tên sản phẩm nào không
+           const imgRes = await (this.aiService as any).openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [
+                { 
+                  role: "system", 
+                  content: `Khách hỏi: "${content}". AI trả lời: "${aiReply}". Trong kho có các sản phẩm: ${JSON.stringify(products)}. 
+                  Dựa vào ngữ cảnh, AI đang tư vấn sản phẩm nào? 
+                  Trả về định dạng JSON: {"imageUrl": "link_anh_sản_phẩm"} hoặc {"imageUrl": ""} nếu không cần gửi ảnh.` 
+                }
+              ],
+              response_format: { type: "json_object" }
+           });
+           const imgData = JSON.parse(imgRes.choices[0].message.content || '{}');
+           productImageUrl = imgData.imageUrl || "";
+        }
+      } catch (e) {
+        this.logger.error("Lỗi trích xuất ảnh sản phẩm:", e.message);
+      }
+      // -------------------------------------------------------------
 
       // 2. Gửi phản hồi lên Facebook
       if (type === 'comment') {
         await this.fbService.replyToComment(platformId, account.accessToken, aiReply);
       } else {
-        await this.fbService.sendReply(pageId, account.accessToken, senderId, aiReply);
+        // Truyền thêm productImageUrl vào hàm sendReply (Ép kiểu as any để tránh lỗi Typescript nếu file FB service chưa lưu)
+        await (this.fbService as any).sendReply(pageId, account.accessToken, senderId, aiReply, productImageUrl);
       }
 
       // 3. Lưu lịch sử chat
@@ -63,24 +96,25 @@ export class AutomatorService {
         }
       });
 
-      // --- MỚI: TỰ ĐỘNG LƯU ĐƠN HÀNG NẾU AI VỪA CHỐT XONG ---
+      // 4. TỰ ĐỘNG LƯU ĐƠN HÀNG NẾU AI VỪA CHỐT XONG
       if (aiReply.includes("XÁC NHẬN CHỐT ĐƠN") || aiReply.includes("THÔNG TIN ĐƠN HÀNG")) {
           await this.extractAndSaveOrder(account.workspaceId, aiReply);
       }
 
-      this.logger.log(`✅ AI đã xử lý xong tin nhắn cho: ${senderId}`);
+      this.logger.log(`✅ AI xử lý xong tin nhắn. Khách: ${senderId} - Có gửi ảnh: ${!!productImageUrl}`);
 
     } catch (error) {
       this.logger.error("❌ Lỗi AI Autopilot:", error.message);
     }
   }
 
+  // ==========================================
   // --- HÀM BÓC TÁCH VÀ LƯU ĐƠN HÀNG TỰ ĐỘNG ---
+  // ==========================================
   private async extractAndSaveOrder(workspaceId: string, aiText: string) {
     try {
       this.logger.log("--- 🕵️ ĐANG BÓC TÁCH HÓA ĐƠN ĐỂ LƯU VÀO DATABASE ---");
       
-      // Sử dụng model gpt-4o-mini của bạn để bóc tách text sang JSON
       const res = await (this.aiService as any).openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -95,7 +129,6 @@ export class AutomatorService {
 
       const orderData = JSON.parse(res.choices[0].message.content || '{}');
 
-      // Lưu vào bảng Order trong Database
       const newOrder = await this.prisma.order.create({
         data: {
           workspaceId: workspaceId,
@@ -103,7 +136,7 @@ export class AutomatorService {
           customerPhone: orderData.customerPhone || "",
           customerAddress: orderData.customerAddress || "Xem trong đoạn chat",
           totalAmount: Number(orderData.totalAmount) || 0,
-          status: 'confirmed', // Trạng thái Đã chốt
+          status: 'confirmed',
           carrierName: 'Chưa chọn'
         }
       });
