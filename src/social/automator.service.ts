@@ -15,7 +15,7 @@ export class AutomatorService {
   ) {}
 
   // ==========================================
-  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (CÓ NHỚ LỊCH SỬ CHAT ĐỂ KHÔNG SPAM ẢNH)
+  // 1. AI AUTOPILOT - TRỢ LÝ THÔNG MINH (CÓ TRÍ NHỚ + CHỈ GỬI ẢNH 1 LẦN)
   // ==========================================
   async processIncomingMessage(
     pageId: string, 
@@ -38,79 +38,90 @@ export class AutomatorService {
         return;
       }
 
-      // 1. Nhờ AI soạn câu trả lời văn bản 
-      const aiReply = await this.aiService.suggestReply(content, account.workspaceId);
-      if (!aiReply) return;
-
-      // -------------------------------------------------------------
-      // --- LOGIC MỚI: TÌM ẢNH SẢN PHẨM VÀ ĐỐI CHIẾU LỊCH SỬ CHAT ---
-      // -------------------------------------------------------------
-      let productImages: string[] = []; 
-      try {
-        // Lấy 6 tin nhắn gần nhất để AI hiểu mạch nói chuyện
-        const chatHistory = await this.prisma.inboxMessage.findMany({
+      // --- 1. LẤY LỊCH SỬ CHAT VÀ DỮ LIỆU KHO HÀNG ---
+      const chatHistory = await this.prisma.inboxMessage.findMany({
           where: { senderId: senderId, workspaceId: account.workspaceId },
           orderBy: { createdAt: 'desc' },
           take: 6
-        });
-        // Ghép thành đoạn văn bản lịch sử chat
-        const historyText = chatHistory.reverse().map(m => `${m.type === 'inbox' || m.type === 'comment' ? 'Khách' : 'AI'}: ${m.content}`).join('\n');
+      });
+      const historyText = chatHistory.reverse().map(m => `${m.type === 'inbox' || m.type === 'comment' ? 'Khách' : 'AI'}: ${m.content}`).join('\n');
 
-        const rawProducts = await this.prisma.product.findMany({ 
+      const rawProducts = await this.prisma.product.findMany({ 
           where: { workspaceId: account.workspaceId }
+      });
+      const productContext = rawProducts.map((p: any) => {
+        const imageUrl = p.images || p.imageUrl || p.image || p.thumbnail || "";
+        const hasImage = imageUrl ? "CÓ SẴN ẢNH ĐỂ GỬI" : "CHƯA CÓ ẢNH";
+        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Trạng thái: ${hasImage}\n  Link ảnh hệ thống: ${imageUrl}`;
+      }).join('\n\n');
+
+      // --- 2. GỘP CHUNG VÀO 1 LẦN GỌI GPT DUY NHẤT ĐỂ HIỂU HOÀN TOÀN NGỮ CẢNH ---
+      const systemPrompt = `Bạn là Mai - Chuyên viên tư vấn bán hàng online xuất sắc. Xưng "Em", gọi khách là "Anh/Chị".
+Bạn có EQ cao, thấu hiểu tâm lý, câu văn TỰ NHIÊN, NGẮN GỌN, VÀO THẲNG VẤN ĐỀ.
+
+📦 KHO HÀNG CỦA SHOP (DÙNG ĐỂ TƯ VẤN):
+${productContext}
+
+💬 LỊCH SỬ CHUYỆN GẦN ĐÂY:
+${historyText}
+(Dựa vào lịch sử trên để hiểu khách đang muốn gì. Nếu khách nói cụt lủn "lấy 1 cái", "bao nhiêu tiền", hãy tự suy luận sản phẩm từ lịch sử).
+
+🎯 NGUYÊN TẮC BÁN HÀNG VÀ CHỐT ĐƠN:
+1. GỬI ẢNH THÔNG MINH (QUAN TRỌNG NHẤT): 
+   - CHỈ ĐÍNH KÈM ẢNH khi tư vấn LẦN ĐẦU TIÊN về sản phẩm đó, HOẶC khi khách yêu cầu "cho xem ảnh", "có hình thật không".
+   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI ẢNH NỮA (trả về mảng ảnh rỗng).
+   - Nếu trả về ảnh, hãy nhặt "Link ảnh hệ thống" tương ứng.
+
+2. TƯ VẤN VÀ UPSALE:
+   - Mua 1 cái ship 30.000đ. Mua 2 cái MIỄN PHÍ SHIP. Hãy lồng ghép up-sale.
+   - Không lan man. Đọc kỹ mô tả sản phẩm để trả lời đúng trọng tâm.
+
+3. XỬ LÝ CHỐT ĐƠN:
+   - Không hỏi lại thông tin khách đã cho.
+   - Nếu khách chốt nhưng thiếu SĐT/Địa chỉ, hỏi xin ngắn gọn.
+   - Nếu ĐÃ ĐỦ (Tên, SĐT, Địa chỉ, Sản phẩm) -> LÊN HÓA ĐƠN XÁC NHẬN: "📦 THÔNG TIN ĐƠN HÀNG:..."
+
+TRẢ VỀ DUY NHẤT ĐỊNH DẠNG JSON SAU (KHÔNG DÙNG MARKDOWN):
+{
+  "text": "Câu trả lời của bạn gửi cho khách (Text)",
+  "imageUrls": ["link_anh"] // Mảng chứa tối đa 4 link ảnh (hoặc mảng rỗng [] nếu không nên gửi ảnh).
+}
+`;
+
+      let aiReply = "";
+      let productImages: string[] = [];
+
+      try {
+        const aiRes = await (this.aiService as any).openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3
         });
+        const aiData = JSON.parse(aiRes.choices[0].message.content || '{}');
+        aiReply = aiData.text;
         
-        if (rawProducts.length > 0) {
-           const productsForAi = rawProducts.map((p: any) => ({
-               name: p.name,
-               imageUrl: p.images || p.imageUrl || p.image || p.thumbnail || ""
-           }));
-
-           // Đưa lịch sử chat cho AI để nó tự biết đường không gửi lại ảnh cũ
-           const imgRes = await (this.aiService as any).openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: [
-                { 
-                  role: "system", 
-                  content: `Lịch sử cuộc trò chuyện gần đây:
-                  ${historyText}
-
-                  Khách vừa nhắn: "${content}"
-                  AI chuẩn bị trả lời: "${aiReply}"
-                  
-                  Kho hàng: ${JSON.stringify(productsForAi)}. 
-                  
-                  QUY TẮC GỬI ẢNH (BẮT BUỘC TUÂN THỦ):
-                  1. CHỈ gửi ảnh ở LẦN ĐẦU TIÊN giới thiệu sản phẩm đó cho khách, HOẶC khi khách chủ động đòi xem ảnh ("cho xem ảnh", "có hình thật không").
-                  2. NẾU đọc "Lịch sử cuộc trò chuyện" thấy đã từng tư vấn về sản phẩm này rồi, hoặc khách đang hỏi tiếp về giá, phí ship, cho địa chỉ -> TUYỆT ĐỐI KHÔNG GỬI LẠI ẢNH NỮA (trả về mảng rỗng []).
-                  3. KHÔNG BAO GIỜ spam ảnh lặp đi lặp lại.
-                  
-                  Trả về định dạng JSON: {"imageUrls": ["link_anh_1"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
-                }
-              ],
-              response_format: { type: "json_object" },
-              temperature: 0.1 // Giữ nhiệt độ thấp để AI làm chuẩn theo luật
-           });
-           const imgData = JSON.parse(imgRes.choices[0].message.content || '{}');
-           
-           if (Array.isArray(imgData.imageUrls)) {
-              productImages = imgData.imageUrls.filter((url: string) => url && typeof url === 'string' && url.trim() !== '');
-           }
+        if (Array.isArray(aiData.imageUrls)) {
+           productImages = aiData.imageUrls.filter((url: string) => url && typeof url === 'string' && url.trim() !== '');
         }
       } catch (e) {
-        this.logger.error("Lỗi trích xuất mảng ảnh sản phẩm:", e.message);
+         this.logger.error("Lỗi AI Call Gộp:", e.message);
+         return;
       }
-      // -------------------------------------------------------------
 
-      // 2. Gửi phản hồi lên Facebook
+      if (!aiReply) return;
+
+      // --- 3. GỬI PHẢN HỒI LÊN FACEBOOK ---
       if (type === 'comment') {
         await this.fbService.replyToComment(platformId, account.accessToken, aiReply);
       } else {
-        // Truyền mảng productImages vào hàm sendReply
         await (this.fbService as any).sendReply(pageId, account.accessToken, senderId, aiReply, productImages);
       }
 
-      // 3. Lưu lịch sử chat
+      // --- 4. LƯU LỊCH SỬ CHAT ---
       await this.prisma.inboxMessage.create({
         data: {
           workspaceId: account.workspaceId,
@@ -124,12 +135,12 @@ export class AutomatorService {
         }
       });
 
-      // 4. TỰ ĐỘNG LƯU ĐƠN HÀNG NẾU AI VỪA CHỐT XONG
+      // --- 5. TỰ ĐỘNG LƯU ĐƠN HÀNG NẾU AI VỪA CHỐT XONG ---
       if (aiReply.includes("XÁC NHẬN CHỐT ĐƠN") || aiReply.includes("THÔNG TIN ĐƠN HÀNG")) {
           await this.extractAndSaveOrder(account.workspaceId, aiReply);
       }
 
-      this.logger.log(`✅ AI xử lý xong tin nhắn. Khách: ${senderId} - Số ảnh đính kèm: ${productImages.length}`);
+      this.logger.log(`✅ AI xử lý xong. Khách: ${senderId} - Lấy ${productImages.length} ảnh.`);
 
     } catch (error) {
       this.logger.error("❌ Lỗi AI Autopilot:", error.message);
