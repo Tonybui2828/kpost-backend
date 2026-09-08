@@ -38,14 +38,14 @@ export class AutomatorService {
         return;
       }
 
-      // 1. Nhờ AI soạn câu trả lời văn bản (Dựa trên kịch bản chốt đơn và phí ship của hàm CŨ)
+      // 1. Nhờ AI soạn câu trả lời văn bản 
       const aiReply = await this.aiService.suggestReply(content, account.workspaceId);
       if (!aiReply) return;
 
       // -------------------------------------------------------------
       // --- LOGIC MỚI: TÌM NHIỀU ẢNH SẢN PHẨM TRONG KHO ĐỂ ĐÍNH KÈM ---
       // -------------------------------------------------------------
-      let productImages: string[] = []; // Đã đổi thành Mảng
+      let productImages: string[] = []; 
       try {
         const rawProducts = await this.prisma.product.findMany({ 
           where: { workspaceId: account.workspaceId }
@@ -57,17 +57,26 @@ export class AutomatorService {
                imageUrl: p.images || p.imageUrl || p.image || p.thumbnail || ""
            }));
 
+           // Ép AI tuân thủ luật nghiêm ngặt để tránh spam ảnh
            const imgRes = await (this.aiService as any).openai.chat.completions.create({
               model: "gpt-4o-mini",
               messages: [
                 { 
                   role: "system", 
-                  content: `Khách hỏi: "${content}". AI trả lời: "${aiReply}". Trong kho có các sản phẩm: ${JSON.stringify(productsForAi)}. 
-                  Dựa vào ngữ cảnh, AI đang tư vấn những sản phẩm nào? 
-                  Trả về định dạng JSON: {"imageUrls": ["link_anh_1", "link_anh_2"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
+                  content: `Dựa vào tin nhắn của khách: "${content}" và câu trả lời của AI: "${aiReply}".
+                  Kho hàng: ${JSON.stringify(productsForAi)}. 
+                  
+                  QUY TẮC GỬI ẢNH (TUYỆT ĐỐI TUÂN THỦ):
+                  1. CHỈ gửi ảnh nếu khách yêu cầu xem ảnh, mẫu mã, kiểu dáng (VD: "cho xem ảnh", "có màu gì").
+                  2. CHỈ gửi ảnh nếu câu trả lời của AI chủ động nói sẽ gửi ảnh (VD: "dạ em gửi ảnh", "mình xem ảnh nhé").
+                  3. KHÔNG GỬI ẢNH nếu khách chỉ hỏi giá, phí ship, bảo hành, hỏi địa chỉ, hoặc chốt đơn.
+                  4. KHÔNG GỬI ẢNH lặp đi lặp lại ở mọi câu trả lời.
+                  
+                  Trả về định dạng JSON: {"imageUrls": ["link_1", "link_2"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
                 }
               ],
-              response_format: { type: "json_object" }
+              response_format: { type: "json_object" },
+              temperature: 0.1 // Giữ nhiệt độ cực thấp để AI không tự biên tự diễn
            });
            const imgData = JSON.parse(imgRes.choices[0].message.content || '{}');
            
