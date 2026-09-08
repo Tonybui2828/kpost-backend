@@ -15,7 +15,7 @@ export class AutomatorService {
   ) {}
 
   // ==========================================
-  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (HỖ TRỢ GỬI NHIỀU ẢNH)
+  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (CÓ NHỚ LỊCH SỬ CHAT ĐỂ KHÔNG SPAM ẢNH)
   // ==========================================
   async processIncomingMessage(
     pageId: string, 
@@ -43,10 +43,19 @@ export class AutomatorService {
       if (!aiReply) return;
 
       // -------------------------------------------------------------
-      // --- LOGIC MỚI: TÌM NHIỀU ẢNH SẢN PHẨM TRONG KHO ĐỂ ĐÍNH KÈM ---
+      // --- LOGIC MỚI: TÌM ẢNH SẢN PHẨM VÀ ĐỐI CHIẾU LỊCH SỬ CHAT ---
       // -------------------------------------------------------------
       let productImages: string[] = []; 
       try {
+        // Lấy 6 tin nhắn gần nhất để AI hiểu mạch nói chuyện
+        const chatHistory = await this.prisma.inboxMessage.findMany({
+          where: { senderId: senderId, workspaceId: account.workspaceId },
+          orderBy: { createdAt: 'desc' },
+          take: 6
+        });
+        // Ghép thành đoạn văn bản lịch sử chat
+        const historyText = chatHistory.reverse().map(m => `${m.type === 'inbox' || m.type === 'comment' ? 'Khách' : 'AI'}: ${m.content}`).join('\n');
+
         const rawProducts = await this.prisma.product.findMany({ 
           where: { workspaceId: account.workspaceId }
         });
@@ -57,26 +66,30 @@ export class AutomatorService {
                imageUrl: p.images || p.imageUrl || p.image || p.thumbnail || ""
            }));
 
-           // Ép AI tuân thủ luật nghiêm ngặt để tránh spam ảnh
+           // Đưa lịch sử chat cho AI để nó tự biết đường không gửi lại ảnh cũ
            const imgRes = await (this.aiService as any).openai.chat.completions.create({
               model: "gpt-4o-mini",
               messages: [
                 { 
                   role: "system", 
-                  content: `Dựa vào tin nhắn của khách: "${content}" và câu trả lời của AI: "${aiReply}".
+                  content: `Lịch sử cuộc trò chuyện gần đây:
+                  ${historyText}
+
+                  Khách vừa nhắn: "${content}"
+                  AI chuẩn bị trả lời: "${aiReply}"
+                  
                   Kho hàng: ${JSON.stringify(productsForAi)}. 
                   
-                  QUY TẮC GỬI ẢNH (TUYỆT ĐỐI TUÂN THỦ):
-                  1. CHỈ gửi ảnh nếu khách yêu cầu xem ảnh, mẫu mã, kiểu dáng (VD: "cho xem ảnh", "có màu gì").
-                  2. CHỈ gửi ảnh nếu câu trả lời của AI chủ động nói sẽ gửi ảnh (VD: "dạ em gửi ảnh", "mình xem ảnh nhé").
-                  3. KHÔNG GỬI ẢNH nếu khách chỉ hỏi giá, phí ship, bảo hành, hỏi địa chỉ, hoặc chốt đơn.
-                  4. KHÔNG GỬI ẢNH lặp đi lặp lại ở mọi câu trả lời.
+                  QUY TẮC GỬI ẢNH (BẮT BUỘC TUÂN THỦ):
+                  1. CHỈ gửi ảnh ở LẦN ĐẦU TIÊN giới thiệu sản phẩm đó cho khách, HOẶC khi khách chủ động đòi xem ảnh ("cho xem ảnh", "có hình thật không").
+                  2. NẾU đọc "Lịch sử cuộc trò chuyện" thấy đã từng tư vấn về sản phẩm này rồi, hoặc khách đang hỏi tiếp về giá, phí ship, cho địa chỉ -> TUYỆT ĐỐI KHÔNG GỬI LẠI ẢNH NỮA (trả về mảng rỗng []).
+                  3. KHÔNG BAO GIỜ spam ảnh lặp đi lặp lại.
                   
-                  Trả về định dạng JSON: {"imageUrls": ["link_1", "link_2"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
+                  Trả về định dạng JSON: {"imageUrls": ["link_anh_1"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
                 }
               ],
               response_format: { type: "json_object" },
-              temperature: 0.1 // Giữ nhiệt độ cực thấp để AI không tự biên tự diễn
+              temperature: 0.1 // Giữ nhiệt độ thấp để AI làm chuẩn theo luật
            });
            const imgData = JSON.parse(imgRes.choices[0].message.content || '{}');
            
