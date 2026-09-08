@@ -18,7 +18,8 @@ model User {
   password      String?         
   image         String?         
   provider      String?         
-  providerId    String?         
+  providerId    String? 
+  affiliateBy    String?        
   isActive      Boolean         @default(true)
   hasSeenGuide  Boolean         @default(false) 
   hasAcceptedTerms Boolean      @default(false) 
