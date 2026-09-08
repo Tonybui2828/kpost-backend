@@ -42,7 +42,7 @@ model Workspace {
   phoneNumber    String?           
   
   plan           String            @default("FREE") // Đổi sang chữ in hoa (FREE, PRO, GOLD, DIAMOND) cho đồng bộ
-  planExpire     DateTime?         // Đổi tên thành planExpire cho đúng file AdminController
+  planExpiry      DateTime?         // Đổi tên thành planExpire cho đúng file AdminController
   isAutoPay      Boolean           @default(false)  
   balance        Float             @default(0)      
   

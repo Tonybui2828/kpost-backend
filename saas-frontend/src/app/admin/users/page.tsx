@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { toast } from 'react-hot-toast'; 
+import { toast } from 'react-hot-toast'; // Cài thêm react-hot-toast nếu chưa có: npm i react-hot-toast
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -19,7 +19,7 @@ export default function AdminUsersPage() {
   // 1. Fetch dữ liệu
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://api.kpost.vn'}/admin/users-list`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://api.kpost.vn'}/admin/users`);
       const data = await res.json();
       setUsers(data);
     } catch (err) {
@@ -167,10 +167,10 @@ export default function AdminUsersPage() {
                         <button onClick={() => { setSelectedUser(user); setShowVoucherModal(true); }} className="text-xs px-3 py-1.5 bg-orange-50 text-orange-600 rounded hover:bg-orange-100 font-medium">
                           + Voucher
                         </button>
-                        <button onClick={() => { setSelectedUser(user); setShowPlanModal(true); }} className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium border-l border-white">
+                        <button onClick={() => { setSelectedUser(user); setShowPlanModal(true); }} className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium">
                           Nâng cấp
                         </button>
-                        <button onClick={() => toggleUserStatus(user)} className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium border-l border-white">
+                        <button onClick={() => toggleUserStatus(user)} className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium">
                           Khóa
                         </button>
                       </>
