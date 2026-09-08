@@ -207,7 +207,7 @@ export class FacebookService {
   // ==========================================
   // 3. CÁC HÀM PHỤ TRỢ
   // ==========================================
-  async sendReply(pageId: string, accessToken: string, senderId: string, text: string, imageUrl?: string) {
+  async sendReply(pageId: string, accessToken: string, senderId: string, text: string, imageUrls?: string | string[]) {
     try {
       const fbApiUrl = `https://graph.facebook.com/v19.0/me/messages`;
       let response;
@@ -225,25 +225,38 @@ export class FacebookService {
         );
       }
 
-      // 2. NHỊP 2: GỬI ẢNH ĐÍNH KÈM NGAY SAU ĐÓ (Nếu có)
-      if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
-        response = await axios.post(
-          fbApiUrl,
-          {
-            recipient: { id: senderId },
-            message: {
-              attachment: {
-                type: "image",
-                payload: {
-                  url: imageUrl,
-                  is_reusable: true
-                }
-              }
-            },
-            messaging_type: "RESPONSE"
-          },
-          { params: { access_token: accessToken } }
-        );
+      // 2. CHUẨN BỊ MẢNG ẢNH
+      let imagesToSend: string[] = [];
+      if (typeof imageUrls === 'string' && imageUrls.trim() !== '') {
+         imagesToSend = [imageUrls]; // Nếu truyền 1 string cũ thì tự bọc thành mảng
+      } else if (Array.isArray(imageUrls)) {
+         imagesToSend = imageUrls; // Nếu đã là mảng thì nhận luôn
+      }
+
+      // 3. NHỊP 2: LẶP QUA MẢNG VÀ GỬI TỪNG ẢNH
+      for (const url of imagesToSend) {
+         if (url && typeof url === 'string' && url.trim() !== '') {
+            response = await axios.post(
+              fbApiUrl,
+              {
+                recipient: { id: senderId },
+                message: {
+                  attachment: {
+                    type: "image",
+                    payload: {
+                      url: url,
+                      is_reusable: true
+                    }
+                  }
+                },
+                messaging_type: "RESPONSE"
+              },
+              { params: { access_token: accessToken } }
+            );
+            
+            // Dừng 500ms giữa mỗi ảnh để tránh bị Facebook đánh Spam (Rate Limit)
+            await new Promise(resolve => setTimeout(resolve, 500)); 
+         }
       }
       
       return response?.data || { success: true };

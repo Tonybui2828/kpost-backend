@@ -15,7 +15,7 @@ export class AutomatorService {
   ) {}
 
   // ==========================================
-  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (CÓ HỖ TRỢ GỬI ẢNH)
+  // 1. AI AUTOPILOT - TỰ ĐỘNG PHẢN HỒI 24/7 (HỖ TRỢ GỬI NHIỀU ẢNH)
   // ==========================================
   async processIncomingMessage(
     pageId: string, 
@@ -43,40 +43,40 @@ export class AutomatorService {
       if (!aiReply) return;
 
       // -------------------------------------------------------------
-      // --- LOGIC MỚI: TÌM ẢNH SẢN PHẨM TRONG KHO ĐỂ ĐÍNH KÈM ---
+      // --- LOGIC MỚI: TÌM NHIỀU ẢNH SẢN PHẨM TRONG KHO ĐỂ ĐÍNH KÈM ---
       // -------------------------------------------------------------
-      let productImageUrl = "";
+      let productImages: string[] = []; // Đã đổi thành Mảng
       try {
-        // Lấy toàn bộ sản phẩm (bỏ select để tránh lỗi Prisma Strict Type)
         const rawProducts = await this.prisma.product.findMany({ 
           where: { workspaceId: account.workspaceId }
         });
         
         if (rawProducts.length > 0) {
-           // Lọc bớt dữ liệu rác để gửi cho AI (Tự động thích nghi với tên cột ảnh của DB)
            const productsForAi = rawProducts.map((p: any) => ({
                name: p.name,
                imageUrl: p.images || p.imageUrl || p.image || p.thumbnail || ""
            }));
 
-           // Dùng AI rà soát xem trong câu trả lời (hoặc câu hỏi) có nhắc tới tên sản phẩm nào không
            const imgRes = await (this.aiService as any).openai.chat.completions.create({
               model: "gpt-4o-mini",
               messages: [
                 { 
                   role: "system", 
                   content: `Khách hỏi: "${content}". AI trả lời: "${aiReply}". Trong kho có các sản phẩm: ${JSON.stringify(productsForAi)}. 
-                  Dựa vào ngữ cảnh, AI đang tư vấn sản phẩm nào? 
-                  Trả về định dạng JSON: {"imageUrl": "link_anh_sản_phẩm"} hoặc {"imageUrl": ""} nếu không cần gửi ảnh.` 
+                  Dựa vào ngữ cảnh, AI đang tư vấn những sản phẩm nào? 
+                  Trả về định dạng JSON: {"imageUrls": ["link_anh_1", "link_anh_2"]} hoặc {"imageUrls": []} nếu không cần gửi ảnh. Tối đa 4 ảnh.` 
                 }
               ],
               response_format: { type: "json_object" }
            });
            const imgData = JSON.parse(imgRes.choices[0].message.content || '{}');
-           productImageUrl = imgData.imageUrl || "";
+           
+           if (Array.isArray(imgData.imageUrls)) {
+              productImages = imgData.imageUrls.filter((url: string) => url && typeof url === 'string' && url.trim() !== '');
+           }
         }
       } catch (e) {
-        this.logger.error("Lỗi trích xuất ảnh sản phẩm:", e.message);
+        this.logger.error("Lỗi trích xuất mảng ảnh sản phẩm:", e.message);
       }
       // -------------------------------------------------------------
 
@@ -84,8 +84,8 @@ export class AutomatorService {
       if (type === 'comment') {
         await this.fbService.replyToComment(platformId, account.accessToken, aiReply);
       } else {
-        // Truyền thêm productImageUrl vào hàm sendReply
-        await (this.fbService as any).sendReply(pageId, account.accessToken, senderId, aiReply, productImageUrl);
+        // Truyền mảng productImages vào hàm sendReply
+        await (this.fbService as any).sendReply(pageId, account.accessToken, senderId, aiReply, productImages);
       }
 
       // 3. Lưu lịch sử chat
@@ -107,7 +107,7 @@ export class AutomatorService {
           await this.extractAndSaveOrder(account.workspaceId, aiReply);
       }
 
-      this.logger.log(`✅ AI xử lý xong tin nhắn. Khách: ${senderId} - Có gửi ảnh: ${!!productImageUrl}`);
+      this.logger.log(`✅ AI xử lý xong tin nhắn. Khách: ${senderId} - Số ảnh đính kèm: ${productImages.length}`);
 
     } catch (error) {
       this.logger.error("❌ Lỗi AI Autopilot:", error.message);
