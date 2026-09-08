@@ -1,9 +1,9 @@
 import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { EmailService } from '../email/email.service';
-import { PrismaService } from '../prisma.service';
+import { EmailService } from '../email/email.service'; // Sửa đường dẫn import
+import { PrismaService } from '../prisma.service'; // Sửa đường dẫn import
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcrypt'; // Hoặc 'bcryptjs' tùy dự án
 
 @Controller('auth')
 export class AuthController {
@@ -35,8 +35,6 @@ export class AuthController {
     });
 
     if (!user) {
-      // Để bảo mật (chống hacker quét xem email nào đã đăng ký), 
-      // ta luôn trả về thông báo thành công dù email không tồn tại.
       return { success: true, message: 'Nếu email tồn tại trên hệ thống, link khôi phục đã được gửi.' };
     }
 
