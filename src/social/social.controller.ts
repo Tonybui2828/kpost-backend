@@ -155,10 +155,7 @@ export class SocialController {
 
   @Post('create-transaction')
   async createTransaction(@Body() body: any) {
-    // 1. Tạo một mã đơn hàng duy nhất bằng timestamp để không trùng
     const billCode = `SAASAI${Date.now().toString().slice(-6)}`;
-    
-    // 2. Lưu vào DB
     await this.prisma.transaction.create({ 
       data: { 
         workspaceId: body.workspaceId, 
@@ -168,11 +165,7 @@ export class SocialController {
         status: 'pending' 
       } 
     });
-    
-    // 3. TRẢ VỀ BILL CODE CHO FRONTEND
-    return {
-      description: billCode
-    };
+    return { description: billCode };
   }
 
   @Get('check-transaction/:billCode')
@@ -180,9 +173,6 @@ export class SocialController {
     return this.prisma.transaction.findFirst({ where: { description: { contains: billCode, mode: 'insensitive' } }, select: { status: true, planName: true } });
   }
 
-  // ==========================================
-  // 🚀 API KIỂM TRA MÃ GIẢM GIÁ TỪ FRONTEND
-  // ==========================================
   @Post('check-voucher')
   async checkVoucher(@Body('code') code: string) {
     if (!code) {
@@ -191,33 +181,20 @@ export class SocialController {
 
     try {
       const voucherRecord = await this.prisma.voucher.findFirst({
-        where: {
-          code: code.toUpperCase(),
-          isActive: true 
-        },
+        where: { code: code.toUpperCase(), isActive: true },
       });
 
       if (voucherRecord) {
-        return {
-          valid: true,
-          discountValue: voucherRecord.discount, 
-          discountType: voucherRecord.type 
-        };
+        return { valid: true, discountValue: voucherRecord.discount, discountType: voucherRecord.type };
       }
 
       return { valid: false, message: 'Mã không tồn tại hoặc đã hết hạn' };
     } catch (error) {
       console.error("Lỗi khi kiểm tra voucher:", error);
-      throw new HttpException(
-        'Mã không tồn tại hoặc lỗi hệ thống', 
-        HttpStatus.BAD_REQUEST
-      );
+      throw new HttpException('Mã không tồn tại hoặc lỗi hệ thống', HttpStatus.BAD_REQUEST);
     }
   }
 
-  // ==========================================
-  // 🚀 API WEBHOOK CASSO
-  // ==========================================
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
     try {
@@ -239,29 +216,19 @@ export class SocialController {
           console.log(`✅ [Casso Webhook] Phát hiện mã: ${billCode}`);
           
           const dbTrans = await this.prisma.transaction.findFirst({ 
-            where: { 
-              description: { contains: billCode, mode: 'insensitive' }, 
-              status: 'pending' 
-            } 
+            where: { description: { contains: billCode, mode: 'insensitive' }, status: 'pending' } 
           });
 
           if (dbTrans) {
             console.log(`⏳ [Casso Webhook] Cập nhật Workspace: ${dbTrans.workspaceId}`);
+            await this.prisma.transaction.update({ where: { id: dbTrans.id }, data: { status: 'success' } });
             
-            await this.prisma.transaction.update({ 
-              where: { id: dbTrans.id }, 
-              data: { status: 'success' } 
-            });
-            
-            const exp = new Date(); 
-            exp.setDate(exp.getDate() + 30);
+            const exp = new Date(); exp.setDate(exp.getDate() + 30);
             
             const workspaceInfo = await this.prisma.workspace.update({ 
-              where: { id: dbTrans.workspaceId }, 
-              data: { plan: dbTrans.planName, planExpiry: exp } 
+              where: { id: dbTrans.workspaceId }, data: { plan: dbTrans.planName, planExpiry: exp } 
             });
             
-            // XỬ LÝ TRÍCH HOA HỒNG AFFILIATE (10%)
             if (workspaceInfo.referredBy) {
                const refId = workspaceInfo.referredBy.replace('KPOST_', '');
                const referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
@@ -276,8 +243,6 @@ export class SocialController {
                   });
                }
             }
-
-            // Bắn socket cho Frontend
             this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
           } else {
              console.log(`⚠️ [Casso Webhook] Không tìm thấy đơn Pending mã ${billCode}`);
@@ -291,14 +256,10 @@ export class SocialController {
     }
   }
 
-  // ==========================================
-  // 🚀 API WEBHOOK PAYOS
-  // ==========================================
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
     try {
       console.log("🔔 [PayOS Webhook] Bắt đầu nhận dữ liệu");
-      
       const payloadData = body.data;
 
       if (!payloadData) {
@@ -306,7 +267,6 @@ export class SocialController {
       }
 
       let description = "";
-      
       if (payloadData.description) {
          description = String(payloadData.description).toUpperCase();
       } else if (payloadData.transactions && payloadData.transactions.length > 0) {
@@ -316,35 +276,24 @@ export class SocialController {
       console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
       
       const match = description.match(/SAASAI\s*(\d+)/i);
-      
       if (match) {
         const billCode = `SAASAI${match[1]}`;
         console.log(`✅ [PayOS Webhook] Phát hiện mã đơn hàng: ${billCode}`);
         
         const dbTrans = await this.prisma.transaction.findFirst({ 
-          where: { 
-             description: billCode, 
-             status: 'pending' 
-          } 
+          where: { description: billCode, status: 'pending' } 
         });
 
         if (dbTrans) {
           console.log(`⏳ [PayOS Webhook] Tiến hành nâng cấp cho Workspace: ${dbTrans.workspaceId}`);
+          await this.prisma.transaction.update({ where: { id: dbTrans.id }, data: { status: 'success' } });
           
-          await this.prisma.transaction.update({ 
-            where: { id: dbTrans.id }, 
-            data: { status: 'success' } 
-          });
-          
-          const exp = new Date(); 
-          exp.setDate(exp.getDate() + 30);
+          const exp = new Date(); exp.setDate(exp.getDate() + 30);
           
           const workspaceInfo = await this.prisma.workspace.update({ 
-            where: { id: dbTrans.workspaceId }, 
-            data: { plan: dbTrans.planName, planExpiry: exp } 
+            where: { id: dbTrans.workspaceId }, data: { plan: dbTrans.planName, planExpiry: exp } 
           });
 
-          // XỬ LÝ TRÍCH HOA HỒNG AFFILIATE (10%)
           if (workspaceInfo.referredBy) {
             const refId = workspaceInfo.referredBy.replace('KPOST_', '');
             const referrer = await this.prisma.workspace.findUnique({ where: { id: refId } });
@@ -361,7 +310,6 @@ export class SocialController {
           }
           
           console.log(`🎉 [PayOS Webhook] Hoàn thành nâng cấp! Kích hoạt Socket.io`);
-          
           this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
         } else {
            console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending nào mang mã ${billCode}`);
@@ -371,7 +319,6 @@ export class SocialController {
       }
       
       return res.status(200).json({ success: true, message: "Processed successfully" });
-      
     } catch (error) {
       console.error("🚨 Lỗi khi xử lý Webhook PayOS:", error);
       return res.status(200).json({ success: true, message: "Error handled gracefully" });
@@ -386,6 +333,9 @@ export class SocialController {
     return res.status(403).send('Forbidden');
   }
 
+  // ==========================================
+  // 🚀 WEBHOOK FACEBOOK - FIX LỖI LẶP VÔ HẠN
+  // ==========================================
   @Post('webhook')
   async handleWebhook(@Body() body: any) {
     try {
@@ -400,13 +350,20 @@ export class SocialController {
         where: { platformId: pageId },
       });
 
-      if (!account) {
-        return 'ACCOUNT_NOT_FOUND';
-      }
+      if (!account) return 'ACCOUNT_NOT_FOUND';
 
+      // --- XỬ LÝ TIN NHẮN INBOX ---
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
+
+        // 🛑 BẢO VỆ 1: Chặn Bot tự rep tin nhắn của chính Page
+        if (senderId === pageId) return 'EVENT_RECEIVED';
+
+        // 🛑 BẢO VỆ 2: Kiểm tra xem ID tin nhắn này đã tồn tại trong DB chưa (chống FB gửi lặp)
+        const isDuplicate = await this.prisma.inboxMessage.findUnique({
+          where: { platformId: messaging.message.mid }
+        });
 
         const savedMsg = await this.prisma.inboxMessage.upsert({
           where: { platformId: messaging.message.mid },
@@ -425,17 +382,25 @@ export class SocialController {
 
         this.chatGateway.sendMessageToUI(savedMsg);
 
-        if (account.isAiAutoReply) {
-          await this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid);
+        // 🛑 BẢO VỆ 3: Chỉ cho AI trả lời nếu tin nhắn chưa bị trùng lặp
+        // BỎ 'await' để AI chạy ngầm, giúp Server phản hồi FB mã 200 OK ngay lập tức
+        if (account.isAiAutoReply && !isDuplicate) {
+          this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid)
+              .catch(err => console.error("Lỗi AI chạy ngầm Inbox:", err.message));
         }
       }
 
+      // --- XỬ LÝ COMMENT ---
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
         const senderId = changes.value.from.id;
 
-        if (senderId !== pageId) {
+        const isDuplicateCmt = await this.prisma.inboxMessage.findUnique({
+           where: { platformId: commentId }
+        });
+
+        if (senderId !== pageId && !isDuplicateCmt) {
           await this.prisma.inboxMessage.create({
             data: {
               workspaceId: account.workspaceId,
@@ -450,7 +415,9 @@ export class SocialController {
           });
 
           if (account.isAiAutoReply) {
-            await this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId);
+            // BỎ 'await' để chạy ngầm
+            this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId)
+                .catch(err => console.error("Lỗi AI chạy ngầm Comment:", err.message));
           }
         }
       }
@@ -458,6 +425,8 @@ export class SocialController {
     } catch (e) { 
       console.log("⚠️ Webhook Error:", e.message); 
     }
+    
+    // Facebook luôn nhận được câu trả lời này ngay lập tức (Chống timeout lặp vô hạn)
     return 'EVENT_RECEIVED';
   }
 
@@ -496,7 +465,6 @@ export class SocialController {
       const account = await this.prisma.socialAccount.findFirst({ where: { workspaceId: body.workspaceId, accountName: body.pageName } });
       if (!account) throw new Error("Không tìm thấy Fanpage");
       
-      // ✅ THÊM body.imageUrl VÀO HÀM SEND REPLY
       let fbRes = body.type === 'comment' 
         ? await this.facebookService.replyToComment(body.platformId, account.accessToken, body.text)
         : await this.facebookService.sendReply(account.platformId, account.accessToken, body.senderId, body.text, body.imageUrl);
@@ -520,10 +488,7 @@ export class SocialController {
   @Get('groups')
   async getGroupsByPage(@Query('pageId') pageId: string) {
     if (!pageId) return [];
-    
-    return this.prisma.socialGroup.findMany({
-      where: { pageId: pageId }
-    });
+    return this.prisma.socialGroup.findMany({ where: { pageId: pageId } });
   }
 
   @Post('bot/join-groups')
@@ -531,7 +496,6 @@ export class SocialController {
     if (!body.cookie || !body.groupUrls || body.groupUrls.length === 0) {
       throw new HttpException("Thiếu Cookie hoặc danh sách nhóm", HttpStatus.BAD_REQUEST);
     }
-    
     const result = await this.groupBotService.joinGroups(body.cookie, body.groupUrls, body.pageIds);
     return result; 
   }
@@ -588,7 +552,6 @@ export class SocialController {
           });
         }
       }
-      
       return res.redirect(`${process.env.FRONTEND_URL}/social?success=true`);
     } catch (error) {
       console.error("Lỗi đăng nhập FB:", error.response?.data || error.message);
