@@ -113,11 +113,31 @@ export class AdminService {
 
   // Nâng cấp hoặc tặng ngày sử dụng
   async updateUserPlan(userId: string, plan: string, extraDays: number) {
-    const userWorkspace = await this.prisma.userWorkspace.findFirst({
+    // Sửa chữ userWorkspace thành workspaceMember cho khớp với bảng WorkspaceMember trong DB
+    const member = await this.prisma.workspaceMember.findFirst({
       where: { userId }
     });
 
-    if (!userWorkspace) throw new Error('Người dùng chưa có Workspace');
+    if (!member) throw new Error('Người dùng chưa có Workspace');
+
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: member.workspaceId } });
+    const currentDate = workspace?.planExpiry && workspace.planExpiry > new Date() 
+                        ? new Date(workspace.planExpiry) 
+                        : new Date();
+
+    const newExpireDate = new Date(currentDate);
+    newExpireDate.setDate(currentDate.getDate() + Number(extraDays));
+
+    await this.prisma.workspace.update({
+      where: { id: member.workspaceId },
+      data: {
+        plan: plan.toUpperCase(),
+        planExpiry: newExpireDate 
+      }
+    });
+
+    return { success: true, message: `Đã nâng cấp lên gói ${plan} và thêm ${extraDays} ngày.` };
+  }
 
     // Lấy ngày hết hạn cũ hoặc dùng ngày hôm nay nếu chưa có
     const workspace = await this.prisma.workspace.findUnique({ where: { id: userWorkspace.workspaceId } });
