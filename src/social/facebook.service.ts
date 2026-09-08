@@ -209,35 +209,44 @@ export class FacebookService {
   // ==========================================
   async sendReply(pageId: string, accessToken: string, senderId: string, text: string, imageUrl?: string) {
     try {
-      // ✅ MẶC ĐỊNH LÀ GỬI TEXT
-      let messagePayload: any = { text: text };
+      const fbApiUrl = `https://graph.facebook.com/v19.0/me/messages`;
+      let response;
 
-      // ✅ NẾU CÓ URL ẢNH THÌ ĐỔI CẤU TRÚC SANG GỬI ẢNH (Bảo vệ lỗi type)
-      if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
-        messagePayload = {
-          attachment: {
-            type: "image",
-            payload: {
-              url: imageUrl,
-              is_reusable: true
-            }
-          }
-        };
+      // 1. NHỊP 1: GỬI ĐOẠN TEXT TƯ VẤN (Nếu có)
+      if (text && text.trim() !== '') {
+        response = await axios.post(
+          fbApiUrl,
+          {
+            recipient: { id: senderId },
+            message: { text: text },
+            messaging_type: "RESPONSE"
+          },
+          { params: { access_token: accessToken } }
+        );
       }
 
-      const response = await axios.post(
-        `https://graph.facebook.com/v19.0/me/messages`,
-        {
-          recipient: { id: senderId },
-          message: messagePayload,
-          messaging_type: "RESPONSE"
-        },
-        {
-          params: { access_token: accessToken }
-        }
-      );
+      // 2. NHỊP 2: GỬI ẢNH ĐÍNH KÈM NGAY SAU ĐÓ (Nếu có)
+      if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+        response = await axios.post(
+          fbApiUrl,
+          {
+            recipient: { id: senderId },
+            message: {
+              attachment: {
+                type: "image",
+                payload: {
+                  url: imageUrl,
+                  is_reusable: true
+                }
+              }
+            },
+            messaging_type: "RESPONSE"
+          },
+          { params: { access_token: accessToken } }
+        );
+      }
       
-      return response.data;
+      return response?.data || { success: true };
     } catch (error) {
       console.error("Lỗi gửi tin nhắn FB:", error.response?.data || error.message);
       throw error;
