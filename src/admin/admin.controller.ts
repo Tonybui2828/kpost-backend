@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Put, Body, Query, Param } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -22,14 +22,49 @@ export class AdminController {
     return this.adminService.updateSystemSettings(body);
   }
 
-  // 3. Quản lý danh sách khách hàng (MỚI THÊM)
-  // Trả về danh sách user kèm theo gói cước (plan) và ngày hết hạn
+  // ==========================================
+  // 3. QUẢN LÝ DANH SÁCH KHÁCH HÀNG (MỚI)
+  // ==========================================
+  
+  // Lấy danh sách user kèm theo gói cước (plan) và ngày hết hạn
   @Get('users-list')
   async getUsers() {
     return this.adminService.getAllUsers();
   }
 
-  // 4. Quản lý Voucher
+  // Nâng cấp hoặc tăng thời hạn gói cho khách
+  @Put('users/:id/plan')
+  async updateUserPlan(
+    @Param('id') userId: string, 
+    @Body() body: { plan: string, extraDays: number }
+  ) {
+    return this.adminService.updateUserPlan(userId, body.plan, body.extraDays);
+  }
+
+  // Tặng voucher riêng cho khách
+  @Post('users/:id/voucher')
+  async addVoucherToUser(
+    @Param('id') userId: string,
+    @Body() body: { voucherCode: string }
+  ) {
+    return this.adminService.addVoucherToUser(userId, body.voucherCode);
+  }
+
+  // Khóa/Xóa tài khoản (Xóa mềm)
+  @Delete('users/:id')
+  async deleteUser(@Param('id') userId: string) {
+    return this.adminService.deleteUser(userId);
+  }
+
+  // Khôi phục tài khoản
+  @Put('users/:id/restore')
+  async restoreUser(@Param('id') userId: string) {
+    return this.adminService.restoreUser(userId);
+  }
+
+  // ==========================================
+  // 4. QUẢN LÝ VOUCHER
+  // ==========================================
   @Get('vouchers')
   async getVouchers() {
     return this.adminService.getAllVouchers();
@@ -40,13 +75,14 @@ export class AdminController {
     return this.adminService.createVoucher(body);
   }
 
-  // Xóa Voucher theo ID (MỚI THÊM)
   @Delete('vouchers/:id')
   async deleteVoucher(@Param('id') id: string) {
     return this.adminService.deleteVoucher(id);
   }
 
-  // 5. Kích hoạt quét thông báo gia hạn thủ công
+  // ==========================================
+  // 5. KÍCH HOẠT QUÉT THÔNG BÁO GIA HẠN
+  // ==========================================
   @Post('check-renewal')
   async checkRenewal() {
     return this.adminService.checkExpiringWorkspaces();

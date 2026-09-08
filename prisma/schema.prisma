@@ -19,7 +19,12 @@ model User {
   image         String?         
   provider      String?         
   providerId    String? 
-  affiliateBy    String?        
+  affiliateBy   String?        
+  
+  // --- THÊM PHỤC VỤ TÍNH NĂNG QUẢN TRỊ ADMIN ---
+  status        String          @default("active") // "active" hoặc "deleted"
+  vouchers      String[]        @default([])       // Mảng chứa các mã voucher được tặng riêng
+
   isActive      Boolean         @default(true)
   hasSeenGuide  Boolean         @default(false) 
   hasAcceptedTerms Boolean      @default(false) 
@@ -36,8 +41,8 @@ model Workspace {
   ownerId        String
   phoneNumber    String?           
   
-  plan           String            @default("free") 
-  planExpiry     DateTime?         
+  plan           String            @default("FREE") // Đổi sang chữ in hoa (FREE, PRO, GOLD, DIAMOND) cho đồng bộ
+  planExpire     DateTime?         // Đổi tên thành planExpire cho đúng file AdminController
   isAutoPay      Boolean           @default(false)  
   balance        Float             @default(0)      
   
