@@ -1,14 +1,16 @@
 import { Controller, Get, Post, Body, Req, UseGuards, Res, HttpStatus, HttpException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
+import { EmailService } from '../email/email.service'; // Bổ sung EmailService
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs'; // Sử dụng bcryptjs để ổn định trên VPS
+import * as bcrypt from 'bcryptjs';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private emailService: EmailService, // Nhúng EmailService vào đây
   ) {}
 
   // ==========================================
@@ -16,7 +18,7 @@ export class AuthController {
   // ==========================================
   @Post('register')
   async register(@Body() body: any) {
-    const { email, password, name } = body;
+    const { email, password, name, affiliateBy } = body; // Hứng thêm affiliateBy
 
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -31,6 +33,7 @@ export class AuthController {
         password: hashedPassword,
         name,
         role: 'user',
+        affiliateBy: affiliateBy || null, // Lưu mã giới thiệu nếu có
         workspaces: {
           create: {
             workspace: {
@@ -82,7 +85,7 @@ export class AuthController {
   }
 
   // ==========================================
-  // 3. ĐỔI MẬT KHẨU (MỚI BỔ SUNG)
+  // 3. ĐỔI MẬT KHẨU (KHI ĐÃ ĐĂNG NHẬP)
   // ==========================================
   @Post('change-password')
   async changePassword(@Req() req, @Body() body: any) {
@@ -120,7 +123,66 @@ export class AuthController {
   }
 
   // ==========================================
-  // 4. ĐĂNG NHẬP GOOGLE
+  // 4. QUÊN MẬT KHẨU (GỬI MAIL)
+  // ==========================================
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    if (!body.email) {
+      throw new HttpException('Vui lòng cung cấp email', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: body.email }
+    });
+
+    if (!user) {
+      return { success: true, message: 'Nếu email tồn tại trên hệ thống, link khôi phục đã được gửi.' };
+    }
+
+    // Tạo mã JWT có thời hạn 15 phút
+    const resetToken = this.jwtService.sign(
+      { email: user.email, purpose: 'reset-password' },
+      { expiresIn: '15m' } 
+    );
+
+    // Gửi email cho khách
+    await this.emailService.sendForgotPasswordEmail(user.email, resetToken);
+
+    return { success: true, message: 'Vui lòng kiểm tra hộp thư email (hoặc thư rác) để đặt lại mật khẩu.' };
+  }
+
+  // ==========================================
+  // 5. ĐẶT LẠI MẬT KHẨU TỪ LINK EMAIL
+  // ==========================================
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string, newPassword: string }) {
+    if (!body.token || !body.newPassword) {
+      throw new HttpException('Thiếu token hoặc mật khẩu mới', HttpStatus.BAD_REQUEST);
+    }
+
+    try {
+      const payload = this.jwtService.verify(body.token);
+
+      if (payload.purpose !== 'reset-password') {
+        throw new Error('Mã Token không hợp lệ');
+      }
+
+      const hashedPassword = await bcrypt.hash(body.newPassword, 10);
+
+      await this.prisma.user.update({
+        where: { email: payload.email },
+        data: { password: hashedPassword }
+      });
+
+      return { success: true, message: 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay bây giờ.' };
+      
+    } catch (error) {
+      throw new HttpException('Đường link đã hết hạn (quá 15 phút) hoặc không hợp lệ.', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // ==========================================
+  // 6. ĐĂNG NHẬP GOOGLE
   // ==========================================
   @Get('google')
   @UseGuards(AuthGuard('google'))
@@ -166,7 +228,7 @@ export class AuthController {
   }
 
   // ==========================================
-  // 5. LẤY THÔNG TIN CÁ NHÂN
+  // 7. LẤY THÔNG TIN CÁ NHÂN
   // ==========================================
   @Get('profile')
   async getProfile(@Req() req) {
