@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 // Modules
 import { AiContentModule } from './ai-content/ai-content.module';
 import { AdminModule } from './admin/admin.module';
+import { EmailModule } from './email/email.module'; // 🚀 Thêm EmailModule vào đây
 
 // Controllers
 import { ProductsController } from './products/products.controller';
@@ -27,7 +28,7 @@ import { AiContentService } from './ai-content/ai-content.service';
 import { ShippingService } from './products/shipping.service'; 
 import { PaymentService } from './products/payment.service'; 
 import { GoogleStrategy } from './auth/google.strategy'; 
-import { GroupBotService } from './social/group-bot.service'; // 🚀 Khai báo thêm GroupBotService
+import { GroupBotService } from './social/group-bot.service';
 
 @Module({
   imports: [
@@ -40,7 +41,8 @@ import { GroupBotService } from './social/group-bot.service'; // 🚀 Khai báo 
       signOptions: { expiresIn: '7d' }, 
     }),
     AiContentModule,
-    AdminModule, 
+    AdminModule,
+    EmailModule, // 🚀 Khai báo EmailModule để sử dụng toàn hệ thống
   ],
   controllers: [
     ProductsController, 
@@ -62,7 +64,7 @@ import { GroupBotService } from './social/group-bot.service'; // 🚀 Khai báo 
     ShippingService,
     PaymentService,
     GoogleStrategy,
-    GroupBotService // 🚀 Thêm GroupBotService vào danh sách Providers
+    GroupBotService 
   ],
 })
 export class AppModule {}
