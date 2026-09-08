@@ -85,7 +85,7 @@ export class AdminService {
   }
 
   // ==========================================
-  // 4. QUẢN LÝ KHÁCH HÀNG (MỚI THÊM CÁC HÀM)
+  // 4. QUẢN LÝ KHÁCH HÀNG
   // ==========================================
 
   // Lấy danh sách user kèm thông tin gói cước (plan) và ngày hết hạn
@@ -105,7 +105,7 @@ export class AdminService {
         status: user.status || 'active',
         vouchers: user.vouchers || [],
         plan: workspace?.plan || 'FREE',
-        planExpire: workspace?.planExpiry || null, // Chú ý: Backend trả về key là planExpire nhưng lấy từ DB là planExpiry
+        planExpire: workspace?.planExpiry || null,
         createdAt: user.createdAt,
       };
     });
@@ -113,7 +113,6 @@ export class AdminService {
 
   // Nâng cấp hoặc tặng ngày sử dụng
   async updateUserPlan(userId: string, plan: string, extraDays: number) {
-    // Sửa chữ userWorkspace thành workspaceMember cho khớp với bảng WorkspaceMember trong DB
     const member = await this.prisma.workspaceMember.findFirst({
       where: { userId }
     });
@@ -133,26 +132,6 @@ export class AdminService {
       data: {
         plan: plan.toUpperCase(),
         planExpiry: newExpireDate 
-      }
-    });
-
-    return { success: true, message: `Đã nâng cấp lên gói ${plan} và thêm ${extraDays} ngày.` };
-  }
-
-    // Lấy ngày hết hạn cũ hoặc dùng ngày hôm nay nếu chưa có
-    const workspace = await this.prisma.workspace.findUnique({ where: { id: userWorkspace.workspaceId } });
-    const currentDate = workspace?.planExpiry && workspace.planExpiry > new Date() 
-                        ? new Date(workspace.planExpiry) 
-                        : new Date();
-
-    const newExpireDate = new Date(currentDate);
-    newExpireDate.setDate(currentDate.getDate() + Number(extraDays));
-
-    await this.prisma.workspace.update({
-      where: { id: userWorkspace.workspaceId },
-      data: {
-        plan: plan.toUpperCase(),
-        planExpiry: newExpireDate // Lưu vào planExpiry cho chuẩn DB
       }
     });
 
