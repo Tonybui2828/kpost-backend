@@ -232,9 +232,6 @@ export class SocialController {
   // ==========================================
   // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
   // ==========================================
- // ==========================================
-  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
-  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
@@ -299,16 +296,17 @@ export class SocialController {
             throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
-        // --- ĐOẠN QUAN TRỌNG: FIX LỖI PARSE MẢNG ---
+        // --- ĐOẠN QUAN TRỌNG: FIX LỖI PARSE MẢNG BẰNG CÁCH ÉP KIỂU ANY ---
         let currentVouchers: string[] = [];
+        const rawVouchers: any = user.vouchers; // ÉP KIỂU ANY ĐỂ TYPESCRIPT KHÔNG BẮT LỖI
         
-        if (user.vouchers) {
+        if (rawVouchers) {
             try {
-                if (Array.isArray(user.vouchers)) {
-                    currentVouchers = [...user.vouchers];
-                } else if (typeof user.vouchers === 'string') {
+                if (Array.isArray(rawVouchers)) {
+                    currentVouchers = [...rawVouchers];
+                } else if (typeof rawVouchers === 'string') {
                     // Nếu nó là chuỗi, parse nó ra
-                    const parsed = JSON.parse(user.vouchers);
+                    const parsed = JSON.parse(rawVouchers);
                     if (Array.isArray(parsed)) {
                         currentVouchers = parsed;
                     } else if (typeof parsed === 'string') {
@@ -320,13 +318,13 @@ export class SocialController {
                              currentVouchers = [parsed];
                         }
                     } else {
-                        currentVouchers = [user.vouchers];
+                        currentVouchers = [rawVouchers];
                     }
                 }
             } catch (e) {
                 // Nếu parse lỗi (VD: chuỗi thường không phải JSON), coi như mảng rỗng hoặc chứa chuỗi đó
-                if (typeof user.vouchers === 'string' && user.vouchers.trim().length > 0) {
-                     currentVouchers = [user.vouchers];
+                if (typeof rawVouchers === 'string' && rawVouchers.trim().length > 0) {
+                     currentVouchers = [rawVouchers];
                 } else {
                      currentVouchers = [];
                 }
