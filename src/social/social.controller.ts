@@ -232,6 +232,9 @@ export class SocialController {
   // ==========================================
   // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
   // ==========================================
+ // ==========================================
+  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
+  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
