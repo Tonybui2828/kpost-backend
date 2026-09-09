@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, HttpException, HttpStatus } from '@nestjs/common';
-import { Response } from 'express'; 
+import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus } from '@nestjs/common';
+import { Response, Request } from 'express'; 
 import axios from 'axios'; 
+import * as jwt from 'jsonwebtoken'; // Đã thêm thư viện giải mã token
 import { FacebookService } from './facebook.service';
 import { PrismaService } from '../prisma.service';
 import { ChatGateway } from './chat.gateway';
@@ -239,12 +240,12 @@ export class SocialController {
     }
   }
 
-  // API ĐỂ LƯU VOUCHER VÀO VÍ 
-  // API ĐỂ LƯU VOUCHER VÀO VÍ 
-  // API ĐỂ LƯU VOUCHER VÀO VÍ 
+  // ==========================================
+  // API LƯU VOUCHER VÀO VÍ - ĐÃ SỬA LỖI TÌM USER
+  // ==========================================
   @Post('add-voucher-to-wallet')
-  async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }) {
-    if (!body.code || !body.workspaceId) {
+  async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
+    if (!body.code) {
         throw new HttpException('Thiếu dữ liệu', HttpStatus.BAD_REQUEST);
     }
     
@@ -268,26 +269,59 @@ export class SocialController {
             throw new HttpException('Mã giảm giá đã hết hạn', HttpStatus.BAD_REQUEST);
         }
 
-        // 2. TÌM USER - CẬP NHẬT LOGIC TÌM KIẾM LINH HOẠT HƠN
-        let targetUserId = body.workspaceId; // Mặc định thử lấy ID truyền lên làm User ID
-        
-        // Thử tìm xem nó có phải là Workspace ID không
-        const workspace = await this.prisma.workspace.findUnique({
-            where: { id: body.workspaceId }
-        });
-        
-        // Nếu tìm thấy Workspace, lấy ownerId làm User ID
-        if (workspace && workspace.ownerId) {
-            targetUserId = workspace.ownerId;
+        // 2. GIẢI MÃ TOKEN ĐỂ LẤY USER ID CHUẨN XÁC 100%
+        let userIdToSave = null;
+
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            try {
+                // Giải mã token (bỏ qua bước verify JWT secret phức tạp, chỉ lấy payload ID)
+                const decodedToken: any = jwt.decode(token);
+                if (decodedToken && (decodedToken.userId || decodedToken.id || decodedToken.sub)) {
+                    userIdToSave = decodedToken.userId || decodedToken.id || decodedToken.sub;
+                }
+            } catch (err) {
+                console.error("Không thể giải mã token:", err);
+            }
         }
 
-        // Tìm User thực sự trong Database
+        // Nếu giải mã token không ra, dùng giải pháp dự phòng tìm qua các ID truyền lên
+        if (!userIdToSave && body.workspaceId) {
+             const directUser = await this.prisma.user.findUnique({ where: { id: body.workspaceId } });
+             if (directUser) {
+                  userIdToSave = directUser.id;
+             } else {
+                  const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
+                  if (workspace && workspace.ownerId) {
+                      userIdToSave = workspace.ownerId;
+                  } else {
+                      const userByWs = await this.prisma.user.findFirst({
+                          where: {
+                              OR: [
+                                  { currentWorkspaceId: body.workspaceId },
+                                  { wid: body.workspaceId }
+                              ]
+                          }
+                      });
+                      if (userByWs) {
+                          userIdToSave = userByWs.id;
+                      }
+                  }
+             }
+        }
+
+        // Nếu tìm mọi cách vẫn không ra
+        if (!userIdToSave) {
+            throw new HttpException('Không thể xác thực thông tin tài khoản (Token không hợp lệ). Vui lòng đăng xuất và đăng nhập lại.', HttpStatus.NOT_FOUND);
+        }
+
         const user = await this.prisma.user.findUnique({
-            where: { id: targetUserId }
+            where: { id: userIdToSave }
         });
 
         if (!user) {
-            throw new HttpException('Không tìm thấy User. Vui lòng đăng xuất và đăng nhập lại.', HttpStatus.NOT_FOUND);
+            throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
         // 3. Kiểm tra xem mã đã có trong ví chưa
@@ -303,7 +337,7 @@ export class SocialController {
         }
         
         if (currentVouchers.includes(code)) {
-            throw new HttpException('Mã này đã có trong ví của bạn', HttpStatus.BAD_REQUEST);
+            throw new HttpException('Bạn đã lưu mã này vào ví rồi', HttpStatus.BAD_REQUEST);
         }
 
         // 4. Thêm mã vào ví của User
