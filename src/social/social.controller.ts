@@ -241,6 +241,7 @@ export class SocialController {
 
   // API ĐỂ LƯU VOUCHER VÀO VÍ 
   // API ĐỂ LƯU VOUCHER VÀO VÍ 
+  // API ĐỂ LƯU VOUCHER VÀO VÍ 
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }) {
     if (!body.code || !body.workspaceId) {
@@ -267,22 +268,29 @@ export class SocialController {
             throw new HttpException('Mã giảm giá đã hết hạn', HttpStatus.BAD_REQUEST);
         }
 
-        // 2. Lấy thông tin user thông qua Workspace
+        // 2. TÌM USER - CẬP NHẬT LOGIC TÌM KIẾM LINH HOẠT HƠN
+        let targetUserId = body.workspaceId; // Mặc định thử lấy ID truyền lên làm User ID
+        
+        // Thử tìm xem nó có phải là Workspace ID không
         const workspace = await this.prisma.workspace.findUnique({
             where: { id: body.workspaceId }
         });
         
-        if (!workspace) {
-            throw new HttpException('Không tìm thấy tài khoản', HttpStatus.NOT_FOUND);
+        // Nếu tìm thấy Workspace, lấy ownerId làm User ID
+        if (workspace && workspace.ownerId) {
+            targetUserId = workspace.ownerId;
         }
 
+        // Tìm User thực sự trong Database
         const user = await this.prisma.user.findUnique({
-            where: { id: workspace.ownerId }
+            where: { id: targetUserId }
         });
 
-        if (!user) throw new HttpException('Không tìm thấy User', HttpStatus.NOT_FOUND);
+        if (!user) {
+            throw new HttpException('Không tìm thấy User. Vui lòng đăng xuất và đăng nhập lại.', HttpStatus.NOT_FOUND);
+        }
 
-        // 3. Kiểm tra xem mã đã có trong ví chưa (Cột vouchers nằm ở bảng User)
+        // 3. Kiểm tra xem mã đã có trong ví chưa
         let currentVouchers = [];
         try {
             if (Array.isArray(user.vouchers)) {
@@ -318,7 +326,6 @@ export class SocialController {
         throw new HttpException('Lỗi hệ thống khi thêm voucher', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
-
 
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
