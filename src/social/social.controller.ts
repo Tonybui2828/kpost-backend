@@ -240,6 +240,7 @@ export class SocialController {
   }
 
   // API ĐỂ LƯU VOUCHER VÀO VÍ 
+  // API ĐỂ LƯU VOUCHER VÀO VÍ 
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }) {
     if (!body.code || !body.workspaceId) {
@@ -266,7 +267,7 @@ export class SocialController {
             throw new HttpException('Mã giảm giá đã hết hạn', HttpStatus.BAD_REQUEST);
         }
 
-        // 2. Lấy thông tin user (Workspace)
+        // 2. Lấy thông tin user thông qua Workspace
         const workspace = await this.prisma.workspace.findUnique({
             where: { id: body.workspaceId }
         });
@@ -275,14 +276,19 @@ export class SocialController {
             throw new HttpException('Không tìm thấy tài khoản', HttpStatus.NOT_FOUND);
         }
 
-        // 3. Kiểm tra xem mã đã có trong ví chưa
+        const user = await this.prisma.user.findUnique({
+            where: { id: workspace.ownerId }
+        });
+
+        if (!user) throw new HttpException('Không tìm thấy User', HttpStatus.NOT_FOUND);
+
+        // 3. Kiểm tra xem mã đã có trong ví chưa (Cột vouchers nằm ở bảng User)
         let currentVouchers = [];
-        // Xử lý cẩn thận kiểu dữ liệu vouchers
         try {
-            if (Array.isArray(workspace.vouchers)) {
-                currentVouchers = workspace.vouchers;
-            } else if (typeof workspace.vouchers === 'string') {
-                currentVouchers = JSON.parse(workspace.vouchers);
+            if (Array.isArray(user.vouchers)) {
+                currentVouchers = user.vouchers as string[];
+            } else if (typeof user.vouchers === 'string') {
+                currentVouchers = JSON.parse(user.vouchers);
             }
         } catch (e) {
             currentVouchers = [];
@@ -292,11 +298,11 @@ export class SocialController {
             throw new HttpException('Mã này đã có trong ví của bạn', HttpStatus.BAD_REQUEST);
         }
 
-        // 4. Thêm mã vào ví (cập nhật DB)
+        // 4. Thêm mã vào ví của User
         currentVouchers.push(code);
         
-        await this.prisma.workspace.update({
-            where: { id: body.workspaceId },
+        await this.prisma.user.update({
+            where: { id: user.id },
             data: { 
                 vouchers: currentVouchers 
             }
