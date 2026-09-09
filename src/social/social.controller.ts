@@ -1,7 +1,7 @@
 import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus } from '@nestjs/common';
 import { Response, Request } from 'express'; 
 import axios from 'axios'; 
-import * as jwt from 'jsonwebtoken'; // Đã thêm thư viện giải mã token
+import * as jwt from 'jsonwebtoken';
 import { FacebookService } from './facebook.service';
 import { PrismaService } from '../prisma.service';
 import { ChatGateway } from './chat.gateway';
@@ -24,9 +24,6 @@ export class SocialController {
     private readonly groupBotService: GroupBotService 
   ) {}
 
-  // ==========================================
-  // 🚀 API LẤY THỐNG KÊ AFFILIATE
-  // ==========================================
   @Get('affiliate/stats')
   async getAffiliateStats(@Query('workspaceId') workspaceId: string) {
     if (!workspaceId) return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
@@ -35,7 +32,7 @@ export class SocialController {
       if (!ws) return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
       
       return {
-        clicks: ws.totalSignups * 3, // Giả lập tỷ lệ chuyển đổi 1/3
+        clicks: ws.totalSignups * 3,
         signups: ws.totalSignups,
         orders: ws.totalOrders,
         revenue: ws.commission
@@ -174,10 +171,6 @@ export class SocialController {
     return this.prisma.transaction.findFirst({ where: { description: { contains: billCode, mode: 'insensitive' } }, select: { status: true, planName: true } });
   }
 
-  // ==========================================
-  // 🚀 VOUCHER & AFFILIATE APIs
-  // ==========================================
-
   @Post('check-voucher')
   async checkVoucher(@Body('code') code: string) {
     if (!code) {
@@ -193,17 +186,14 @@ export class SocialController {
         return { valid: false, message: 'Mã giảm giá không tồn tại hoặc đã bị khóa' };
       }
 
-      // 1. Kiểm tra hết lượt
       if (voucherRecord.usedCount >= voucherRecord.usageLimit) {
         return { valid: false, message: 'Mã giảm giá đã hết lượt sử dụng' };
       }
 
-      // 2. Kiểm tra hết hạn
       if (voucherRecord.validUntil && new Date() > new Date(voucherRecord.validUntil)) {
         return { valid: false, message: 'Mã giảm giá đã hết hạn' };
       }
 
-      // Hợp lệ -> Trả về thông tin
       return { 
         valid: true, 
         discountValue: voucherRecord.discount, 
@@ -215,7 +205,6 @@ export class SocialController {
     }
   }
 
-  // Lấy danh sách chi tiết Voucher cho giao diện Ví Khách Hàng
   @Post('get-vouchers-detail')
   async getVouchersDetail(@Body() body: { codes: string[] }) {
     if (!body.codes || body.codes.length === 0) return [];
@@ -240,9 +229,6 @@ export class SocialController {
     }
   }
 
-  // ==========================================
-  // API LƯU VOUCHER VÀO VÍ - ĐÃ SỬA LỖI TÌM USER
-  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
@@ -252,7 +238,6 @@ export class SocialController {
     try {
         const code = body.code.toUpperCase();
         
-        // 1. Kiểm tra mã giảm giá có tồn tại và hợp lệ không
         const voucherRecord = await this.prisma.voucher.findUnique({
             where: { code: code },
         });
@@ -269,14 +254,12 @@ export class SocialController {
             throw new HttpException('Mã giảm giá đã hết hạn', HttpStatus.BAD_REQUEST);
         }
 
-        // 2. GIẢI MÃ TOKEN ĐỂ LẤY USER ID CHUẨN XÁC 100%
         let userIdToSave = null;
 
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
             try {
-                // Giải mã token (bỏ qua bước verify JWT secret phức tạp, chỉ lấy payload ID)
                 const decodedToken: any = jwt.decode(token);
                 if (decodedToken && (decodedToken.userId || decodedToken.id || decodedToken.sub)) {
                     userIdToSave = decodedToken.userId || decodedToken.id || decodedToken.sub;
@@ -286,7 +269,6 @@ export class SocialController {
             }
         }
 
-        // Nếu giải mã token không ra, dùng giải pháp dự phòng tìm qua các ID truyền lên
         if (!userIdToSave && body.workspaceId) {
              const directUser = await this.prisma.user.findUnique({ where: { id: body.workspaceId } });
              if (directUser) {
@@ -295,23 +277,10 @@ export class SocialController {
                   const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
                   if (workspace && workspace.ownerId) {
                       userIdToSave = workspace.ownerId;
-                  } else {
-                      const userByWs = await this.prisma.user.findFirst({
-                          where: {
-                              OR: [
-                                  { currentWorkspaceId: body.workspaceId },
-                                  { wid: body.workspaceId }
-                              ]
-                          }
-                      });
-                      if (userByWs) {
-                          userIdToSave = userByWs.id;
-                      }
                   }
              }
         }
 
-        // Nếu tìm mọi cách vẫn không ra
         if (!userIdToSave) {
             throw new HttpException('Không thể xác thực thông tin tài khoản (Token không hợp lệ). Vui lòng đăng xuất và đăng nhập lại.', HttpStatus.NOT_FOUND);
         }
@@ -324,7 +293,6 @@ export class SocialController {
             throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
-        // 3. Kiểm tra xem mã đã có trong ví chưa
         let currentVouchers = [];
         try {
             if (Array.isArray(user.vouchers)) {
@@ -340,7 +308,6 @@ export class SocialController {
             throw new HttpException('Bạn đã lưu mã này vào ví rồi', HttpStatus.BAD_REQUEST);
         }
 
-        // 4. Thêm mã vào ví của User
         currentVouchers.push(code);
         
         await this.prisma.user.update({
@@ -499,9 +466,6 @@ export class SocialController {
     return res.status(403).send('Forbidden');
   }
 
-  // ==========================================
-  // 🚀 WEBHOOK FACEBOOK - FIX LỖI LẶP VÔ HẠN
-  // ==========================================
   @Post('webhook')
   async handleWebhook(@Body() body: any) {
     try {
@@ -518,15 +482,12 @@ export class SocialController {
 
       if (!account) return 'ACCOUNT_NOT_FOUND';
 
-      // --- XỬ LÝ TIN NHẮN INBOX ---
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
-        // 🛑 BẢO VỆ 1: Chặn Bot tự rep tin nhắn của chính Page
         if (senderId === pageId) return 'EVENT_RECEIVED';
 
-        // 🛑 BẢO VỆ 2: Kiểm tra xem ID tin nhắn này đã tồn tại trong DB chưa (chống FB gửi lặp)
         const isDuplicate = await this.prisma.inboxMessage.findUnique({
           where: { platformId: messaging.message.mid }
         });
@@ -548,15 +509,12 @@ export class SocialController {
 
         this.chatGateway.sendMessageToUI(savedMsg);
 
-        // 🛑 BẢO VỆ 3: Chỉ cho AI trả lời nếu tin nhắn chưa bị trùng lặp
-        // BỎ 'await' để AI chạy ngầm, giúp Server phản hồi FB mã 200 OK ngay lập tức
         if (account.isAiAutoReply && !isDuplicate) {
           this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid)
               .catch(err => console.error("Lỗi AI chạy ngầm Inbox:", err.message));
         }
       }
 
-      // --- XỬ LÝ COMMENT ---
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
@@ -581,7 +539,6 @@ export class SocialController {
           });
 
           if (account.isAiAutoReply) {
-            // BỎ 'await' để chạy ngầm
             this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId)
                 .catch(err => console.error("Lỗi AI chạy ngầm Comment:", err.message));
           }
@@ -592,7 +549,6 @@ export class SocialController {
       console.log("⚠️ Webhook Error:", e.message); 
     }
     
-    // Facebook luôn nhận được câu trả lời này ngay lập tức (Chống timeout lặp vô hạn)
     return 'EVENT_RECEIVED';
   }
 
