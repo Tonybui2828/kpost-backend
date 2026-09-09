@@ -102,7 +102,7 @@ model Voucher {
   discount    Float     
   type        String    @default("fixed") 
   minOrder    Float     @default(0)       
-  expiryDate  DateTime?
+  validUntil  DateTime? // Đã gộp thành 1 trường Hạn sử dụng chuẩn
   usageLimit  Int       @default(100)     
   usedCount   Int       @default(0)       
   isActive    Boolean   @default(true)

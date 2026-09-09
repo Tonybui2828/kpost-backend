@@ -173,6 +173,10 @@ export class SocialController {
     return this.prisma.transaction.findFirst({ where: { description: { contains: billCode, mode: 'insensitive' } }, select: { status: true, planName: true } });
   }
 
+  // ==========================================
+  // 🚀 VOUCHER & AFFILIATE APIs
+  // ==========================================
+
   @Post('check-voucher')
   async checkVoucher(@Body('code') code: string) {
     if (!code) {
@@ -180,20 +184,61 @@ export class SocialController {
     }
 
     try {
-      const voucherRecord = await this.prisma.voucher.findFirst({
-        where: { code: code.toUpperCase(), isActive: true },
+      const voucherRecord = await this.prisma.voucher.findUnique({
+        where: { code: code.toUpperCase() },
       });
 
-      if (voucherRecord) {
-        return { valid: true, discountValue: voucherRecord.discount, discountType: voucherRecord.type };
+      if (!voucherRecord || !voucherRecord.isActive) {
+        return { valid: false, message: 'Mã giảm giá không tồn tại hoặc đã bị khóa' };
       }
 
-      return { valid: false, message: 'Mã không tồn tại hoặc đã hết hạn' };
+      // 1. Kiểm tra hết lượt
+      if (voucherRecord.usedCount >= voucherRecord.usageLimit) {
+        return { valid: false, message: 'Mã giảm giá đã hết lượt sử dụng' };
+      }
+
+      // 2. Kiểm tra hết hạn
+      if (voucherRecord.validUntil && new Date() > new Date(voucherRecord.validUntil)) {
+        return { valid: false, message: 'Mã giảm giá đã hết hạn' };
+      }
+
+      // Hợp lệ -> Trả về thông tin
+      return { 
+        valid: true, 
+        discountValue: voucherRecord.discount, 
+        discountType: voucherRecord.type 
+      };
     } catch (error) {
       console.error("Lỗi khi kiểm tra voucher:", error);
-      throw new HttpException('Mã không tồn tại hoặc lỗi hệ thống', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Lỗi hệ thống kiểm tra voucher', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  // Lấy danh sách chi tiết Voucher cho giao diện Ví Khách Hàng
+  @Post('get-vouchers-detail')
+  async getVouchersDetail(@Body() body: { codes: string[] }) {
+    if (!body.codes || body.codes.length === 0) return [];
+    
+    try {
+      const vouchers = await this.prisma.voucher.findMany({
+        where: {
+          code: { in: body.codes }
+        }
+      });
+
+      return vouchers.map(v => ({
+        code: v.code,
+        discountValue: v.discount,
+        discountType: v.type,
+        validUntil: v.validUntil 
+            ? new Date(v.validUntil).toLocaleDateString('vi-VN') 
+            : "Vô thời hạn"
+      }));
+    } catch (error) {
+      throw new HttpException('Lỗi hệ thống tải ví voucher', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
 
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {

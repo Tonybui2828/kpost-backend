@@ -208,7 +208,7 @@ export default function SettingsPage() {
             {activeTab === "affiliate" && <AffiliateTab user={user} />}
             {activeTab === "billing" && <BillingTab onUpgrade={handleUpgrade} />}
             {activeTab === "security" && <SecurityTab />}
-            {activeTab === "voucher" && <VoucherTab />}
+            {activeTab === "voucher" && <VoucherTab user={user} />}
             {activeTab === "guide" && <GuideTab />}
             {activeTab === "terms" && <TermsTab />}
             {activeTab === "privacy" && <PrivacyTab />}
@@ -817,14 +817,56 @@ function BillingTab({ onUpgrade }: any) {
     )
 }
 
-function VoucherTab() { 
+// === HÀM VOUCHER ĐÃ ĐƯỢC CHỈNH SỬA ===
+function VoucherTab({ user }: { user: any }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
     const [isChecking, setIsChecking] = useState(false);
     const [message, setMessage] = useState("");
     
-    const [savedVouchers, setSavedVouchers] = useState<any[]>([]);
+    // Mảng lưu chi tiết các voucher của User này
+    const [userVouchers, setUserVouchers] = useState<any[]>([]);
+    const [loadingVouchers, setLoadingVouchers] = useState(true);
 
+    // 1. Fetch danh sách Voucher mà Admin đã tặng cho User này
+    useEffect(() => {
+        const fetchVouchers = async () => {
+            // Mảng user.vouchers là mảng các chuỗi mã (vd: ["CNLG", "TET2024"])
+            if (!user || !user.vouchers || user.vouchers.length === 0) {
+                setLoadingVouchers(false);
+                return;
+            }
+
+            try {
+                // Gọi API backend để lấy thông tin chi tiết từng mã voucher (mức giảm, loại giảm...)
+                const token = localStorage.getItem("token");
+                const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
+                    { codes: user.vouchers },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                
+                if (res.data && Array.isArray(res.data)) {
+                    setUserVouchers(res.data);
+                }
+            } catch (error) {
+                console.error("Lỗi lấy thông tin voucher:", error);
+                // Fallback nếu API /get-vouchers-detail chưa được tạo bên Backend
+                // Tạm thời hiển thị mã dạng chuỗi cơ bản
+                setUserVouchers(user.vouchers.map((code: string) => ({
+                    code: code,
+                    discountValue: "??",
+                    discountType: "percent",
+                    validUntil: "Chưa rõ"
+                })));
+            } finally {
+                setLoadingVouchers(false);
+            }
+        };
+
+        fetchVouchers();
+    }, [user, API_URL]);
+
+    // 2. Thêm voucher mới bằng tay
     const handleSaveVoucher = async () => {
         if (!code.trim()) return;
         setIsChecking(true);
@@ -836,13 +878,13 @@ function VoucherTab() {
             });
             
             if (res.data && res.data.valid) {
-                if (!savedVouchers.find(v => v.code === code.toUpperCase())) {
-                    setSavedVouchers([{
+                if (!userVouchers.find(v => v.code === code.toUpperCase())) {
+                    setUserVouchers([{
                         code: code.toUpperCase(),
                         discountValue: res.data.discountValue,
                         discountType: res.data.discountType,
                         validUntil: "Vô thời hạn" 
-                    }, ...savedVouchers]);
+                    }, ...userVouchers]);
                     setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 } else {
                     setMessage("⚠️ Mã này đã được lưu trong ví của bạn.");
@@ -887,14 +929,16 @@ function VoucherTab() {
                 )}
             </div>
 
-            {savedVouchers.length === 0 ? (
+            {loadingVouchers ? (
+                <div className="p-10 text-center text-slate-400 font-medium">Đang tải ví voucher...</div>
+            ) : userVouchers.length === 0 ? (
                 <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50">
                     <Gift size={48} className="mx-auto text-slate-300 mb-4" />
                     <p className="font-black text-slate-400 uppercase italic">Ví của bạn hiện đang trống.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {savedVouchers.map((v, index) => (
+                    {userVouchers.map((v, index) => (
                         <div key={index} className="flex items-center gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
                             <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 bg-slate-50 rounded-full border-r border-slate-200"></div>
                             
@@ -903,11 +947,11 @@ function VoucherTab() {
                             </div>
                             <div className="flex-1">
                                 <p className="text-xl font-black italic text-slate-900 tracking-tighter">
-                                    Giảm {v.discountType === 'percent' ? v.discountValue + '%' : v.discountValue.toLocaleString() + 'đ'}
+                                    Giảm {v.discountType === 'percent' ? v.discountValue + '%' : v.discountValue?.toLocaleString() + 'đ'}
                                 </p>
-                                <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600">{v.code}</span></p>
+                                <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600 uppercase">{v.code}</span></p>
                                 <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest flex items-center gap-1">
-                                    <Clock size={12}/> {v.validUntil}
+                                    <Clock size={12}/> {v.validUntil || 'Vô thời hạn'}
                                 </p>
                             </div>
                         </div>
