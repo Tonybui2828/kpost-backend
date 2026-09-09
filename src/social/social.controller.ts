@@ -229,6 +229,9 @@ export class SocialController {
     }
   }
 
+  // ==========================================
+  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
+  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
@@ -293,15 +296,38 @@ export class SocialController {
             throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
-        let currentVouchers = [];
-        try {
-            if (Array.isArray(user.vouchers)) {
-                currentVouchers = user.vouchers as string[];
-            } else if (typeof user.vouchers === 'string') {
-                currentVouchers = JSON.parse(user.vouchers);
+        // --- ĐOẠN QUAN TRỌNG: FIX LỖI PARSE MẢNG ---
+        let currentVouchers: string[] = [];
+        
+        if (user.vouchers) {
+            try {
+                if (Array.isArray(user.vouchers)) {
+                    currentVouchers = [...user.vouchers];
+                } else if (typeof user.vouchers === 'string') {
+                    // Nếu nó là chuỗi, parse nó ra
+                    const parsed = JSON.parse(user.vouchers);
+                    if (Array.isArray(parsed)) {
+                        currentVouchers = parsed;
+                    } else if (typeof parsed === 'string') {
+                        // Trường hợp bị stringify 2 lần: "\"[\\\"CNLG\\\"]\""
+                        const doubleParsed = JSON.parse(parsed);
+                        if (Array.isArray(doubleParsed)) {
+                             currentVouchers = doubleParsed;
+                        } else {
+                             currentVouchers = [parsed];
+                        }
+                    } else {
+                        currentVouchers = [user.vouchers];
+                    }
+                }
+            } catch (e) {
+                // Nếu parse lỗi (VD: chuỗi thường không phải JSON), coi như mảng rỗng hoặc chứa chuỗi đó
+                if (typeof user.vouchers === 'string' && user.vouchers.trim().length > 0) {
+                     currentVouchers = [user.vouchers];
+                } else {
+                     currentVouchers = [];
+                }
             }
-        } catch (e) {
-            currentVouchers = [];
         }
         
         if (currentVouchers.includes(code)) {
@@ -310,6 +336,7 @@ export class SocialController {
 
         currentVouchers.push(code);
         
+        // Update DB với mảng chuẩn
         await this.prisma.user.update({
             where: { id: user.id },
             data: { 
@@ -317,7 +344,7 @@ export class SocialController {
             }
         });
 
-        return { success: true, message: 'Đã thêm mã vào ví' };
+        return { success: true, message: 'Đã thêm mã vào ví', vouchers: currentVouchers };
 
     } catch (error) {
         if (error instanceof HttpException) {

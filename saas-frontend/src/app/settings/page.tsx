@@ -37,36 +37,36 @@ export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [isFetchingUser, setIsFetchingUser] = useState(true);
 
-  // --- BẮT LINK AFFILIATE TRÊN URL (ĐÃ FIX CHUẨN) ---
+  // --- BẮT LINK AFFILIATE TRÊN URL ---
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const refCode = urlParams.get('ref');
       if (refCode) {
         localStorage.setItem("kpost_affiliate_ref", refCode);
-        console.log("✅ Đã bắt và lưu mã Affiliate:", refCode);
       }
     } catch (error) {
       console.error("Lỗi bắt mã Affiliate:", error);
     }
   }, []);
 
+  const fetchProfile = async () => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) { setIsFetchingUser(false); return; }
+        const res = await axios.get(`${API_URL}/auth/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        setUser(res.data);
+        setWorkspaceId(res.data.currentWorkspaceId || res.data.wid || "");
+    } catch (e) { 
+        console.log("Guest mode active"); 
+    } finally { 
+        setIsFetchingUser(false); 
+    }
+  };
+
   useEffect(() => {
-    const fetchProfile = async () => {
-        try {
-            const token = localStorage.getItem("token");
-            if (!token) { setIsFetchingUser(false); return; }
-            const res = await axios.get(`${API_URL}/auth/profile`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setUser(res.data);
-            setWorkspaceId(res.data.currentWorkspaceId || res.data.wid || "");
-        } catch (e) { 
-            console.log("Guest mode active"); 
-        } finally { 
-            setIsFetchingUser(false); 
-        }
-    };
     fetchProfile();
 
     socket.on("paymentSuccess", (data: any) => {
@@ -127,7 +127,6 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen text-slate-800 font-sans relative">
-      {/* POPUP QUÉT MÃ QR THANH TOÁN */}
       {showQR && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
             <div className="bg-white rounded-[50px] p-10 max-w-md w-full text-center shadow-2xl relative border border-white/20 text-black">
@@ -208,7 +207,10 @@ export default function SettingsPage() {
             {activeTab === "affiliate" && <AffiliateTab user={user} />}
             {activeTab === "billing" && <BillingTab onUpgrade={handleUpgrade} />}
             {activeTab === "security" && <SecurityTab />}
-            {activeTab === "voucher" && <VoucherTab user={user} />}
+            
+            {/* TRUYỀN HÀM FETCHPROFILE ĐỂ VOUCHER TAB GỌI LẠI SAU KHI LƯU MÃ */}
+            {activeTab === "voucher" && <VoucherTab user={user} refreshProfile={fetchProfile} />}
+            
             {activeTab === "guide" && <GuideTab />}
             {activeTab === "terms" && <TermsTab />}
             {activeTab === "privacy" && <PrivacyTab />}
@@ -687,10 +689,10 @@ function BillingTab({ onUpgrade }: any) {
 }
 
 // ==========================================
-// ĐÂY LÀ ĐOẠN ĐÃ ĐƯỢC CHỈNH SỬA MỚI HOÀN TOÀN
-// GỌI API ĐỂ LƯU VÀO DB - KHÔNG BAO GIỜ MẤT KHI F5
+// VOUCHER TAB MỚI: TỰ ĐỘNG GỌI FETCHPROFILE SAU KHI LƯU
+// ĐẢM BẢO 100% HIỂN THỊ NGAY SAU KHI LƯU MÃ THÀNH CÔNG
 // ==========================================
-function VoucherTab({ user }: { user: any }) { 
+function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () => void }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
     const [isChecking, setIsChecking] = useState(false);
@@ -700,17 +702,45 @@ function VoucherTab({ user }: { user: any }) {
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
-    const fetchVouchers = async () => {
-        if (!user || !user.vouchers || user.vouchers.length === 0) {
+   const fetchVouchersDetail = async () => {
+        if (!user || !user.vouchers) {
+            setUserVouchers([]);
+            setLoadingVouchers(false);
+            return;
+        }
+
+        // ÉP KIỂU MẢNG CHUẨN ĐỂ FIX LỖI "VÍ TRỐNG"
+        let codesToFetch: string[] = [];
+        try {
+             if (Array.isArray(user.vouchers)) {
+                  codesToFetch = user.vouchers;
+             } else if (typeof user.vouchers === 'string') {
+                  const parsed = JSON.parse(user.vouchers);
+                  if (Array.isArray(parsed)) {
+                       codesToFetch = parsed;
+                  } else if (typeof parsed === 'string') {
+                       codesToFetch = JSON.parse(parsed); // Parse lần 2 nếu bị lồng
+                  } else {
+                       codesToFetch = [user.vouchers];
+                  }
+             }
+        } catch(e) {
+             if(typeof user.vouchers === 'string' && user.vouchers.length > 0) {
+                 codesToFetch = [user.vouchers];
+             }
+        }
+
+        if (codesToFetch.length === 0) {
+            setUserVouchers([]);
             setLoadingVouchers(false);
             return;
         }
 
         try {
-            // Gọi API backend để lấy thông tin chi tiết từng mã voucher (mức giảm, loại giảm, HSD...)
+            setLoadingVouchers(true);
             const token = localStorage.getItem("token");
             const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
-                { codes: user.vouchers },
+                { codes: codesToFetch }, // Truyền mảng chuẩn lên
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             
@@ -719,8 +749,7 @@ function VoucherTab({ user }: { user: any }) {
             }
         } catch (error) {
             console.error("Lỗi lấy thông tin voucher:", error);
-            // Fallback nếu có lỗi
-            setUserVouchers(user.vouchers.map((code: string) => ({
+            setUserVouchers(codesToFetch.map((code: string) => ({
                 code: code,
                 discountValue: "??",
                 discountType: "percent",
@@ -731,21 +760,21 @@ function VoucherTab({ user }: { user: any }) {
         }
     };
 
-    // 1. Fetch danh sách Voucher mà Admin đã tặng cho User này
+    // Khi 'user.vouchers' thay đổi (do lấy profile về), sẽ gọi lại API lấy chi tiết
     useEffect(() => {
-        fetchVouchers();
-    }, [user, API_URL]);
+        fetchVouchersDetail();
+    }, [user?.vouchers, API_URL]);
 
-    // 2. Thêm voucher mới bằng tay
+    // Thêm voucher mới bằng tay
     const handleSaveVoucher = async () => {
         if (!code.trim()) return;
         setIsChecking(true);
         setMessage("Đang kiểm tra...");
         try {
             const token = localStorage.getItem("token");
-            const workspaceId = user?.currentWorkspaceId || localStorage.getItem("workspaceId");
+            const workspaceId = user?.id || user?.currentWorkspaceId || localStorage.getItem("workspaceId");
 
-            // GỌI API LƯU THẲNG VÀO DATABASE
+            // GỌI API LƯU VÀO DATABASE
             const res = await axios.post(`${API_URL}/social/add-voucher-to-wallet`, 
                 { code: code.toUpperCase(), workspaceId: workspaceId }, 
                 { headers: { Authorization: `Bearer ${token}` } }
@@ -755,11 +784,10 @@ function VoucherTab({ user }: { user: any }) {
                 setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 setCode("");
                 
-                // Cập nhật tạm state user để tự fetch lại danh sách ngay lập tức
-                if(user) {
-                    user.vouchers = [...(user.vouchers || []), code.toUpperCase()];
-                }
-                await fetchVouchers();
+                // Gọi API profile để lấy dữ liệu User mới nhất từ DB
+                // Khi dữ liệu User về, mảng 'user.vouchers' sẽ có mã mới
+                // -> UseEffect ở trên sẽ tự động gọi lại fetchVouchersDetail và render mã mới
+                refreshProfile();
             }
         } catch (error: any) {
             setMessage(`❌ ${error.response?.data?.message || "Mã không hợp lệ hoặc đã hết hạn"}`);
@@ -785,7 +813,7 @@ function VoucherTab({ user }: { user: any }) {
                     <button 
                         onClick={handleSaveVoucher} 
                         disabled={isChecking} 
-                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase hover:bg-blue-700 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center"
+                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase hover:bg-blue-700 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center min-w-[120px]"
                     >
                         {isChecking ? <Loader2 size={18} className="animate-spin" /> : "LƯU MÃ"}
                     </button>
@@ -798,7 +826,10 @@ function VoucherTab({ user }: { user: any }) {
             </div>
 
             {loadingVouchers ? (
-                <div className="p-10 text-center text-slate-400 font-medium">Đang tải ví voucher...</div>
+                <div className="p-10 text-center text-slate-400 font-medium flex items-center justify-center gap-3">
+                    <Loader2 size={24} className="animate-spin text-blue-500" />
+                    <span className="uppercase text-sm tracking-widest font-black text-slate-400">Đang tải ví voucher...</span>
+                </div>
             ) : userVouchers.length === 0 ? (
                 <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-[32px] bg-slate-50">
                     <Gift size={48} className="mx-auto text-slate-300 mb-4" />
@@ -817,7 +848,7 @@ function VoucherTab({ user }: { user: any }) {
                                 <p className="text-xl font-black italic text-slate-900 tracking-tighter">
                                     Giảm {v.discountType === 'percent' ? v.discountValue + '%' : v.discountValue?.toLocaleString() + 'đ'}
                                 </p>
-                                <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600 uppercase">{v.code}</span></p>
+                                <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600 uppercase font-black bg-blue-50 px-2 py-0.5 rounded-md">{v.code}</span></p>
                                 <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest flex items-center gap-1">
                                     <Clock size={12}/> HSD: {v.validUntil || 'Vô thời hạn'}
                                 </p>
