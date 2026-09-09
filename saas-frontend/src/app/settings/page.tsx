@@ -224,12 +224,9 @@ export default function SettingsPage() {
 
 function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-    // Thêm trạng thái forgot-password
     const [authMode, setAuthMode] = useState("login"); 
     const [formData, setFormData] = useState({ email: "", password: "", name: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
-    
-    // State cho Quên mật khẩu
     const [forgotEmail, setForgotEmail] = useState("");
 
     const getRemainingDays = (expiryDate: string | null) => {
@@ -244,7 +241,6 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         setIsSubmitting(true);
         try {
             const payload: any = { ...formData };
-            
             if (authMode === "register") {
                 let savedRef = localStorage.getItem("kpost_affiliate_ref");
                 if (savedRef) {
@@ -254,7 +250,6 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
                     payload.referredBy = savedRef; 
                 }
             }
-
             const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
             const res = await axios.post(`${API_URL}${endpoint}`, payload);
             
@@ -271,7 +266,6 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         } finally { setIsSubmitting(false); }
     };
 
-    // Hàm gọi API Quên mật khẩu
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!forgotEmail) return alert("Vui lòng nhập email của bạn!");
@@ -279,7 +273,7 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         try {
             await axios.post(`${API_URL}/auth/forgot-password`, { email: forgotEmail });
             alert("✅ Đã gửi hướng dẫn khôi phục mật khẩu vào email của bạn. Vui lòng kiểm tra hộp thư (Cả mục Spam/Thư rác)!");
-            setAuthMode("login"); // Gửi xong quay về màn hình đăng nhập
+            setAuthMode("login"); 
             setForgotEmail("");
         } catch (error: any) {
             alert(error.response?.data?.message || "Lỗi hệ thống: Không thể gửi email khôi phục!");
@@ -330,59 +324,38 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         );
     }
 
-    // GIAO DIỆN QUÊN MẬT KHẨU
     if (authMode === 'forgot-password') {
         return (
             <div className="max-w-md mx-auto text-black animate-in fade-in">
                 <h2 className="text-3xl font-black italic uppercase mb-2 text-center tracking-tighter">Quên Mật Khẩu</h2>
                 <p className="text-center text-sm font-bold text-slate-500 mb-8">Nhập email đã đăng ký để nhận liên kết khôi phục</p>
-                
                 <form onSubmit={handleForgotPassword} className="space-y-4">
-                    <input 
-                        className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold text-slate-700" 
-                        type="email" 
-                        placeholder="Ví dụ: example@gmail.com..." 
-                        value={forgotEmail} 
-                        onChange={e => setForgotEmail(e.target.value)} 
-                        required 
-                    />
+                    <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold text-slate-700" type="email" placeholder="Ví dụ: example@gmail.com..." value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
                     <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-[25px] shadow-xl shadow-blue-600/20 flex justify-center items-center gap-3 active:scale-95 transition-all disabled:opacity-50">
-                        {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Mail size={20}/>} 
-                        GỬI YÊU CẦU KHÔI PHỤC
+                        {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Mail size={20}/>} GỬI YÊU CẦU KHÔI PHỤC
                     </button>
                 </form>
-
                 <div className="mt-8 text-center">
-                  <button onClick={() => setAuthMode('login')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 underline transition-colors"> 
-                    QUAY LẠI ĐĂNG NHẬP
-                  </button>
+                  <button onClick={() => setAuthMode('login')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 underline transition-colors"> QUAY LẠI ĐĂNG NHẬP</button>
                 </div>
             </div>
         )
     }
 
-    // GIAO DIỆN ĐĂNG NHẬP & ĐĂNG KÝ
     return (
         <div className="max-w-md mx-auto text-black animate-in fade-in">
             <h2 className="text-3xl font-black italic uppercase mb-10 text-center tracking-tighter">{authMode === 'login' ? 'Đăng Nhập' : 'Tạo Tài Khoản'}</h2>
             <form onSubmit={handleManualAuth} className="space-y-4">
                 {authMode === 'register' && <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" placeholder="Họ và tên" onChange={e => setFormData({...formData, name: e.target.value})} required />}
-                
                 <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" type="email" placeholder="Email" onChange={e => setFormData({...formData, email: e.target.value})} required />
-                
                 <div>
                     <input className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" type="password" placeholder="Mật khẩu" onChange={e => setFormData({...formData, password: e.target.value})} required />
-                    
-                    {/* NÚT QUÊN MẬT KHẨU Ở ĐÂY */}
                     {authMode === 'login' && (
                         <div className="flex justify-end mt-3">
-                            <button type="button" onClick={() => setAuthMode('forgot-password')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors">
-                                Quên mật khẩu?
-                            </button>
+                            <button type="button" onClick={() => setAuthMode('forgot-password')} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors">Quên mật khẩu?</button>
                         </div>
                     )}
                 </div>
-
                 <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-black text-white font-black rounded-[25px] shadow-2xl flex justify-center items-center gap-3 active:scale-95 transition-all disabled:opacity-50 mt-2">
                   {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : authMode === 'login' ? <LogIn size={20}/> : <UserPlus size={20}/>} 
                   {authMode === 'login' ? 'VÀO HỆ THỐNG' : 'ĐĂNG KÝ NGAY'}
@@ -411,17 +384,13 @@ function AffiliateTab({ user }: { user: any }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   const [copySuccess, setCopySuccess] = useState(false);
   const [timeFilter, setTimeFilter] = useState('month');
-  
-  // State lưu trữ dữ liệu thống kê thật từ Backend
   const [stats, setStats] = useState({ clicks: 0, signups: 0, orders: 0, revenue: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Gán link Affiliate động
   const wsId = user?.currentWorkspaceId || user?.wid || localStorage.getItem("workspaceId");
   const affiliateId = wsId || "GUEST";
   const dynamicAffiliateLink = `https://kpost.vn/?ref=KPOST_${affiliateId}`;
 
-  // Gọi API lấy dữ liệu thống kê khi tab được load
   useEffect(() => {
     const fetchStats = async () => {
       if (!user?.currentWorkspaceId) {
@@ -459,14 +428,11 @@ function AffiliateTab({ user }: { user: any }) {
              <CheckCircle size={18} />
              <div>
                 <p className="text-[10px] font-black uppercase tracking-wider">Trạng thái Affiliate</p>
-                <p className="text-sm font-bold">
-                  {user ? `Đã kích hoạt (${user.plan || "Free"})` : "Chưa kích hoạt"}
-                </p>
+                <p className="text-sm font-bold">{user ? `Đã kích hoạt (${user.plan || "Free"})` : "Chưa kích hoạt"}</p>
              </div>
           </div>
        </div>
 
-       {/* INFO CARDS */}
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-blue-50/50 rounded-[24px] p-6 border border-blue-100">
              <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">Chính sách hoa hồng</h3>
@@ -484,27 +450,18 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
-       {/* LINK AFFILIATE ĐỘNG */}
        <div>
           <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2">Link Giới Thiệu Của Bạn</label>
           <div className="flex gap-2">
-             <input 
-               readOnly 
-               value={dynamicAffiliateLink} 
-               className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none"
-             />
+             <input readOnly value={dynamicAffiliateLink} className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none" />
              <button onClick={handleCopy} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase hover:bg-blue-600 transition-colors flex items-center gap-2">
-               {copySuccess ? <Check size={18} /> : <Copy size={18} />}
-               {copySuccess ? 'Đã Copy' : 'Copy'}
+               {copySuccess ? <Check size={18} /> : <Copy size={18} />} {copySuccess ? 'Đã Copy' : 'Copy'}
              </button>
           </div>
        </div>
 
-       {/* THỐNG KÊ TỪ BACKEND */}
        <div>
-          <div className="flex items-center justify-between mb-4">
-             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Tổng quan thống kê</h3>
-          </div>
+          <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Tổng quan thống kê</h3></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-2 text-blue-500"><MousePointerClick size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Lượt nhấp</span></div>
@@ -526,29 +483,20 @@ function AffiliateTab({ user }: { user: any }) {
           <p className="text-[10px] font-bold text-slate-400 mt-2 italic">* Số liệu được cập nhật theo thời gian thực từ hệ thống.</p>
        </div>
 
-       {/* BÁO CÁO DOANH THU THEO THỜI GIAN */}
        <div className="p-6 rounded-[32px] border border-slate-100 bg-slate-50">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
-             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-               <TrendingUp size={18} className="text-blue-500"/> Doanh thu theo thời gian
-             </h3>
+             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2"><TrendingUp size={18} className="text-blue-500"/> Doanh thu theo thời gian</h3>
              <div className="flex bg-white rounded-xl p-1 border border-slate-200 shadow-sm flex-wrap">
                {['day', 'week', 'month', 'quarter', 'year'].map(t => (
-                 <button 
-                   key={t}
-                   onClick={() => setTimeFilter(t)}
-                   className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${timeFilter === t ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
-                 >
+                 <button key={t} onClick={() => setTimeFilter(t)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${timeFilter === t ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
                    {t === 'day' ? 'Ngày' : t === 'week' ? 'Tuần' : t === 'month' ? 'Tháng' : t === 'quarter' ? 'Quý' : 'Năm'}
                  </button>
                ))}
              </div>
           </div>
-          
           <div className="h-48 flex items-end gap-2 justify-between mt-8 opacity-30">
              {[0, 0, 0, 0, 0, 0, 0].map((h, i) => (
-               <div key={i} className="w-full bg-blue-100 rounded-t-lg relative group" style={{height: `5%`}}>
-               </div>
+               <div key={i} className="w-full bg-blue-100 rounded-t-lg relative group" style={{height: `5%`}}></div>
              ))}
           </div>
           <div className="flex justify-between mt-4 text-[10px] font-black uppercase text-slate-400">
@@ -611,110 +559,75 @@ function BillingTab({ onUpgrade }: any) {
 
     const plans = [
         { 
-            name: "PRO", 
-            color: "blue",
+            name: "PRO", color: "blue",
             prices: { '1m': 590000, '3m': 1690000, '6m': 3390000, '12m': 6890000 },
             features: ["Add 50 Fanpage", "Thêm 50 sản phẩm", "Đăng bài không giới hạn", "Sử dụng tính năng nâng cao Auto AI Inbox", "Mở tính năng Affiliate hoa hồng 10%"] 
         },
         { 
-            name: "GOLD", 
-            color: "amber", 
+            name: "GOLD", color: "amber", 
             prices: { '1m': 990000, '3m': 2890000, '6m': 5890000, '12m': 11690000 },
             features: ["Tất cả tính năng Gói PRO", "Add 100 Fanpage", "Add 100 sản phẩm", "Mở tính năng Affiliate hoa hồng 15%"] 
         },
         { 
-            name: "DIAMOND", 
-            color: "purple", 
+            name: "DIAMOND", color: "purple", 
             prices: { '1m': 3990000, '3m': 11890000, '6m': 23390000, '12m': 46590000 },
             features: ["Tất cả tính năng Gói GOLD & PRO", "Add 500 Fanpage", "Thêm 500 sản phẩm", "Mở tính năng Affiliate hoa hồng 20%"] 
         },
     ];
 
     const handleApplyVoucher = async () => {
-        if (!voucher.trim()) {
-            setDiscount(0);
-            setVoucherMessage("");
-            return;
-        }
-
+        if (!voucher.trim()) { setDiscount(0); setVoucherMessage(""); return; }
         setIsCheckingVoucher(true);
         setVoucherMessage("Đang kiểm tra...");
-        
         try {
             const token = localStorage.getItem("token");
-            const res = await axios.post(`${API_URL}/social/check-voucher`, { code: voucher.toUpperCase() }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            
+            const res = await axios.post(`${API_URL}/social/check-voucher`, { code: voucher.toUpperCase() }, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data && res.data.valid) {
                 const discountValue = res.data.discountValue; 
                 const discountType = res.data.discountType;
-                
                 setDiscount(discountValue);
                 setIsPercentage(discountType === 'percent');
-                
                 setVoucherMessage(`✅ Đã áp dụng giảm ${discountType === 'percent' ? discountValue + '%' : discountValue.toLocaleString() + 'đ'}`);
             } else {
-                setDiscount(0);
-                setVoucherMessage("❌ Mã không hợp lệ hoặc đã hết hạn");
+                setDiscount(0); setVoucherMessage("❌ Mã không hợp lệ hoặc đã hết hạn");
             }
         } catch (error: any) {
-            setDiscount(0);
-            setVoucherMessage(`❌ ${error.response?.data?.message || "Mã không hợp lệ hoặc đã hết hạn"}`);
-        } finally {
-            setIsCheckingVoucher(false);
-        }
+            setDiscount(0); setVoucherMessage(`❌ ${error.response?.data?.message || "Mã không hợp lệ hoặc đã hết hạn"}`);
+        } finally { setIsCheckingVoucher(false); }
     };
 
     const getFinalPrice = () => {
         if (!selectedPlan) return 0;
         let finalPrice = selectedPlan.price;
         if (discount > 0) {
-            if (isPercentage) {
-                finalPrice = finalPrice * (1 - (discount / 100));
-            } else {
-                finalPrice = finalPrice - discount;
-            }
+            if (isPercentage) { finalPrice = finalPrice * (1 - (discount / 100)); } 
+            else { finalPrice = finalPrice - discount; }
         }
         return finalPrice > 0 ? finalPrice : 0;
     };
     
     const getDiscountAmount = () => {
         if (!selectedPlan || discount <= 0) return 0;
-        if (isPercentage) {
-            return selectedPlan.price * (discount / 100);
-        }
+        if (isPercentage) return selectedPlan.price * (discount / 100);
         return discount > selectedPlan.price ? selectedPlan.price : discount;
     };
 
     const handleConfirmPayment = () => {
         const finalPrice = getFinalPrice();
         onUpgrade(selectedPlan.name, finalPrice);
-        setSelectedPlan(null); 
-        setVoucher("");
-        setDiscount(0);
-        setVoucherMessage("");
+        setSelectedPlan(null); setVoucher(""); setDiscount(0); setVoucherMessage("");
     };
 
     return (
         <div className="space-y-10 text-black animate-in fade-in">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <h2 className="text-2xl font-black italic uppercase">Nâng cấp thành viên</h2>
-                
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
                     {[
-                        { id: '1m', label: '1 Tháng' },
-                        { id: '3m', label: '3 Tháng' },
-                        { id: '6m', label: '6 Tháng' },
-                        { id: '12m', label: '1 Năm' }
+                        { id: '1m', label: '1 Tháng' }, { id: '3m', label: '3 Tháng' },
+                        { id: '6m', label: '6 Tháng' }, { id: '12m', label: '1 Năm' }
                     ].map(d => (
-                        <button 
-                            key={d.id} 
-                            onClick={() => setDuration(d.id)}
-                            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${duration === d.id ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
-                        >
-                            {d.label}
-                        </button>
+                        <button key={d.id} onClick={() => setDuration(d.id)} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${duration === d.id ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}>{d.label}</button>
                     ))}
                 </div>
             </div>
@@ -725,20 +638,15 @@ function BillingTab({ onUpgrade }: any) {
                     return (
                         <div key={p.name} className={`p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
                             <p className={`font-black uppercase text-[11px] tracking-widest mb-4 ${p.color === 'blue' ? 'text-blue-600' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-600'}`}>Hạng {p.name}</p>
-                            <div className="flex items-end gap-1 mb-8">
-                                <span className="text-4xl font-black italic tracking-tighter">{price.toLocaleString()}đ</span>
-                            </div>
+                            <div className="flex items-end gap-1 mb-8"><span className="text-4xl font-black italic tracking-tighter">{price.toLocaleString()}đ</span></div>
                             <ul className="space-y-4 mb-8 flex-1">
                                 {p.features.map(f => (
                                     <li key={f} className="text-xs font-bold text-slate-600 flex items-start gap-3 leading-relaxed">
-                                        <CheckCircle2 size={16} className={`${p.color === 'blue' ? 'text-blue-500' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-500'} shrink-0 mt-0.5`}/> 
-                                        {f}
+                                        <CheckCircle2 size={16} className={`${p.color === 'blue' ? 'text-blue-500' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-500'} shrink-0 mt-0.5`}/> {f}
                                     </li>
                                 ))}
                             </ul>
-                            <button 
-                                onClick={() => setSelectedPlan({ name: p.name, price: price })} 
-                                className={`w-full py-4 rounded-3xl font-black text-white uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-auto ${p.color === 'blue' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : p.color === 'amber' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20'}`}>
+                            <button onClick={() => setSelectedPlan({ name: p.name, price: price })} className={`w-full py-4 rounded-3xl font-black text-white uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-auto ${p.color === 'blue' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : p.color === 'amber' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20'}`}>
                                 Chọn gói này ✨
                             </button>
                         </div>
@@ -749,62 +657,23 @@ function BillingTab({ onUpgrade }: any) {
             {selectedPlan && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-[40px] p-8 max-w-sm w-full shadow-2xl relative flex flex-col animate-in zoom-in-95 duration-200 border border-white/20">
-                        <button onClick={() => setSelectedPlan(null)} className="absolute top-6 right-6 text-slate-400 hover:text-red-500 transition-colors">
-                            <X size={28} />
-                        </button>
-                        
+                        <button onClick={() => setSelectedPlan(null)} className="absolute top-6 right-6 text-slate-400 hover:text-red-500 transition-colors"><X size={28} /></button>
                         <h3 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 mb-6">Xác nhận đơn hàng</h3>
-                        
                         <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-100 mb-6 space-y-4">
-                            <div className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                <span>Gói cước:</span>
-                                <span className="text-slate-900 uppercase font-black">Hạng {selectedPlan.name}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                <span>Chu kỳ:</span>
-                                <span className="text-slate-900 font-black">{
-                                    duration === '1m' ? '1 Tháng' : 
-                                    duration === '3m' ? '3 Tháng' : 
-                                    duration === '6m' ? '6 Tháng' : '1 Năm'
-                                }</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                <span>Giá gốc:</span>
-                                <span className="text-slate-900 font-black">{selectedPlan.price.toLocaleString()}đ</span>
-                            </div>
-                            
-                            {discount > 0 && (
-                                <div className="flex justify-between items-center text-sm font-black text-green-600">
-                                    <span>Giảm giá ({isPercentage ? discount + '%' : discount.toLocaleString() + 'đ'}):</span>
-                                    <span>-{getDiscountAmount().toLocaleString()}đ</span>
-                                </div>
-                            )}
-                            
-                            <div className="pt-4 border-t border-slate-200 flex flex-col mt-2">
-                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Tổng thanh toán:</span>
-                                <span className="text-3xl font-black italic text-blue-600">{getFinalPrice().toLocaleString()}đ</span>
-                            </div>
+                            <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Gói cước:</span><span className="text-slate-900 uppercase font-black">Hạng {selectedPlan.name}</span></div>
+                            <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Chu kỳ:</span><span className="text-slate-900 font-black">{duration === '1m' ? '1 Tháng' : duration === '3m' ? '3 Tháng' : duration === '6m' ? '6 Tháng' : '1 Năm'}</span></div>
+                            <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Giá gốc:</span><span className="text-slate-900 font-black">{selectedPlan.price.toLocaleString()}đ</span></div>
+                            {discount > 0 && (<div className="flex justify-between items-center text-sm font-black text-green-600"><span>Giảm giá ({isPercentage ? discount + '%' : discount.toLocaleString() + 'đ'}):</span><span>-{getDiscountAmount().toLocaleString()}đ</span></div>)}
+                            <div className="pt-4 border-t border-slate-200 flex flex-col mt-2"><span className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Tổng thanh toán:</span><span className="text-3xl font-black italic text-blue-600">{getFinalPrice().toLocaleString()}đ</span></div>
                         </div>
 
                         <div className="mb-8">
                             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Mã giảm giá (Nếu có)</label>
                             <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    value={voucher} 
-                                    onChange={(e) => setVoucher(e.target.value.toUpperCase())}
-                                    placeholder="Nhập mã..." 
-                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors uppercase placeholder:normal-case"
-                                />
-                                <button onClick={handleApplyVoucher} disabled={isCheckingVoucher} className="bg-slate-900 text-white px-5 py-3 rounded-2xl text-xs font-black uppercase hover:bg-blue-600 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center min-w-[90px]">
-                                    {isCheckingVoucher ? <Loader2 size={16} className="animate-spin" /> : "Áp dụng"}
-                                </button>
+                                <input type="text" value={voucher} onChange={(e) => setVoucher(e.target.value.toUpperCase())} placeholder="Nhập mã..." className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors uppercase placeholder:normal-case"/>
+                                <button onClick={handleApplyVoucher} disabled={isCheckingVoucher} className="bg-slate-900 text-white px-5 py-3 rounded-2xl text-xs font-black uppercase hover:bg-blue-600 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center min-w-[90px]">{isCheckingVoucher ? <Loader2 size={16} className="animate-spin" /> : "Áp dụng"}</button>
                             </div>
-                            {voucherMessage && (
-                                <p className={`text-xs font-bold mt-3 ${voucherMessage.includes('❌') ? 'text-red-500' : 'text-green-600'}`}>
-                                    {voucherMessage}
-                                </p>
-                            )}
+                            {voucherMessage && (<p className={`text-xs font-bold mt-3 ${voucherMessage.includes('❌') ? 'text-red-500' : 'text-green-600'}`}>{voucherMessage}</p>)}
                         </div>
 
                         <button onClick={handleConfirmPayment} className="w-full py-5 bg-blue-600 text-white font-black rounded-[24px] shadow-xl hover:bg-blue-700 active:scale-95 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-2">
@@ -817,7 +686,10 @@ function BillingTab({ onUpgrade }: any) {
     )
 }
 
-// === HÀM VOUCHER ĐÃ ĐƯỢC CHỈNH SỬA ===
+// ==========================================
+// ĐÂY LÀ ĐOẠN ĐÃ ĐƯỢC CHỈNH SỬA MỚI HOÀN TOÀN
+// GỌI API ĐỂ LƯU VÀO DB - KHÔNG BAO GIỜ MẤT KHI F5
+// ==========================================
 function VoucherTab({ user }: { user: any }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
@@ -828,41 +700,39 @@ function VoucherTab({ user }: { user: any }) {
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
+    const fetchVouchers = async () => {
+        if (!user || !user.vouchers || user.vouchers.length === 0) {
+            setLoadingVouchers(false);
+            return;
+        }
+
+        try {
+            // Gọi API backend để lấy thông tin chi tiết từng mã voucher (mức giảm, loại giảm, HSD...)
+            const token = localStorage.getItem("token");
+            const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
+                { codes: user.vouchers },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            if (res.data && Array.isArray(res.data)) {
+                setUserVouchers(res.data);
+            }
+        } catch (error) {
+            console.error("Lỗi lấy thông tin voucher:", error);
+            // Fallback nếu có lỗi
+            setUserVouchers(user.vouchers.map((code: string) => ({
+                code: code,
+                discountValue: "??",
+                discountType: "percent",
+                validUntil: "Chưa rõ"
+            })));
+        } finally {
+            setLoadingVouchers(false);
+        }
+    };
+
     // 1. Fetch danh sách Voucher mà Admin đã tặng cho User này
     useEffect(() => {
-        const fetchVouchers = async () => {
-            // Mảng user.vouchers là mảng các chuỗi mã (vd: ["CNLG", "TET2024"])
-            if (!user || !user.vouchers || user.vouchers.length === 0) {
-                setLoadingVouchers(false);
-                return;
-            }
-
-            try {
-                // Gọi API backend để lấy thông tin chi tiết từng mã voucher (mức giảm, loại giảm...)
-                const token = localStorage.getItem("token");
-                const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
-                    { codes: user.vouchers },
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                
-                if (res.data && Array.isArray(res.data)) {
-                    setUserVouchers(res.data);
-                }
-            } catch (error) {
-                console.error("Lỗi lấy thông tin voucher:", error);
-                // Fallback nếu API /get-vouchers-detail chưa được tạo bên Backend
-                // Tạm thời hiển thị mã dạng chuỗi cơ bản
-                setUserVouchers(user.vouchers.map((code: string) => ({
-                    code: code,
-                    discountValue: "??",
-                    discountType: "percent",
-                    validUntil: "Chưa rõ"
-                })));
-            } finally {
-                setLoadingVouchers(false);
-            }
-        };
-
         fetchVouchers();
     }, [user, API_URL]);
 
@@ -873,28 +743,26 @@ function VoucherTab({ user }: { user: any }) {
         setMessage("Đang kiểm tra...");
         try {
             const token = localStorage.getItem("token");
-            const res = await axios.post(`${API_URL}/social/check-voucher`, { code: code.toUpperCase() }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const workspaceId = user?.currentWorkspaceId || localStorage.getItem("workspaceId");
+
+            // GỌI API LƯU THẲNG VÀO DATABASE
+            const res = await axios.post(`${API_URL}/social/add-voucher-to-wallet`, 
+                { code: code.toUpperCase(), workspaceId: workspaceId }, 
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
             
-            if (res.data && res.data.valid) {
-                if (!userVouchers.find(v => v.code === code.toUpperCase())) {
-                    setUserVouchers([{
-                        code: code.toUpperCase(),
-                        discountValue: res.data.discountValue,
-                        discountType: res.data.discountType,
-                        validUntil: "Vô thời hạn" 
-                    }, ...userVouchers]);
-                    setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
-                } else {
-                    setMessage("⚠️ Mã này đã được lưu trong ví của bạn.");
-                }
+            if (res.data && res.data.success) {
+                setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 setCode("");
-            } else {
-                setMessage("❌ Mã không hợp lệ hoặc đã hết hạn");
+                
+                // Cập nhật tạm state user để tự fetch lại danh sách ngay lập tức
+                if(user) {
+                    user.vouchers = [...(user.vouchers || []), code.toUpperCase()];
+                }
+                await fetchVouchers();
             }
         } catch (error: any) {
-            setMessage(`❌ ${error.response?.data?.message || "Mã không tồn tại"}`);
+            setMessage(`❌ ${error.response?.data?.message || "Mã không hợp lệ hoặc đã hết hạn"}`);
         } finally {
             setIsChecking(false);
         }
@@ -951,7 +819,7 @@ function VoucherTab({ user }: { user: any }) {
                                 </p>
                                 <p className="text-xs font-bold text-slate-500 mt-1">Mã: <span className="text-blue-600 uppercase">{v.code}</span></p>
                                 <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest flex items-center gap-1">
-                                    <Clock size={12}/> {v.validUntil || 'Vô thời hạn'}
+                                    <Clock size={12}/> HSD: {v.validUntil || 'Vô thời hạn'}
                                 </p>
                             </div>
                         </div>

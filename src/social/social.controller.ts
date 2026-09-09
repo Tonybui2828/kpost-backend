@@ -239,6 +239,80 @@ export class SocialController {
     }
   }
 
+  // API ĐỂ LƯU VOUCHER VÀO VÍ 
+  @Post('add-voucher-to-wallet')
+  async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }) {
+    if (!body.code || !body.workspaceId) {
+        throw new HttpException('Thiếu dữ liệu', HttpStatus.BAD_REQUEST);
+    }
+    
+    try {
+        const code = body.code.toUpperCase();
+        
+        // 1. Kiểm tra mã giảm giá có tồn tại và hợp lệ không
+        const voucherRecord = await this.prisma.voucher.findUnique({
+            where: { code: code },
+        });
+
+        if (!voucherRecord || !voucherRecord.isActive) {
+            throw new HttpException('Mã giảm giá không tồn tại hoặc đã bị khóa', HttpStatus.BAD_REQUEST);
+        }
+        
+        if (voucherRecord.usedCount >= voucherRecord.usageLimit) {
+            throw new HttpException('Mã giảm giá đã hết lượt sử dụng', HttpStatus.BAD_REQUEST);
+        }
+        
+        if (voucherRecord.validUntil && new Date() > new Date(voucherRecord.validUntil)) {
+            throw new HttpException('Mã giảm giá đã hết hạn', HttpStatus.BAD_REQUEST);
+        }
+
+        // 2. Lấy thông tin user (Workspace)
+        const workspace = await this.prisma.workspace.findUnique({
+            where: { id: body.workspaceId }
+        });
+        
+        if (!workspace) {
+            throw new HttpException('Không tìm thấy tài khoản', HttpStatus.NOT_FOUND);
+        }
+
+        // 3. Kiểm tra xem mã đã có trong ví chưa
+        let currentVouchers = [];
+        // Xử lý cẩn thận kiểu dữ liệu vouchers
+        try {
+            if (Array.isArray(workspace.vouchers)) {
+                currentVouchers = workspace.vouchers;
+            } else if (typeof workspace.vouchers === 'string') {
+                currentVouchers = JSON.parse(workspace.vouchers);
+            }
+        } catch (e) {
+            currentVouchers = [];
+        }
+        
+        if (currentVouchers.includes(code)) {
+            throw new HttpException('Mã này đã có trong ví của bạn', HttpStatus.BAD_REQUEST);
+        }
+
+        // 4. Thêm mã vào ví (cập nhật DB)
+        currentVouchers.push(code);
+        
+        await this.prisma.workspace.update({
+            where: { id: body.workspaceId },
+            data: { 
+                vouchers: currentVouchers 
+            }
+        });
+
+        return { success: true, message: 'Đã thêm mã vào ví' };
+
+    } catch (error) {
+        if (error instanceof HttpException) {
+            throw error;
+        }
+        console.error("Lỗi khi thêm voucher vào ví:", error);
+        throw new HttpException('Lỗi hệ thống khi thêm voucher', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
 
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
