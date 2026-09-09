@@ -692,82 +692,97 @@ function BillingTab({ onUpgrade }: any) {
 // VOUCHER TAB MỚI: TỰ ĐỘNG GỌI FETCHPROFILE SAU KHI LƯU
 // ĐẢM BẢO 100% HIỂN THỊ NGAY SAU KHI LƯU MÃ THÀNH CÔNG
 // ==========================================
+// ==========================================
+// VOUCHER TAB MỚI: HIỂN THỊ TỨC THÌ SAU KHI LƯU
+// ==========================================
 function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () => void }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
     const [isChecking, setIsChecking] = useState(false);
     const [message, setMessage] = useState("");
     
-    // Mảng lưu chi tiết các voucher của User này
+    // State lưu danh sách mã giảm giá dưới dạng chuỗi (ví dụ: ["CNLG", "KPOST50"])
+    const [localCodes, setLocalCodes] = useState<string[]>([]);
+    
+    // Mảng lưu chi tiết các voucher để render ra giao diện
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
-   const fetchVouchersDetail = async () => {
-        if (!user || !user.vouchers) {
-            setUserVouchers([]);
-            setLoadingVouchers(false);
-            return;
-        }
-
-        // ÉP KIỂU MẢNG CHUẨN ĐỂ FIX LỖI "VÍ TRỐNG"
-        let codesToFetch: string[] = [];
-        try {
-             if (Array.isArray(user.vouchers)) {
-                  codesToFetch = user.vouchers;
-             } else if (typeof user.vouchers === 'string') {
-                  const parsed = JSON.parse(user.vouchers);
-                  if (Array.isArray(parsed)) {
-                       codesToFetch = parsed;
-                  } else if (typeof parsed === 'string') {
-                       codesToFetch = JSON.parse(parsed); // Parse lần 2 nếu bị lồng
-                  } else {
-                       codesToFetch = [user.vouchers];
-                  }
-             }
-        } catch(e) {
-             if(typeof user.vouchers === 'string' && user.vouchers.length > 0) {
-                 codesToFetch = [user.vouchers];
-             }
-        }
-
-        if (codesToFetch.length === 0) {
-            setUserVouchers([]);
-            setLoadingVouchers(false);
-            return;
-        }
-
-        try {
-            setLoadingVouchers(true);
-            const token = localStorage.getItem("token");
-            const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
-                { codes: codesToFetch }, // Truyền mảng chuẩn lên
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
-            if (res.data && Array.isArray(res.data)) {
-                setUserVouchers(res.data);
-            }
-        } catch (error) {
-            console.error("Lỗi lấy thông tin voucher:", error);
-            setUserVouchers(codesToFetch.map((code: string) => ({
-                code: code,
-                discountValue: "??",
-                discountType: "percent",
-                validUntil: "Chưa rõ"
-            })));
-        } finally {
-            setLoadingVouchers(false);
-        }
-    };
-
-    // Khi 'user.vouchers' thay đổi (do lấy profile về), sẽ gọi lại API lấy chi tiết
+    // 1. Khi component render, lấy danh sách mã từ user profile bỏ vào local state
     useEffect(() => {
-        fetchVouchersDetail();
-    }, [user?.vouchers, API_URL]);
+        if (user && user.vouchers) {
+            let parsedCodes: string[] = [];
+            try {
+                if (Array.isArray(user.vouchers)) {
+                    parsedCodes = user.vouchers;
+                } else if (typeof user.vouchers === 'string') {
+                    const parsed = JSON.parse(user.vouchers);
+                    if (Array.isArray(parsed)) {
+                         parsedCodes = parsed;
+                    } else if (typeof parsed === 'string') {
+                         parsedCodes = JSON.parse(parsed); // Đề phòng lỗi lưu mảng lồng chuỗi
+                    } else {
+                         parsedCodes = [user.vouchers];
+                    }
+                }
+            } catch(e) {
+                if (typeof user.vouchers === 'string' && user.vouchers.trim().length > 0) {
+                    parsedCodes = [user.vouchers];
+                }
+            }
+            setLocalCodes(parsedCodes);
+        } else {
+            setLocalCodes([]);
+        }
+    }, [user?.vouchers]);
 
-    // Thêm voucher mới bằng tay
+    // 2. Bất cứ khi nào mảng localCodes thay đổi, đi gọi API lấy thông tin chi tiết (Giảm giá, HSD...)
+    useEffect(() => {
+        const fetchVouchersDetail = async () => {
+            if (localCodes.length === 0) {
+                setUserVouchers([]);
+                setLoadingVouchers(false);
+                return;
+            }
+
+            try {
+                setLoadingVouchers(true);
+                const token = localStorage.getItem("token");
+                const res = await axios.post(`${API_URL}/social/get-vouchers-detail`, 
+                    { codes: localCodes }, 
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                
+                if (res.data && Array.isArray(res.data)) {
+                    setUserVouchers(res.data);
+                }
+            } catch (error) {
+                console.error("Lỗi lấy thông tin voucher:", error);
+                // Nếu lỗi mạng, hiển thị tạm
+                setUserVouchers(localCodes.map((c: string) => ({
+                    code: c,
+                    discountValue: "??",
+                    discountType: "percent",
+                    validUntil: "Chưa rõ"
+                })));
+            } finally {
+                setLoadingVouchers(false);
+            }
+        };
+
+        fetchVouchersDetail();
+    }, [localCodes, API_URL]);
+
+    // 3. Xử lý khi bấm nút "LƯU MÃ"
     const handleSaveVoucher = async () => {
         if (!code.trim()) return;
+        
+        // Kiểm tra xem đã có ở Frontend chưa cho nhanh
+        if (localCodes.includes(code.toUpperCase())) {
+            setMessage("❌ Bạn đã lưu mã này vào ví rồi");
+            return;
+        }
+
         setIsChecking(true);
         setMessage("Đang kiểm tra...");
         try {
@@ -782,11 +797,13 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             
             if (res.data && res.data.success) {
                 setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
+                
+                // --- ĐÂY LÀ ĐIỂM QUAN TRỌNG ĐỂ GIAO DIỆN CẬP NHẬT TỨC THÌ ---
+                setLocalCodes(prev => [...prev, code.toUpperCase()]);
+                
                 setCode("");
                 
-                // Gọi API profile để lấy dữ liệu User mới nhất từ DB
-                // Khi dữ liệu User về, mảng 'user.vouchers' sẽ có mã mới
-                // -> UseEffect ở trên sẽ tự động gọi lại fetchVouchersDetail và render mã mới
+                // Gọi làm mới profile ngầm định
                 refreshProfile();
             }
         } catch (error: any) {
