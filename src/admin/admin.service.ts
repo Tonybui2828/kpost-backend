@@ -178,10 +178,24 @@ export class AdminService {
 
   // Xóa cứng 1 user (Hard Delete)
   async hardDeleteUser(userId: string) {
-    await this.prisma.user.delete({
-      where: { id: userId }
-    });
-    return { success: true, message: 'Đã xóa vĩnh viễn tài khoản' };
+    try {
+      // 1. Dọn dẹp dữ liệu liên kết trước để tránh lỗi Foreign Key của Prisma
+      // Bỏ qua lỗi nếu bảng không tồn tại bằng .catch()
+      await this.prisma.workspaceMember.deleteMany({ where: { userId } }).catch(() => {});
+      
+      // Nếu bạn có các bảng khác như Transaction, Account, Session, hãy xóa luôn:
+      // await this.prisma.transaction.deleteMany({ where: { userId } }).catch(() => {});
+      // await this.prisma.account.deleteMany({ where: { userId } }).catch(() => {});
+
+      // 2. Cuối cùng mới xóa User
+      await this.prisma.user.delete({
+        where: { id: userId }
+      });
+      return { success: true, message: 'Đã xóa vĩnh viễn tài khoản' };
+    } catch (error) {
+      console.error("LỖI XÓA USER:", error);
+      throw error;
+    }
   }
 
   // Khóa hàng loạt (Soft delete)
@@ -204,10 +218,19 @@ export class AdminService {
 
   // Xóa cứng hàng loạt
   async bulkHardDeleteUsers(userIds: string[]) {
-    await this.prisma.user.deleteMany({
-      where: { id: { in: userIds } }
-    });
-    return { success: true, message: `Đã xóa vĩnh viễn ${userIds.length} tài khoản` };
+    try {
+      // Dọn dẹp dữ liệu liên kết hàng loạt
+      await this.prisma.workspaceMember.deleteMany({ where: { userId: { in: userIds } } }).catch(() => {});
+      // await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } }).catch(() => {});
+
+      await this.prisma.user.deleteMany({
+        where: { id: { in: userIds } }
+      });
+      return { success: true, message: `Đã xóa vĩnh viễn ${userIds.length} tài khoản` };
+    } catch (error) {
+      console.error("LỖI XÓA HÀNG LOẠT USER:", error);
+      throw error;
+    }
   }
 
   // ==========================================
