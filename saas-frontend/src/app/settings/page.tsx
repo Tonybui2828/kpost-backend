@@ -695,48 +695,60 @@ function BillingTab({ onUpgrade }: any) {
 // ==========================================
 // VOUCHER TAB MỚI: HIỂN THỊ TỨC THÌ SAU KHI LƯU
 // ==========================================
+// ==========================================
+// VOUCHER TAB MỚI: HIỂN THỊ TỨC THÌ SAU KHI LƯU
+// ==========================================
+// ==========================================
+// VOUCHER TAB MỚI: TỰ ĐỘNG LỌC SẠCH MỌI LỖI JSON
+// ==========================================
 function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () => void }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
     const [isChecking, setIsChecking] = useState(false);
     const [message, setMessage] = useState("");
     
-    // State lưu danh sách mã giảm giá dưới dạng chuỗi (ví dụ: ["CNLG", "KPOST50"])
     const [localCodes, setLocalCodes] = useState<string[]>([]);
-    
-    // Mảng lưu chi tiết các voucher để render ra giao diện
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
-    // 1. Khi component render, lấy danh sách mã từ user profile bỏ vào local state
+    // 1. Hàm bóc tách dữ liệu siêu cấp (Xử lý mọi loại mảng, chuỗi lồng nhau từ Database)
     useEffect(() => {
         if (user && user.vouchers) {
             let parsedCodes: string[] = [];
-            try {
-                if (Array.isArray(user.vouchers)) {
-                    parsedCodes = user.vouchers;
-                } else if (typeof user.vouchers === 'string') {
-                    const parsed = JSON.parse(user.vouchers);
-                    if (Array.isArray(parsed)) {
-                         parsedCodes = parsed;
-                    } else if (typeof parsed === 'string') {
-                         parsedCodes = JSON.parse(parsed); // Đề phòng lỗi lưu mảng lồng chuỗi
-                    } else {
-                         parsedCodes = [user.vouchers];
+            
+            // Hàm đệ quy để giải nén toàn bộ các lớp JSON.parse
+            const extractCleanArray = (data: any): any => {
+                if (typeof data === 'string') {
+                    try {
+                        const parsed = JSON.parse(data);
+                        return extractCleanArray(parsed); // Đệ quy nếu vẫn còn là JSON
+                    } catch (e) {
+                        return data; // Hết bóc được rồi thì trả về
                     }
                 }
-            } catch(e) {
-                if (typeof user.vouchers === 'string' && user.vouchers.trim().length > 0) {
-                    parsedCodes = [user.vouchers];
-                }
+                return data;
+            };
+
+            const cleanData = extractCleanArray(user.vouchers);
+            
+            // Sau khi bóc xong, ép kiểu về mảng chuẩn
+            if (Array.isArray(cleanData)) {
+                // Ép mọi phần tử về string, bỏ khoảng trắng dư thừa
+                parsedCodes = cleanData.map(c => String(c).replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
+            } else if (typeof cleanData === 'string' && cleanData.trim().length > 0) {
+                // Đề phòng nó là 1 chuỗi dài ngăn cách bởi dấu phẩy
+                parsedCodes = cleanData.split(',').map(c => c.replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
             }
-            setLocalCodes(parsedCodes);
+
+            // Loại bỏ các mã trùng lặp
+            const uniqueCodes = Array.from(new Set(parsedCodes));
+            setLocalCodes(uniqueCodes);
         } else {
             setLocalCodes([]);
         }
     }, [user?.vouchers]);
 
-    // 2. Bất cứ khi nào mảng localCodes thay đổi, đi gọi API lấy thông tin chi tiết (Giảm giá, HSD...)
+    // 2. Gọi API lấy chi tiết
     useEffect(() => {
         const fetchVouchersDetail = async () => {
             if (localCodes.length === 0) {
@@ -758,12 +770,11 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
                 }
             } catch (error) {
                 console.error("Lỗi lấy thông tin voucher:", error);
-                // Nếu lỗi mạng, hiển thị tạm
                 setUserVouchers(localCodes.map((c: string) => ({
                     code: c,
-                    discountValue: "??",
+                    discountValue: "Lỗi hiển thị",
                     discountType: "percent",
-                    validUntil: "Chưa rõ"
+                    validUntil: "Vui lòng tải lại trang"
                 })));
             } finally {
                 setLoadingVouchers(false);
@@ -773,12 +784,13 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
         fetchVouchersDetail();
     }, [localCodes, API_URL]);
 
-    // 3. Xử lý khi bấm nút "LƯU MÃ"
+    // 3. Xử lý lưu mã
     const handleSaveVoucher = async () => {
         if (!code.trim()) return;
         
-        // Kiểm tra xem đã có ở Frontend chưa cho nhanh
-        if (localCodes.includes(code.toUpperCase())) {
+        const cleanInputCode = code.toUpperCase().trim();
+
+        if (localCodes.includes(cleanInputCode)) {
             setMessage("❌ Bạn đã lưu mã này vào ví rồi");
             return;
         }
@@ -789,21 +801,19 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             const token = localStorage.getItem("token");
             const workspaceId = user?.id || user?.currentWorkspaceId || localStorage.getItem("workspaceId");
 
-            // GỌI API LƯU VÀO DATABASE
             const res = await axios.post(`${API_URL}/social/add-voucher-to-wallet`, 
-                { code: code.toUpperCase(), workspaceId: workspaceId }, 
+                { code: cleanInputCode, workspaceId: workspaceId }, 
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             
             if (res.data && res.data.success) {
                 setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 
-                // --- ĐÂY LÀ ĐIỂM QUAN TRỌNG ĐỂ GIAO DIỆN CẬP NHẬT TỨC THÌ ---
-                setLocalCodes(prev => [...prev, code.toUpperCase()]);
-                
+                // Ném mã mới vào ví nội bộ để load ra ngay lập tức
+                setLocalCodes(prev => Array.from(new Set([...prev, cleanInputCode])));
                 setCode("");
                 
-                // Gọi làm mới profile ngầm định
+                // Đồng bộ lại DB
                 refreshProfile();
             }
         } catch (error: any) {

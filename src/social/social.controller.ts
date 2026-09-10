@@ -232,6 +232,9 @@ export class SocialController {
   // ==========================================
   // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
   // ==========================================
+  // ==========================================
+  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON SIÊU CẤP
+  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
@@ -239,7 +242,7 @@ export class SocialController {
     }
     
     try {
-        const code = body.code.toUpperCase();
+        const code = body.code.toUpperCase().trim();
         
         const voucherRecord = await this.prisma.voucher.findUnique({
             where: { code: code },
@@ -296,56 +299,54 @@ export class SocialController {
             throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
-        // --- ĐOẠN QUAN TRỌNG: FIX LỖI PARSE MẢNG BẰNG CÁCH ÉP KIỂU ANY ---
+        // --- HÀM BÓC TÁCH MẢNG SIÊU CẤP ĐỂ TÌM DỮ LIỆU THỰC SỰ ĐANG CÓ TRONG DB ---
         let currentVouchers: string[] = [];
-        const rawVouchers: any = user.vouchers; // ÉP KIỂU ANY ĐỂ TYPESCRIPT KHÔNG BẮT LỖI
+        const rawVouchers: any = user.vouchers; 
         
         if (rawVouchers) {
-            try {
-                if (Array.isArray(rawVouchers)) {
-                    currentVouchers = [...rawVouchers];
-                } else if (typeof rawVouchers === 'string') {
-                    // Nếu nó là chuỗi, parse nó ra
-                    const parsed = JSON.parse(rawVouchers);
-                    if (Array.isArray(parsed)) {
-                        currentVouchers = parsed;
-                    } else if (typeof parsed === 'string') {
-                        // Trường hợp bị stringify 2 lần: "\"[\\\"CNLG\\\"]\""
-                        const doubleParsed = JSON.parse(parsed);
-                        if (Array.isArray(doubleParsed)) {
-                             currentVouchers = doubleParsed;
-                        } else {
-                             currentVouchers = [parsed];
-                        }
-                    } else {
-                        currentVouchers = [rawVouchers];
+            // Hàm đệ quy bóc tách mọi lớp JSON lồng nhau
+            const extractCleanArray = (data: any): any => {
+                if (typeof data === 'string') {
+                    try {
+                        const parsed = JSON.parse(data);
+                        return extractCleanArray(parsed);
+                    } catch (e) {
+                        return data;
                     }
                 }
-            } catch (e) {
-                // Nếu parse lỗi (VD: chuỗi thường không phải JSON), coi như mảng rỗng hoặc chứa chuỗi đó
-                if (typeof rawVouchers === 'string' && rawVouchers.trim().length > 0) {
-                     currentVouchers = [rawVouchers];
-                } else {
-                     currentVouchers = [];
-                }
+                return data;
+            };
+
+            const cleanData = extractCleanArray(rawVouchers);
+
+            // Ép thành mảng chuẩn
+            if (Array.isArray(cleanData)) {
+                currentVouchers = cleanData.map(c => String(c).replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
+            } else if (typeof cleanData === 'string' && cleanData.trim().length > 0) {
+                currentVouchers = cleanData.split(',').map(c => c.replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
             }
         }
         
+        // Kiểm tra xem đã lưu chưa
         if (currentVouchers.includes(code)) {
             throw new HttpException('Bạn đã lưu mã này vào ví rồi', HttpStatus.BAD_REQUEST);
         }
 
+        // Thêm mã mới vào mảng
         currentVouchers.push(code);
         
-        // Update DB với mảng chuẩn
+        // Loại bỏ trùng lặp nếu có
+        const uniqueVouchers = Array.from(new Set(currentVouchers));
+        
+        // Ghi đè vào DB bằng MẢNG CHUẨN (Database đang cấu hình kiểu mảng string/JSON)
         await this.prisma.user.update({
             where: { id: user.id },
             data: { 
-                vouchers: currentVouchers 
+                vouchers: uniqueVouchers 
             }
         });
 
-        return { success: true, message: 'Đã thêm mã vào ví', vouchers: currentVouchers };
+        return { success: true, message: 'Đã thêm mã vào ví', vouchers: uniqueVouchers };
 
     } catch (error) {
         if (error instanceof HttpException) {
