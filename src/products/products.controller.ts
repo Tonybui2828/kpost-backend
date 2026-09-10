@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Delete, Param, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Delete, Param, Patch, BadRequestException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 
 @Controller('products')
@@ -7,11 +7,18 @@ export class ProductsController {
 
   @Post()
   async create(@Body() data: any) {
+    if (!data.workspaceId) {
+      throw new BadRequestException("Không thể tạo sản phẩm: Thiếu workspaceId!");
+    }
     return this.productsService.create(data);
   }
 
   @Get()
   async findAll(@Query('workspaceId') workspaceId: string) {
+    // CHẶN: Nếu không có workspaceId thì báo lỗi ngay, không gọi vào Database
+    if (!workspaceId) {
+      throw new BadRequestException("Vui lòng cung cấp workspaceId để lấy danh sách sản phẩm!");
+    }
     return this.productsService.findAll(workspaceId);
   }
 

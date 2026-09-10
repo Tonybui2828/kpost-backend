@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { io } from "socket.io-client"; 
+import { toast } from "react-hot-toast"; // THÊM THƯ VIỆN TOAST VÀO ĐÂY
 import { 
   User, Lock, Shield, CreditCard, Gift, 
   BookOpen, Scale, Bell, Globe, ChevronRight,
@@ -231,6 +232,28 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [forgotEmail, setForgotEmail] = useState("");
 
+    // --- THÊM ĐOẠN CODE BẮT LỖI TÀI KHOẢN BỊ KHÓA TRÊN URL ---
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const errorParam = urlParams.get('error');
+
+        if (errorParam === 'account_locked') {
+            toast.error('Tài khoản của bạn đã bị khóa vui lòng liên hệ : support@kpost.vn để được hỗ trợ', {
+                duration: 8000,
+                style: {
+                    background: '#fee2e2',
+                    color: '#b91c1c',
+                    border: '1px solid #f87171',
+                    fontWeight: 'bold',
+                    padding: '16px'
+                }
+            });
+            // Xóa thông báo lỗi khỏi URL sau khi đã hiển thị để F5 không bị lặp lại
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
+    // ------------------------------------------------------------
+
     const getRemainingDays = (expiryDate: string | null) => {
         if (!expiryDate) return null;
         const diffTime = new Date(expiryDate).getTime() - new Date().getTime();
@@ -260,11 +283,12 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
                 localStorage.setItem("workspaceId", res.data.wid);
                 window.location.href = "/dashboard"; 
             } else {
-                alert("Đăng ký thành công! Mời bạn đăng nhập.");
+                toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
                 setAuthMode("login");
             }
         } catch (error: any) {
-            alert(error.response?.data?.message || "Lỗi xử lý xác thực!");
+            // Hiển thị lỗi do Backend trả về (bao gồm cả lỗi Tài khoản bị khóa khi đăng nhập thủ công)
+            toast.error(error.response?.data?.message || "Lỗi xử lý xác thực!");
         } finally { setIsSubmitting(false); }
     };
 
@@ -688,22 +712,6 @@ function BillingTab({ onUpgrade }: any) {
     )
 }
 
-// ==========================================
-// VOUCHER TAB MỚI: TỰ ĐỘNG GỌI FETCHPROFILE SAU KHI LƯU
-// ĐẢM BẢO 100% HIỂN THỊ NGAY SAU KHI LƯU MÃ THÀNH CÔNG
-// ==========================================
-// ==========================================
-// VOUCHER TAB MỚI: HIỂN THỊ TỨC THÌ SAU KHI LƯU
-// ==========================================
-// ==========================================
-// VOUCHER TAB MỚI: HIỂN THỊ TỨC THÌ SAU KHI LƯU
-// ==========================================
-// ==========================================
-// VOUCHER TAB MỚI: TỰ ĐỘNG LỌC SẠCH MỌI LỖI JSON
-// ==========================================
-// ==========================================
-// VOUCHER TAB MỚI: ĐỒNG BỘ LOCALSTORAGE ĐỂ CHỐNG MẤT DỮ LIỆU KHI F5
-// ==========================================
 function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () => void }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
@@ -714,11 +722,9 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
-    // 1. Hàm bóc tách dữ liệu siêu cấp & ĐỒNG BỘ LOCALSTORAGE
     useEffect(() => {
         let parsedCodes: string[] = [];
 
-        // Lấy từ User Profile (API trả về)
         if (user && user.vouchers) {
             const extractCleanArray = (data: any): any => {
                 if (typeof data === 'string') {
@@ -734,7 +740,6 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             }
         }
 
-        // KẾT HỢP VỚI LOCALSTORAGE (Đề phòng API Profile trả về dữ liệu cũ trong Token)
         const cachedVouchers = localStorage.getItem('kpost_saved_vouchers');
         if (cachedVouchers) {
             try {
@@ -745,17 +750,14 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             } catch(e) {}
         }
 
-        // Lọc trùng lặp
         const uniqueCodes = Array.from(new Set(parsedCodes));
         setLocalCodes(uniqueCodes);
 
-        // Lưu ngược lại vào localStorage để F5 không bị mất
         if (uniqueCodes.length > 0) {
             localStorage.setItem('kpost_saved_vouchers', JSON.stringify(uniqueCodes));
         }
     }, [user?.vouchers]);
 
-    // 2. Gọi API lấy chi tiết
     useEffect(() => {
         const fetchVouchersDetail = async () => {
             if (localCodes.length === 0) {
@@ -791,7 +793,6 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
         fetchVouchersDetail();
     }, [localCodes, API_URL]);
 
-    // 3. Xử lý lưu mã
     const handleSaveVoucher = async () => {
         if (!code.trim()) return;
         
@@ -816,11 +817,9 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             if (res.data && res.data.success) {
                 setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 
-                // Cập nhật State
                 const newCodes = Array.from(new Set([...localCodes, cleanInputCode]));
                 setLocalCodes(newCodes);
                 
-                // CẬP NHẬT LUÔN VÀO LOCALSTORAGE ĐỂ F5 KHÔNG MẤT
                 localStorage.setItem('kpost_saved_vouchers', JSON.stringify(newCodes));
 
                 setCode("");
@@ -1344,7 +1343,7 @@ function PrivacyTab() {
               <p className="text-xs text-slate-600 leading-relaxed">Kpost sử dụng cookie ẩn danh gửi đến trình duyệt nhằm cải thiện trải nghiệm người dùng. Bạn hoàn toàn có thể kiểm soát việc sử dụng cookie thông qua cài đặt trình duyệt cá nhân.</p>
            </div>
            <div className="border-t border-slate-100 pt-4">
-              <h4 className="font-bold text-slate-900 mb-2 uppercase tracking-tighter flex gap-2"><span className="text-blue-500">9.</span> Liên kết Bên Thứ Ba</h4>
+              <h4 className="font-bold text-slate-900 mb-2 uppercase tracking-tighter flex gap-2"><span className="text-blue-500">9.</span> Liên kết Bên Thứ Trong</h4>
               <p className="text-xs text-slate-600 leading-relaxed">Dịch vụ có thể chứa liên kết đến các trang web bên ngoài không do Kpost vận hành. Chúng tôi không chịu trách nhiệm về nội dung và chính sách bảo mật của các trang web này.</p>
            </div>
            <div className="border-t border-slate-100 pt-4">

@@ -12,7 +12,9 @@ const supabase = createClient("https://wsgjryobqfayxhdhujki.supabase.co", "sb_pu
 
 export default function ProductsPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-  const workspaceId = "workspace-01";
+  
+  // 1. Dùng State để lưu workspaceId thay vì fix cứng
+  const [workspaceId, setWorkspaceId] = useState<string>("");
 
   const [products, setProducts] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -25,14 +27,28 @@ export default function ProductsPage() {
     totalStock: "", images: [] as string[], productUrl: ""
   });
 
+  // 2. Lấy workspaceId từ bộ nhớ (localStorage) khi trang vừa load
+  useEffect(() => {
+    const id = localStorage.getItem("workspaceId");
+    if (id) {
+      setWorkspaceId(id);
+    } else {
+      // Đề phòng trường hợp chưa đăng nhập mà lọt vào đây (hoặc localStorage trống)
+      setWorkspaceId("workspace-01"); 
+    }
+  }, []);
+
   const fetchProducts = useCallback(async () => {
+    if (!workspaceId) return; // Nếu chưa lấy được workspaceId thì chưa gọi API
     try {
       const res = await axios.get(`${API_URL}/products?workspaceId=${workspaceId}`);
       setProducts(res.data || []);
     } catch (error) { console.error("Lỗi lấy sản phẩm:", error); }
   }, [API_URL, workspaceId]);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { 
+    if (workspaceId) fetchProducts(); 
+  }, [workspaceId, fetchProducts]);
 
   const isVideo = (url: string) => url ? url.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null : false;
 
@@ -55,6 +71,8 @@ export default function ProductsPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!workspaceId) return alert("Lỗi: Không xác định được danh tính người dùng (Thiếu workspaceId)!");
+
     setLoading(true);
     try {
       const payload = { ...newProduct, price: Number(newProduct.price), totalStock: Number(newProduct.totalStock), workspaceId };
