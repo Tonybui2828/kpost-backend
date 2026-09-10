@@ -230,9 +230,6 @@ export class SocialController {
   }
 
   // ==========================================
-  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON
-  // ==========================================
-  // ==========================================
   // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON SIÊU CẤP
   // ==========================================
   @Post('add-voucher-to-wallet')
@@ -338,7 +335,7 @@ export class SocialController {
         // Loại bỏ trùng lặp nếu có
         const uniqueVouchers = Array.from(new Set(currentVouchers));
         
-        // Ghi đè vào DB bằng MẢNG CHUẨN (Database đang cấu hình kiểu mảng string/JSON)
+        // Ghi đè vào DB bằng MẢNG CHUẨN
         await this.prisma.user.update({
             where: { id: user.id },
             data: { 
