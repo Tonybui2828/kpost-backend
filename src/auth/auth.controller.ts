@@ -67,6 +67,11 @@ export class AuthController {
       throw new HttpException('Tài khoản không tồn tại!', HttpStatus.UNAUTHORIZED);
     }
 
+    // [MỚI] KIỂM TRA XEM TÀI KHOẢN CÓ BỊ KHÓA KHÔNG
+    if (user.status === 'deleted') {
+      throw new HttpException('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ: support@kpost.vn để được hỗ trợ', HttpStatus.FORBIDDEN);
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new HttpException('Mật khẩu không chính xác!', HttpStatus.UNAUTHORIZED);
@@ -198,6 +203,12 @@ export class AuthController {
       include: { workspaces: { include: { workspace: true } } }
     });
 
+    // [MỚI] KIỂM TRA XEM TÀI KHOẢN CÓ BỊ KHÓA KHÔNG (NẾU DÙNG GOOGLE)
+    if (user && user.status === 'deleted') {
+      // Chuyển hướng về trang chủ kèm theo thông báo lỗi trên URL để Frontend hiển thị
+      return res.redirect(`https://kpost.vn/login?error=account_locked`);
+    }
+
     if (!user) {
       user = await this.prisma.user.create({
         data: {
@@ -243,6 +254,11 @@ export class AuthController {
         where: { id: decoded.sub },
         include: { workspaces: { include: { workspace: true } } }
       });
+
+      // Nếu đang mở ứng dụng mà tài khoản bị Khóa bởi Admin thì ép văng ra
+      if (user && user.status === 'deleted') {
+         throw new HttpException('Tài khoản đã bị khóa', HttpStatus.FORBIDDEN);
+      }
 
       return {
         id: user.id,
