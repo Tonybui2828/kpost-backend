@@ -701,6 +701,9 @@ function BillingTab({ onUpgrade }: any) {
 // ==========================================
 // VOUCHER TAB MỚI: TỰ ĐỘNG LỌC SẠCH MỌI LỖI JSON
 // ==========================================
+// ==========================================
+// VOUCHER TAB MỚI: ĐỒNG BỘ LOCALSTORAGE ĐỂ CHỐNG MẤT DỮ LIỆU KHI F5
+// ==========================================
 function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () => void }) { 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [code, setCode] = useState("");
@@ -711,40 +714,44 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
     const [userVouchers, setUserVouchers] = useState<any[]>([]);
     const [loadingVouchers, setLoadingVouchers] = useState(true);
 
-    // 1. Hàm bóc tách dữ liệu siêu cấp (Xử lý mọi loại mảng, chuỗi lồng nhau từ Database)
+    // 1. Hàm bóc tách dữ liệu siêu cấp & ĐỒNG BỘ LOCALSTORAGE
     useEffect(() => {
+        let parsedCodes: string[] = [];
+
+        // Lấy từ User Profile (API trả về)
         if (user && user.vouchers) {
-            let parsedCodes: string[] = [];
-            
-            // Hàm đệ quy để giải nén toàn bộ các lớp JSON.parse
             const extractCleanArray = (data: any): any => {
                 if (typeof data === 'string') {
-                    try {
-                        const parsed = JSON.parse(data);
-                        return extractCleanArray(parsed); // Đệ quy nếu vẫn còn là JSON
-                    } catch (e) {
-                        return data; // Hết bóc được rồi thì trả về
-                    }
+                    try { return extractCleanArray(JSON.parse(data)); } catch (e) { return data; }
                 }
                 return data;
             };
-
             const cleanData = extractCleanArray(user.vouchers);
-            
-            // Sau khi bóc xong, ép kiểu về mảng chuẩn
             if (Array.isArray(cleanData)) {
-                // Ép mọi phần tử về string, bỏ khoảng trắng dư thừa
                 parsedCodes = cleanData.map(c => String(c).replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
             } else if (typeof cleanData === 'string' && cleanData.trim().length > 0) {
-                // Đề phòng nó là 1 chuỗi dài ngăn cách bởi dấu phẩy
                 parsedCodes = cleanData.split(',').map(c => c.replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
             }
+        }
 
-            // Loại bỏ các mã trùng lặp
-            const uniqueCodes = Array.from(new Set(parsedCodes));
-            setLocalCodes(uniqueCodes);
-        } else {
-            setLocalCodes([]);
+        // KẾT HỢP VỚI LOCALSTORAGE (Đề phòng API Profile trả về dữ liệu cũ trong Token)
+        const cachedVouchers = localStorage.getItem('kpost_saved_vouchers');
+        if (cachedVouchers) {
+            try {
+                const cachedArray = JSON.parse(cachedVouchers);
+                if (Array.isArray(cachedArray)) {
+                    parsedCodes = [...parsedCodes, ...cachedArray];
+                }
+            } catch(e) {}
+        }
+
+        // Lọc trùng lặp
+        const uniqueCodes = Array.from(new Set(parsedCodes));
+        setLocalCodes(uniqueCodes);
+
+        // Lưu ngược lại vào localStorage để F5 không bị mất
+        if (uniqueCodes.length > 0) {
+            localStorage.setItem('kpost_saved_vouchers', JSON.stringify(uniqueCodes));
         }
     }, [user?.vouchers]);
 
@@ -809,11 +816,14 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
             if (res.data && res.data.success) {
                 setMessage("✅ Đã lưu mã giảm giá thành công vào ví!");
                 
-                // Ném mã mới vào ví nội bộ để load ra ngay lập tức
-                setLocalCodes(prev => Array.from(new Set([...prev, cleanInputCode])));
-                setCode("");
+                // Cập nhật State
+                const newCodes = Array.from(new Set([...localCodes, cleanInputCode]));
+                setLocalCodes(newCodes);
                 
-                // Đồng bộ lại DB
+                // CẬP NHẬT LUÔN VÀO LOCALSTORAGE ĐỂ F5 KHÔNG MẤT
+                localStorage.setItem('kpost_saved_vouchers', JSON.stringify(newCodes));
+
+                setCode("");
                 refreshProfile();
             }
         } catch (error: any) {

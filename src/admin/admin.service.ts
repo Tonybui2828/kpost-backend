@@ -173,6 +173,44 @@ export class AdminService {
   }
 
   // ==========================================
+  // CÁC HÀM XÓA VÀ THAO TÁC HÀNG LOẠT (BULK)
+  // ==========================================
+
+  // Xóa cứng 1 user (Hard Delete)
+  async hardDeleteUser(userId: string) {
+    await this.prisma.user.delete({
+      where: { id: userId }
+    });
+    return { success: true, message: 'Đã xóa vĩnh viễn tài khoản' };
+  }
+
+  // Khóa hàng loạt (Soft delete)
+  async bulkLockUsers(userIds: string[]) {
+    await this.prisma.user.updateMany({
+      where: { id: { in: userIds } },
+      data: { status: 'deleted' }
+    });
+    return { success: true, message: `Đã khóa ${userIds.length} tài khoản` };
+  }
+
+  // Khôi phục hàng loạt
+  async bulkRestoreUsers(userIds: string[]) {
+    await this.prisma.user.updateMany({
+      where: { id: { in: userIds } },
+      data: { status: 'active' }
+    });
+    return { success: true, message: `Đã khôi phục ${userIds.length} tài khoản` };
+  }
+
+  // Xóa cứng hàng loạt
+  async bulkHardDeleteUsers(userIds: string[]) {
+    await this.prisma.user.deleteMany({
+      where: { id: { in: userIds } }
+    });
+    return { success: true, message: `Đã xóa vĩnh viễn ${userIds.length} tài khoản` };
+  }
+
+  // ==========================================
   // 5. THÔNG BÁO GIA HẠN
   // ==========================================
   async checkExpiringWorkspaces() {
