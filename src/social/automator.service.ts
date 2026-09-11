@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AiContentService } from '../ai-content/ai-content.service';
 import { FacebookService } from './facebook.service';
-import * as puppeteer from 'puppeteer-core';
 
 @Injectable()
 export class AutomatorService {
@@ -183,53 +182,6 @@ TRẢ VỀ DUY NHẤT ĐỊNH DẠNG JSON SAU (KHÔNG DÙNG MARKDOWN):
       this.logger.log(`🎉 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG MỚI: ID ${newOrder.id}`);
     } catch (e) {
       this.logger.error("❌ Lỗi bóc tách đơn hàng:", e.message);
-    }
-  }
-
-  // ==========================================
-  // 2. ROBOT TỰ ĐỘNG ĐĂNG BÀI NHÓM (PUPPETEER)
-  // ==========================================
-  async postToGroup(groupId: string, cookiesJson: string, content: string) {
-    const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-    const browser = await puppeteer.launch({
-      executablePath: chromePath,
-      headless: false,
-      defaultViewport: null,
-      args: ['--start-maximized', '--no-sandbox', '--disable-notifications']
-    });
-
-    const page = await browser.newPage();
-    try {
-      const cookies = JSON.parse(cookiesJson);
-      await page.setCookie(...cookies);
-      await page.goto(`https://www.facebook.com/groups/${groupId}`, { waitUntil: 'networkidle2', timeout: 60000 });
-      await new Promise(r => setTimeout(r, 3000));
-
-      const postBoxSelector = 'div[role="button"]';
-      await page.waitForSelector(postBoxSelector);
-      
-      await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('div[role="button"]'));
-        const postButton = buttons.find(b => b.textContent.includes("Bạn viết gì đi") || b.textContent.includes("Create a public post"));
-        if (postButton) (postButton as HTMLElement).click();
-      });
-
-      await new Promise(r => setTimeout(r, 3000));
-      await page.keyboard.type(content, { delay: 30 });
-      await new Promise(r => setTimeout(r, 2000));
-
-      await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('div[role="button"]'));
-        const submitBtn = buttons.find(b => b.textContent === "Đăng" || b.textContent === "Post");
-        if (submitBtn) (submitBtn as HTMLElement).click();
-      });
-
-      await new Promise(r => setTimeout(r, 5000));
-      return { success: true };
-    } catch (e) {
-      return { success: false, error: e.message };
-    } finally {
-      await browser.close(); 
     }
   }
 }
