@@ -231,8 +231,8 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const [formData, setFormData] = useState({ email: "", password: "", name: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [forgotEmail, setForgotEmail] = useState("");
+    const [loadingState, setLoadingState] = useState(false);
 
-    // --- THÊM ĐOẠN CODE BẮT LỖI TÀI KHOẢN BỊ KHÓA TRÊN URL ---
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const errorParam = urlParams.get('error');
@@ -240,19 +240,11 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         if (errorParam === 'account_locked') {
             toast.error('Tài khoản của bạn đã bị khóa vui lòng liên hệ : support@kpost.vn để được hỗ trợ', {
                 duration: 8000,
-                style: {
-                    background: '#fee2e2',
-                    color: '#b91c1c',
-                    border: '1px solid #f87171',
-                    fontWeight: 'bold',
-                    padding: '16px'
-                }
+                style: { background: '#fee2e2', color: '#b91c1c', border: '1px solid #f87171', fontWeight: 'bold', padding: '16px' }
             });
-            // Xóa thông báo lỗi khỏi URL sau khi đã hiển thị để F5 không bị lặp lại
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }, []);
-    // ------------------------------------------------------------
 
     const getRemainingDays = (expiryDate: string | null) => {
         if (!expiryDate) return null;
@@ -261,53 +253,54 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         return diffDays > 0 ? diffDays : 0;
     };
 
-   // DÁN ĐOẠN CODE MỚI NÀY VÀO
-const handleManualAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-        const payload: any = { ...formData };
-        if (authMode === "register") {
-            const savedRef = localStorage.getItem("kpost_affiliate_ref");
-            if (savedRef) {
-                payload.affiliateBy = savedRef; 
+    const handleManualAuth = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        setLoadingState(true);
+        try {
+            const payload: any = { ...formData };
+            if (authMode === "register") {
+                let savedRef = localStorage.getItem("kpost_affiliate_ref");
+                if (savedRef) {
+                    if (savedRef.startsWith("KPOST_")) {
+                        savedRef = savedRef.replace("KPOST_", "");
+                    }
+                    payload.referredBy = savedRef; 
+                }
             }
-        }
-        
-        const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
-        const res = await axios.post(`${API_URL}${endpoint}`, payload);
-        
-        if (authMode === "login") {
-            localStorage.setItem("token", res.data.token);
-            localStorage.setItem("workspaceId", res.data.wid);
+            const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
+            const res = await axios.post(`${API_URL}${endpoint}`, payload);
             
-            if(res.data.email === 'tech28.vn@gmail.com') {
-                 toast.success("Xin chào Quản trị viên!");
+            if (authMode === "login") {
+                localStorage.setItem("token", res.data.token);
+                localStorage.setItem("workspaceId", res.data.wid);
+                
+                if(res.data.email === 'tech28.vn@gmail.com') {
+                     toast.success("Xin chào Quản trị viên!");
+                }
+                
+                setTimeout(() => {
+                    window.location.href = "/dashboard";
+                }, 500);
+            } else {
+                toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
+                setAuthMode("login");
             }
-            
-            setTimeout(() => {
-                window.location.href = "/dashboard";
-            }, 500);
-        } else {
-            toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
-            setAuthMode("login");
+        } catch (error: any) {
+            console.error("LỖI ĐĂNG NHẬP:", error.response || error);
+            const errorMsg = error.response?.data?.message || error.response?.data || "Lỗi kết nối máy chủ!";
+            if (typeof errorMsg === 'string') {
+                 toast.error(errorMsg);
+            } else if (errorMsg.message && typeof errorMsg.message === 'string') {
+                 toast.error(errorMsg.message);
+            } else {
+                 toast.error("Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin!");
+            }
+        } finally { 
+            setIsSubmitting(false); 
+            setLoadingState(false);
         }
-    } catch (error: any) {
-        console.error("LỖI ĐĂNG NHẬP:", error.response || error);
-        
-        const errorMsg = error.response?.data?.message || error.response?.data || "Lỗi kết nối máy chủ!";
-        
-        if (typeof errorMsg === 'string') {
-             toast.error(errorMsg);
-        } else if (errorMsg.message && typeof errorMsg.message === 'string') {
-             toast.error(errorMsg.message);
-        } else {
-             toast.error("Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin!");
-        }
-    } finally { 
-        setLoading(false); 
-    }
-};
+    };
 
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -415,7 +408,7 @@ const handleManualAuth = async (e: React.FormEvent) => {
               <span className="text-[10px] font-black text-slate-300">HOẶC</span>
               <div className="h-[1px] bg-slate-100 flex-1"></div>
             </div>
-            <button onClick={() => window.location.href=`${API_URL}/auth/google`} className="w-full bg-white border border-slate-200 text-slate-700 font-black py-4 rounded-[24px] text-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-4 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
+            <button type="button" onClick={() => window.location.href=`${API_URL}/auth/google`} className="w-full bg-white border border-slate-200 text-slate-700 font-black py-4 rounded-[24px] text-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-4 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/list/google.svg" className="w-5 h-5" alt="G" />
                 TIẾP TỤC VỚI GOOGLE
             </button>
