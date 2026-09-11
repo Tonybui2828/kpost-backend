@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import Script from "next/script"; // <-- Import thêm Script của Next.js
+import Script from "next/script"; 
 import "./globals.css";
 import Sidebar from "../components/Sidebar"; 
 
@@ -18,7 +18,7 @@ export default function RootLayout({
     <html lang="vi">
       <body className={`${geist.className} bg-slate-50 text-slate-900`} suppressHydrationWarning={true}>
         
-        {/* ĐOẠN SCRIPT CHẠY NGẦM ĐỂ BẮT MÃ AFFILIATE TỪ MỌI ĐƯỜNG LINK */}
+        {/* ĐOẠN SCRIPT CHẠY NGẦM ĐỂ BẮT MÃ AFFILIATE */}
         <Script id="affiliate-tracker" strategy="afterInteractive">
           {`
             try {
@@ -32,17 +32,16 @@ export default function RootLayout({
           `}
         </Script>
 
-        <div className="flex min-h-screen">
+        <div className="flex min-h-screen w-full bg-slate-50 overflow-x-hidden">
           
-          {/* 1. Thanh Sidebar cố định bên trái (Rộng 256px) */}
-          <div className="w-64 fixed h-full z-50">
-            <Sidebar />
-          </div>
+          {/* 1. Thanh Sidebar (Sẽ tự động biến thành nút Menu trên Mobile) */}
+          <Sidebar />
 
-          {/* 2. Vùng nội dung chính bên phải */}
-          {/* ml-64 đẩy nội dung sang để không bị Sidebar che mất */}
-          <main className="flex-1 ml-64 min-h-screen relative">
-            <div className="p-4 md:p-8 max-w-7xl mx-auto">
+          {/* 2. Vùng nội dung chính */}
+          {/* Mobile: Không lùi lề (ml-0), lùi đỉnh (pt-16) chừa chỗ cho Menu */}
+          {/* Desktop: Lùi trái (md:ml-64), đỉnh sát viền (md:pt-0) */}
+          <main className="flex-1 ml-0 md:ml-64 min-h-screen relative w-full pt-16 md:pt-0 transition-all duration-300">
+            <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
               {children}
             </div>
           </main>

