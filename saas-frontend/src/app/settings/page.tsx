@@ -261,36 +261,53 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         return diffDays > 0 ? diffDays : 0;
     };
 
-    const handleManualAuth = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        try {
-            const payload: any = { ...formData };
-            if (authMode === "register") {
-                let savedRef = localStorage.getItem("kpost_affiliate_ref");
-                if (savedRef) {
-                    if (savedRef.startsWith("KPOST_")) {
-                        savedRef = savedRef.replace("KPOST_", "");
-                    }
-                    payload.referredBy = savedRef; 
-                }
+   // DÁN ĐOẠN CODE MỚI NÀY VÀO
+const handleManualAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+        const payload: any = { ...formData };
+        if (authMode === "register") {
+            const savedRef = localStorage.getItem("kpost_affiliate_ref");
+            if (savedRef) {
+                payload.affiliateBy = savedRef; 
             }
-            const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
-            const res = await axios.post(`${API_URL}${endpoint}`, payload);
+        }
+        
+        const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
+        const res = await axios.post(`${API_URL}${endpoint}`, payload);
+        
+        if (authMode === "login") {
+            localStorage.setItem("token", res.data.token);
+            localStorage.setItem("workspaceId", res.data.wid);
             
-            if (authMode === "login") {
-                localStorage.setItem("token", res.data.token);
-                localStorage.setItem("workspaceId", res.data.wid);
-                window.location.href = "/dashboard"; 
-            } else {
-                toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
-                setAuthMode("login");
+            if(res.data.email === 'tech28.vn@gmail.com') {
+                 toast.success("Xin chào Quản trị viên!");
             }
-        } catch (error: any) {
-            // Hiển thị lỗi do Backend trả về (bao gồm cả lỗi Tài khoản bị khóa khi đăng nhập thủ công)
-            toast.error(error.response?.data?.message || "Lỗi xử lý xác thực!");
-        } finally { setIsSubmitting(false); }
-    };
+            
+            setTimeout(() => {
+                window.location.href = "/dashboard";
+            }, 500);
+        } else {
+            toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
+            setAuthMode("login");
+        }
+    } catch (error: any) {
+        console.error("LỖI ĐĂNG NHẬP:", error.response || error);
+        
+        const errorMsg = error.response?.data?.message || error.response?.data || "Lỗi kết nối máy chủ!";
+        
+        if (typeof errorMsg === 'string') {
+             toast.error(errorMsg);
+        } else if (errorMsg.message && typeof errorMsg.message === 'string') {
+             toast.error(errorMsg.message);
+        } else {
+             toast.error("Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin!");
+        }
+    } finally { 
+        setLoading(false); 
+    }
+};
 
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault();
