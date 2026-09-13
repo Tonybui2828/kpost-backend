@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { io } from "socket.io-client"; 
-import { toast } from "react-hot-toast"; // THÊM THƯ VIỆN TOAST VÀO ĐÂY
+import { toast } from "react-hot-toast"; 
 import { 
   User, Lock, Shield, CreditCard, Gift, 
   BookOpen, Scale, Bell, Globe, ChevronRight,
@@ -208,10 +208,7 @@ export default function SettingsPage() {
             {activeTab === "affiliate" && <AffiliateTab user={user} />}
             {activeTab === "billing" && <BillingTab onUpgrade={handleUpgrade} />}
             {activeTab === "security" && <SecurityTab />}
-            
-            {/* TRUYỀN HÀM FETCHPROFILE ĐỂ VOUCHER TAB GỌI LẠI SAU KHI LƯU MÃ */}
             {activeTab === "voucher" && <VoucherTab user={user} refreshProfile={fetchProfile} />}
-            
             {activeTab === "guide" && <GuideTab />}
             {activeTab === "terms" && <TermsTab />}
             {activeTab === "privacy" && <PrivacyTab />}
@@ -256,6 +253,7 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
     const handleManualAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
+<<<<<<< Updated upstream
         setLoadingState(true);
         try {
             const payload: any = { ...formData };
@@ -289,6 +287,39 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
         } catch (error: any) {
             console.error("LỖI ĐĂNG NHẬP:", error.response || error);
             const errorMsg = error.response?.data?.message || error.response?.data || "Lỗi kết nối máy chủ!";
+=======
+        try {
+            const payload: any = { ...formData };
+            if (authMode === "register") {
+                const savedRef = localStorage.getItem("kpost_affiliate_ref");
+                if (savedRef) {
+                    payload.affiliateBy = savedRef; 
+                }
+            }
+            
+            const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
+            const res = await axios.post(`${API_URL}${endpoint}`, payload);
+            
+            if (authMode === "login") {
+                localStorage.setItem("token", res.data.token);
+                localStorage.setItem("workspaceId", res.data.wid);
+                
+                if(res.data.email === 'tech28.vn@gmail.com') {
+                     toast.success("Xin chào Quản trị viên!");
+                }
+                
+                setTimeout(() => {
+                    window.location.href = "/dashboard";
+                }, 500);
+            } else {
+                toast.success("Đăng ký thành công! Mời bạn đăng nhập.");
+                setAuthMode("login");
+            }
+        } catch (error: any) {
+            console.error("LỖI ĐĂNG NHẬP:", error.response || error);
+            const errorMsg = error.response?.data?.message || error.response?.data || "Lỗi kết nối máy chủ!";
+            
+>>>>>>> Stashed changes
             if (typeof errorMsg === 'string') {
                  toast.error(errorMsg);
             } else if (errorMsg.message && typeof errorMsg.message === 'string') {
@@ -298,7 +329,10 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
             }
         } finally { 
             setIsSubmitting(false); 
+<<<<<<< Updated upstream
             setLoadingState(false);
+=======
+>>>>>>> Stashed changes
         }
     };
 
@@ -907,7 +941,96 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
     ) 
 }
 
-function GuideTab() { return <div className="p-10 text-center text-black animate-in fade-in"><BookOpen size={48} className="mx-auto text-slate-200 mb-4" /><p className="font-black text-slate-400 uppercase italic">Tài liệu đang được cập nhật...</p></div> }
+function GuideTab() {
+  const [guides, setGuides] = useState<any[]>([]);
+  const [prompts, setPrompts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // GỌI ĐÚNG API CỦA NEXT.JS LƯU TRỮ
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await axios.get('/api/admin/system-guides');
+        setGuides(res.data.guides || []);
+        setPrompts(res.data.prompts || []);
+      } catch (error) {
+        console.error("Lỗi đồng bộ tài liệu:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Đã copy Prompt vào khay nhớ tạm!");
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse">Đang đồng bộ dữ liệu...</div>;
+
+  return (
+    <div className="text-black animate-in fade-in space-y-10">
+      <div className="mb-8 border-b border-slate-100 pb-6 flex flex-col md:flex-row items-start md:items-center gap-4">
+        <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl shrink-0"><BookOpen size={32} /></div>
+        <div>
+          <h2 className="text-3xl font-black italic uppercase tracking-tighter text-slate-900">Hướng dẫn Khách mới</h2>
+          <p className="text-sm font-medium text-slate-500 mt-2">Tài liệu & Thư viện Prompt AI độc quyền</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="bg-slate-50 rounded-[32px] p-6 md:p-8 border border-slate-100">
+          <h3 className="text-lg font-black uppercase text-slate-900 mb-6 flex items-center gap-2">
+            <FileText className="text-blue-600" size={20} /> Tài liệu biểu mẫu
+          </h3>
+          {guides.length === 0 ? (
+            <p className="text-sm text-slate-400 italic">Quản trị viên đang cập nhật tài liệu...</p>
+          ) : (
+            <div className="space-y-4">
+              {guides.map((item, idx) => (
+                <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center justify-between hover:shadow-md transition-all">
+                  <div className="flex items-center gap-3 overflow-hidden pr-2">
+                    <div className="bg-blue-50 p-2 rounded-xl text-blue-600 shrink-0"><FileText size={18} /></div>
+                    <p className="font-bold text-sm text-slate-700 truncate" title={item.title}>{item.title}</p>
+                  </div>
+                  <a href={item.url} target="_blank" rel="noreferrer" className="shrink-0 bg-slate-900 hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-colors">
+                    Tải Xuống
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-slate-50 rounded-[32px] p-6 md:p-8 border border-slate-100">
+          <h3 className="text-lg font-black uppercase text-slate-900 mb-6 flex items-center gap-2">
+            <Sparkles className="text-orange-500" size={20} /> Thư viện Prompt AI
+          </h3>
+          {prompts.length === 0 ? (
+            <p className="text-sm text-slate-400 italic">Quản trị viên đang cập nhật Prompt...</p>
+          ) : (
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              {prompts.map((item, idx) => (
+                <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-orange-200 transition-all group">
+                  <div className="flex justify-between items-start mb-3">
+                    <p className="font-black text-sm text-slate-800 flex-1 pr-2">{item.title}</p>
+                    <button onClick={() => handleCopy(item.content)} className="text-slate-400 hover:text-blue-600 bg-slate-50 p-2 rounded-lg transition-colors shrink-0">
+                      <Copy size={16} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 whitespace-pre-wrap">
+                    {item.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TermsTab() {
   useEffect(() => {

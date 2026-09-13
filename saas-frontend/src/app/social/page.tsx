@@ -103,7 +103,9 @@ function SocialContent() {
       setEditingId(null);
       fetchAccounts(); 
     } catch (error: any) {
-        alert("❌ Thất bại: Kiểm tra lại mã Token hoặc ID Page.");
+        // Lấy đúng câu báo lỗi từ Backend gửi về
+        const backendError = error.response?.data?.message || "Kiểm tra lại mã Token hoặc ID Page.";
+        alert(`❌ Lỗi: ${backendError}`);
     } finally {
       setLoading(false);
     }
