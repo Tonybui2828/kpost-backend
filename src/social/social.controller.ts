@@ -54,6 +54,30 @@ export class SocialController {
     const currentPlan = workspace.plan || 'free';
     const maxLimit = planLimits[currentPlan] || 1;
 
+    // KIỂM TRA XEM FANPAGE ĐÃ TỒN TẠI CHƯA
+    const existingAccount = await this.prisma.socialAccount.findFirst({
+      where: { platformId: data.platformId }
+    });
+
+    if (existingAccount) {
+      // Nếu có rồi mà khác Workspace thì phải check limit của Workspace mới
+      if (existingAccount.workspaceId !== data.workspaceId) {
+        if (workspace._count.socialAccounts >= maxLimit) {
+          throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
+        }
+      }
+      // Update đè WorkspaceID mới vào thay vì tạo trùng lặp
+      return this.prisma.socialAccount.update({
+        where: { id: existingAccount.id },
+        data: {
+          workspaceId: data.workspaceId,
+          accessToken: data.accessToken,
+          accountName: data.accountName,
+          isAiAutoReply: false // Tạm tắt AI khi đổi chủ để an toàn
+        }
+      });
+    }
+
     if (workspace._count.socialAccounts >= maxLimit) {
       throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
     }
@@ -502,9 +526,16 @@ export class SocialController {
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
-      const account = await this.prisma.socialAccount.findFirst({
-        where: { platformId: pageId },
+      // Ưu tiên tìm bản ghi Fanpage nào đang BẬT AI Auto Reply
+      let account = await this.prisma.socialAccount.findFirst({
+        where: { platformId: pageId, isAiAutoReply: true },
       });
+      // Nếu không có cái nào bật AI, thì lấy mặc định
+      if (!account) {
+        account = await this.prisma.socialAccount.findFirst({
+          where: { platformId: pageId },
+        });
+      }
 
       if (!account) return 'ACCOUNT_NOT_FOUND';
 
