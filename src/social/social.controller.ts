@@ -54,26 +54,77 @@ export class SocialController {
     const currentPlan = workspace.plan || 'free';
     const maxLimit = planLimits[currentPlan] || 1;
 
-    // KIỂM TRA XEM FANPAGE ĐÃ TỒN TẠI CHƯA
+    // HỖ TRỢ LƯU BẰNG USER TOKEN (Quét tất cả Page)
+    if (data.isUserToken) {
+       try {
+         // Gọi API Facebook để lấy danh sách Page từ User Token
+         const axios = require('axios');
+         const response = await axios.get(`https://graph.facebook.com/v21.0/me/accounts?access_token=${data.accessToken}`);
+         const pages = response.data.data || [];
+         
+         if (pages.length === 0) {
+           throw new HttpException("Tài khoản này không quản lý Fanpage nào.", HttpStatus.BAD_REQUEST);
+         }
+
+         let addedCount = 0;
+         for (const page of pages) {
+            // Kiểm tra limit
+            const currentCount = await this.prisma.socialAccount.count({ where: { workspaceId: data.workspaceId } });
+            if (currentCount >= maxLimit) break;
+
+            const existing = await this.prisma.socialAccount.findFirst({
+              where: { platformId: page.id }
+            });
+
+            if (existing) {
+               await this.prisma.socialAccount.update({
+                  where: { id: existing.id },
+                  data: {
+                    workspaceId: data.workspaceId,
+                    accessToken: page.access_token, // Lấy PAGE TOKEN từ mảng trả về
+                    accountName: page.name,
+                    isAiAutoReply: false
+                  }
+               });
+            } else {
+               await this.prisma.socialAccount.create({
+                  data: {
+                    workspaceId: data.workspaceId,
+                    platform: 'facebook',
+                    platformId: page.id,
+                    accountName: page.name,
+                    accessToken: page.access_token, // Lấy PAGE TOKEN từ mảng trả về
+                    isAiAutoReply: false,
+                    aiTone: 'friendly'
+                  }
+               });
+               addedCount++;
+            }
+         }
+         return { message: `Đã kết nối thành công ${addedCount} Fanpage!` };
+       } catch (error: any) {
+         throw new HttpException(error.response?.data?.error?.message || "Lỗi khi quét Fanpage từ User Token", HttpStatus.BAD_REQUEST);
+       }
+    }
+
+    // LUỒNG CŨ (Lưu 1 Fanpage bằng Page Token)
     const existingAccount = await this.prisma.socialAccount.findFirst({
       where: { platformId: data.platformId }
     });
-
+    
     if (existingAccount) {
-      // Nếu có rồi mà khác Workspace thì phải check limit của Workspace mới
       if (existingAccount.workspaceId !== data.workspaceId) {
         if (workspace._count.socialAccounts >= maxLimit) {
           throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
         }
       }
-      // Update đè WorkspaceID mới vào thay vì tạo trùng lặp
       return this.prisma.socialAccount.update({
         where: { id: existingAccount.id },
         data: {
           workspaceId: data.workspaceId,
           accessToken: data.accessToken,
           accountName: data.accountName,
-          isAiAutoReply: false // Tạm tắt AI khi đổi chủ để an toàn
+          isAiAutoReply: false
         }
       });
     }
