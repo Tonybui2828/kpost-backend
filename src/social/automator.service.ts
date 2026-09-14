@@ -24,10 +24,17 @@ export class AutomatorService {
     platformId: string
   ) {
     try {
-      const account = await this.prisma.socialAccount.findFirst({
-        where: { platformId: pageId },
+      let account = await this.prisma.socialAccount.findFirst({
+        where: { platformId: pageId, isAiAutoReply: true },
         include: { workspace: true }
       });
+      
+      if (!account) {
+        account = await this.prisma.socialAccount.findFirst({
+          where: { platformId: pageId },
+          include: { workspace: true }
+        });
+      }
 
       if (!account || !account.isAiAutoReply) return; 
 
