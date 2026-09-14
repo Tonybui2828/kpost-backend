@@ -17,7 +17,9 @@ function SocialContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
-  const [newAcc, setNewAcc] = useState({ pageId: "", token: "", name: "" });
+  
+  // 👉 SỬA STATE: Thêm trường isUserToken để phân biệt
+  const [newAcc, setNewAcc] = useState({ pageId: "", token: "", name: "", isUserToken: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   
   // State hiển thị popup hướng dẫn
@@ -75,10 +77,13 @@ function SocialContent() {
     }
   };
 
-  // --- 6. LƯU / CẬP NHẬT PAGE THỦ CÔNG ---
+  // 👉 6. SỬA HÀM LƯU / CẬP NHẬT (THÊM XỬ LÝ USER TOKEN)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAcc.pageId || !newAcc.token || !newAcc.name) return alert("Vui lòng điền đủ thông tin!");
+    
+    // Nếu kết nối từng trang thì bắt buộc phải có ID và Tên. Còn Token là luôn bắt buộc.
+    if (!newAcc.isUserToken && (!newAcc.pageId || !newAcc.name)) return alert("Vui lòng điền đủ thông tin!");
+    if (!newAcc.token) return alert("Vui lòng nhập Token!");
 
     setLoading(true);
     try {
@@ -90,20 +95,29 @@ function SocialContent() {
         });
         alert("✅ Đã cập nhật thành công!");
       } else {
-        await axios.post(`${API_URL}/social/accounts`, {
+        const payload: any = {
           workspaceId,
           platform: "facebook",
           platformId: newAcc.pageId,
           accessToken: newAcc.token,
           accountName: newAcc.name
-        });
-        alert("✅ Kết nối Fanpage mới thành công!");
+        };
+        // Truyền cờ báo cho backend biết đây là User Token để nó tự quét hàng loạt
+        if (newAcc.isUserToken) {
+           payload.isUserToken = true;
+        }
+
+        const response = await axios.post(`${API_URL}/social/accounts`, payload);
+        if (response.data?.message) {
+           alert("✅ " + response.data.message);
+        } else {
+           alert("✅ Kết nối Fanpage mới thành công!");
+        }
       }
-      setNewAcc({ pageId: "", token: "", name: "" });
+      setNewAcc({ pageId: "", token: "", name: "", isUserToken: false });
       setEditingId(null);
       fetchAccounts(); 
     } catch (error: any) {
-        // Lấy đúng câu báo lỗi từ Backend gửi về
         const backendError = error.response?.data?.message || "Kiểm tra lại mã Token hoặc ID Page.";
         alert(`❌ Lỗi: ${backendError}`);
     } finally {
@@ -121,7 +135,7 @@ function SocialContent() {
 
   const startEdit = (acc: any) => {
     setEditingId(acc.id);
-    setNewAcc({ pageId: acc.platformId, token: acc.accessToken, name: acc.accountName });
+    setNewAcc({ pageId: acc.platformId, token: acc.accessToken, name: acc.accountName, isUserToken: false });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -152,13 +166,35 @@ function SocialContent() {
             <p className="text-[11px] text-slate-400 font-medium mb-6 uppercase tracking-wider">Nếu không dùng Đăng nhập tự động</p>
             
             <form onSubmit={handleSave} className="space-y-5">
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black border border-transparent focus:border-blue-200" placeholder="Tên gợi nhớ" value={newAcc.name} onChange={(e) => setNewAcc({...newAcc, name: e.target.value})} required />
-              <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black border border-transparent focus:border-blue-200" placeholder="Fanpage ID" value={newAcc.pageId} onChange={(e) => setNewAcc({...newAcc, pageId: e.target.value})} required />
-              <textarea className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black text-[10px] border border-transparent focus:border-blue-200" rows={5} placeholder="Page Access Token..." value={newAcc.token} onChange={(e) => setNewAcc({...newAcc, token: e.target.value})} required />
+              
+              {/* 👉 SỬA GIAO DIỆN: THÊM 2 NÚT TAB CHUYỂN ĐỔI CHẾ ĐỘ QUÉT */}
+              {!editingId && (
+                <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
+                   <button type="button" onClick={() => setNewAcc({...newAcc, isUserToken: false, pageId: '', name: ''})} className={`flex-1 py-2 text-xs font-bold uppercase rounded-xl transition-all ${!newAcc.isUserToken ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-800'}`}>Từng Trang</button>
+                   <button type="button" onClick={() => setNewAcc({...newAcc, isUserToken: true, pageId: 'auto', name: 'Auto'})} className={`flex-1 py-2 text-xs font-bold uppercase rounded-xl transition-all ${newAcc.isUserToken ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-800'}`}>Quét Tất cả</button>
+                </div>
+              )}
+
+              {!newAcc.isUserToken && (
+                <>
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black border border-transparent focus:border-blue-200" placeholder="Tên gợi nhớ" value={newAcc.name} onChange={(e) => setNewAcc({...newAcc, name: e.target.value})} required />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black border border-transparent focus:border-blue-200" placeholder="Fanpage ID" value={newAcc.pageId} onChange={(e) => setNewAcc({...newAcc, pageId: e.target.value})} required />
+                </>
+              )}
+              
+              <textarea className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-black text-[10px] border border-transparent focus:border-blue-200" rows={newAcc.isUserToken ? 10 : 5} placeholder={newAcc.isUserToken ? "Dán User Access Token vào đây để quét tất cả Fanpage..." : "Dán Page Access Token vào đây..."} value={newAcc.token} onChange={(e) => setNewAcc({...newAcc, token: e.target.value})} required />
+              
+              {newAcc.isUserToken && (
+                <p className="text-[10px] text-blue-600 font-bold bg-blue-50 p-3 rounded-xl border border-blue-100">
+                  ⚠️ Lưu ý: Hệ thống sẽ tự động quét và kết nối tất cả các Fanpage mà Facebook này quản lý.
+                </p>
+              )}
+
               <button type="submit" disabled={loading} className={`w-full text-white font-black py-5 rounded-[24px] shadow-2xl transition-all ${editingId ? 'bg-orange-500' : 'bg-slate-900 hover:bg-black'}`}>
-                {loading ? <Loader2 className="animate-spin mx-auto" /> : "LƯU KẾT NỐI"}
+                {loading ? <Loader2 className="animate-spin mx-auto" /> : (newAcc.isUserToken ? "QUÉT VÀ KẾT NỐI TẤT CẢ" : "LƯU KẾT NỐI")}
               </button>
             </form>
+
           </div>
         </div>
 
@@ -287,42 +323,25 @@ function SocialContent() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:border-blue-200 transition">
                   <h3 className="font-black text-lg text-black mb-3 uppercase tracking-wide flex items-center gap-2">
                     <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center text-sm">5</span> 
-                    Lấy Token cho Fanpage (1-2 tiếng)
+                    Lấy Token Vĩnh Viễn
                   </h3>
                   <ul className="list-disc pl-10 space-y-2 text-slate-600">
-                    <li>Sau khi cấp quyền xong, nhìn lại cột bên phải, tại mục <strong>Mã truy cập (User/Page)</strong>, bấm vào mũi tên thả xuống và chọn Tên Fanpage của bạn.</li>
-                    <li>Nhìn lên thanh nhập liệu có chữ GET, gõ <code className="bg-slate-100 px-2 py-1 rounded-md border text-black font-bold">me?fields=id,name,access_token</code> và bấm <strong>Gửi (Submit)</strong>.</li>
-                    <li>Khung kết quả bên dưới sẽ hiện ra một đoạn mã, bạn copy chuỗi kí tự dài trong dấu ngoặc kép sau chữ <code className="bg-slate-100 px-2 py-1 rounded text-blue-600">"access_token":</code>. <br/><span className="text-red-500 text-sm mt-1 flex items-center gap-1 font-bold"><X size={14}/> Lưu ý: Token này chỉ sống được khoảng 1-2 tiếng.</span></li>
-                  </ul>
-                </div>
-
-                <div className="bg-orange-50 p-6 rounded-2xl shadow-sm border border-orange-200 hover:border-orange-400 transition">
-                  <h3 className="font-black text-lg text-orange-600 mb-3 uppercase tracking-wide flex items-center gap-2">
-                    <span className="bg-orange-200 text-orange-700 w-8 h-8 rounded-full flex items-center justify-center text-sm">6</span> 
-                    Lấy Token Vĩnh Viễn (Quan trọng nhất)
-                  </h3>
-                  <ul className="list-disc pl-10 space-y-2 text-slate-700">
-                    <li>Trở lại thanh Menu trên cùng, chọn <strong>Công cụ (Tools)</strong> &gt; <strong>Công cụ gỡ lỗi mã truy cập (Access Token Debugger)</strong>.</li>
-                    <li>Dán đoạn Token vừa copy ở Bước 5 vào ô trống và bấm <strong>Gỡ lỗi (Debug)</strong>.</li>
+                    <li>Sau khi tạo Token ở bước 4, nhìn xuống dưới cùng ở Menu, bấm vào biểu tượng "Chữ I" màu xanh.</li>
+                    <li>Bấm tiếp vào nút <strong>Mở trong công cụ gỡ lỗi</strong>.</li>
                     <li>Cuộn xuống dưới cùng, bấm nút <strong>Mở rộng mã truy cập (Extend Access Token)</strong>.</li>
-                    <li>Copy đoạn Token mới hiện ra (Đây là Token sống 60 ngày).</li>
-                    <li>Quay lại trang <strong>Graph API Explorer</strong> (như Bước 4), dán cái Token 60 ngày vào ô Mã truy cập ở cột bên phải.</li>
-                    <li>Trên thanh nhập liệu GET, tiếp tục gõ <code className="bg-white/60 px-2 py-1 rounded border border-orange-200 font-bold">me?fields=id,name,access_token</code> và bấm <strong>Gửi</strong>.</li>
-                    <li>Kết quả bên dưới sẽ hiện ra Token mới. <strong className="text-green-600 uppercase bg-green-100 px-2 py-0.5 rounded ml-1">ĐÂY CHÍNH LÀ TOKEN SỐNG VĨNH VIỄN!</strong></li>
-                    <li>Bạn copy đoạn <code className="bg-white/60 px-2 py-1 rounded text-blue-700 border border-orange-200 font-bold">"id"</code> (chính là Fanpage ID) và đoạn <code className="bg-white/60 px-2 py-1 rounded text-blue-700 border border-orange-200 font-bold">"access_token"</code> (chính là Token vĩnh viễn).</li>
+                    <li>Copy đoạn Token mới hiện ra (Đây là Token sống vĩnh viễn không bao giờ hết hạn).</li>
                   </ul>
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:border-blue-200 transition">
                   <h3 className="font-black text-lg text-black mb-3 uppercase tracking-wide flex items-center gap-2">
-                    <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center text-sm">7</span> 
+                    <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center text-sm">6</span> 
                     Kết nối vào phần mềm Kpost
                   </h3>
                   <ul className="list-disc pl-10 space-y-2 text-slate-600">
-                    <li>Đóng bảng hướng dẫn này lại bằng nút <X size={14} className="inline"/> ở góc phải trên.</li>
-                    <li>Nhập tên gợi nhớ (tùy ý).</li>
-                    <li>Dán Fanpage ID và Page Access Token (vừa lấy ở bước 6) vào 2 ô tương ứng ở bên trái màn hình.</li>
-                    <li>Bấm <strong className="bg-black text-white px-2 py-1 rounded text-xs uppercase tracking-wider mx-1">Lưu kết nối</strong>. Chúc mừng bạn đã hoàn thành!</li>
+                    <li>Quay lại phần mềm Kpost, ở góc trái bạn hãy chọn Tab <strong>Quét Tất cả</strong>.</li>
+                    <li>Dán đoạn Token vĩnh viễn (vừa copy ở Bước 5) vào ô trống.</li>
+                    <li>Bấm <strong className="bg-black text-white px-2 py-1 rounded text-xs uppercase tracking-wider mx-1">Quét và Kết nối</strong>. Chúc mừng bạn đã hoàn thành! Hệ thống sẽ tự hút toàn bộ Fanpage về cho bạn.</li>
                   </ul>
                 </div>
                 

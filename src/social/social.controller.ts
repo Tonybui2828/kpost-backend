@@ -141,6 +141,22 @@ export class SocialController {
 
   @Post('sync-inbox')
   async syncInbox(@Body() body: { workspaceId: string }) {
+    // 1. Tìm thông tin gói cước của Workspace
+    const workspace = await this.prisma.workspace.findUnique({
+       where: { id: body.workspaceId }
+    });
+
+    if (!workspace) {
+       throw new HttpException("Không tìm thấy tài khoản.", HttpStatus.NOT_FOUND);
+    }
+
+    // 2. Kiểm tra gói cước
+    const plan = workspace.plan?.toUpperCase();
+    if (!['PRO', 'GOLD', 'DIAMOND'].includes(plan)) {
+      throw new HttpException("Tính năng đồng bộ Hộp thư chỉ dành cho thành viên gói PRO, GOLD và DIAMOND. Vui lòng nâng cấp!", HttpStatus.FORBIDDEN);
+    }
+
+    // 3. Cho phép đồng bộ nếu hợp lệ
     return this.facebookService.syncAllMessages(body.workspaceId);
   }
 
@@ -568,61 +584,66 @@ export class SocialController {
   }
 
   @Post('webhook')
-  async handleWebhook(@Body() body: any) {
+  async handleWebhook(@Body() body: any, @Res() res: Response) {
+    // 1. BẮT BUỘC TRẢ VỀ 200 OK NGAY LẬP TỨC ĐỂ TRÁNH FACEBOOK TIMEOUT
+    res.status(HttpStatus.OK).send('EVENT_RECEIVED');
+
     try {
       const entry = body.entry?.[0];
-      if (!entry) return 'NO_ENTRY';
+      if (!entry) return;
 
       const pageId = entry.id; 
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
-      // Ưu tiên tìm bản ghi Fanpage nào đang BẬT AI Auto Reply
-      let account = await this.prisma.socialAccount.findFirst({
-        where: { platformId: pageId, isAiAutoReply: true },
+      // Tìm cấu hình Fanpage
+      const account = await this.prisma.socialAccount.findFirst({
+        where: { platformId: pageId },
       });
-      // Nếu không có cái nào bật AI, thì lấy mặc định
-      if (!account) {
-        account = await this.prisma.socialAccount.findFirst({
-          where: { platformId: pageId },
-        });
-      }
 
-      if (!account) return 'ACCOUNT_NOT_FOUND';
+      if (!account) return;
 
+      // ============================================
+      // A. XỬ LÝ TIN NHẮN (MESSENGER)
+      // ============================================
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
-        if (senderId === pageId) return 'EVENT_RECEIVED';
+        if (senderId === pageId || !text) return; // Bỏ qua nếu shop tự nhắn hoặc là ảnh/sticker
 
+        // Lưu tin nhắn vào DB
         const isDuplicate = await this.prisma.inboxMessage.findUnique({
           where: { platformId: messaging.message.mid }
         });
 
-        const savedMsg = await this.prisma.inboxMessage.upsert({
-          where: { platformId: messaging.message.mid },
-          update: { content: text },
-          create: { 
-            workspaceId: account.workspaceId, 
-            platform: 'facebook', 
-            type: 'inbox', 
-            senderName: "Khách từ Fanpage", 
-            senderId, 
-            content: text, 
-            platformId: messaging.message.mid,
-            pageName: account.accountName
+        if (!isDuplicate) {
+          const savedMsg = await this.prisma.inboxMessage.create({
+            data: { 
+              workspaceId: account.workspaceId, 
+              platform: 'facebook', 
+              type: 'inbox', 
+              senderName: "Khách hàng", 
+              senderId, 
+              content: text, 
+              platformId: messaging.message.mid,
+              pageName: account.accountName
+            }
+          });
+
+          this.chatGateway.sendMessageToUI(savedMsg);
+
+          // GỌI AI CHẠY NGẦM (Không dùng await để không block tiến trình)
+          if (account.isAiAutoReply) {
+            this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid)
+                .catch(err => console.error("Lỗi AI Inbox:", err.message));
           }
-        });
-
-        this.chatGateway.sendMessageToUI(savedMsg);
-
-        if (account.isAiAutoReply && !isDuplicate) {
-          this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid)
-              .catch(err => console.error("Lỗi AI chạy ngầm Inbox:", err.message));
         }
       }
 
+      // ============================================
+      // B. XỬ LÝ BÌNH LUẬN (COMMENT)
+      // ============================================
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
@@ -632,13 +653,13 @@ export class SocialController {
            where: { platformId: commentId }
         });
 
-        if (senderId !== pageId && !isDuplicateCmt) {
+        if (senderId !== pageId && !isDuplicateCmt && commentText) {
           await this.prisma.inboxMessage.create({
             data: {
               workspaceId: account.workspaceId,
               platform: 'facebook',
               type: 'comment',
-              senderName: changes.value.from.name || "Người dùng FB",
+              senderName: changes.value.from.name || "Khách hàng",
               senderId,
               content: commentText,
               platformId: commentId,
@@ -646,18 +667,16 @@ export class SocialController {
             }
           });
 
+          // GỌI AI CHẠY NGẦM
           if (account.isAiAutoReply) {
             this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId)
-                .catch(err => console.error("Lỗi AI chạy ngầm Comment:", err.message));
+                .catch(err => console.error("Lỗi AI Comment:", err.message));
           }
         }
       }
-
     } catch (e) { 
       console.log("⚠️ Webhook Error:", e.message); 
     }
-    
-    return 'EVENT_RECEIVED';
   }
 
   @Post('extract-info')

@@ -39,9 +39,11 @@ export class AutomatorService {
       if (!account || !account.isAiAutoReply) return; 
 
       const plan = account.workspace.plan?.toUpperCase();
-      if (plan !== 'GOLD' && plan !== 'DIAMOND') {
-        this.logger.warn(`⚠️ Shop [${account.workspace.name}] không có quyền dùng AI Autopilot.`);
-        return;
+      
+      // CHO PHÉP PRO, GOLD, DIAMOND ĐƯỢC DÙNG AI AUTOPILOT
+      if (!['PRO', 'GOLD', 'DIAMOND'].includes(plan)) {
+        this.logger.warn(`⚠️ Shop [${account.workspace.name}] đang ở gói ${plan}, không có quyền dùng AI Autopilot.`);
+        return; // Dừng lại, không gọi AI
       }
 
       // --- 1. LẤY LỊCH SỬ CHAT VÀ DỮ LIỆU KHO HÀNG ---
