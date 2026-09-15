@@ -14,7 +14,7 @@ export class AutomatorService {
   ) {}
 
   // ==========================================
-  // 1. AI AUTOPILOT - TRỢ LÝ THÔNG MINH (CÓ TRÍ NHỚ + CHỈ GỬI ẢNH 1 LẦN)
+  // 1. AI AUTOPILOT - TRỢ LÝ THÔNG MINH (CÓ TRÍ NHỚ + CHỈ GỬI MEDIA 1 LẦN)
   // ==========================================
   async processIncomingMessage(
     pageId: string, 
@@ -59,8 +59,12 @@ export class AutomatorService {
       });
       const productContext = rawProducts.map((p: any) => {
         const imageUrl = p.images || p.imageUrl || p.image || p.thumbnail || "";
-        const hasImage = imageUrl ? "CÓ SẴN ẢNH ĐỂ GỬI" : "CHƯA CÓ ẢNH";
-        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Trạng thái: ${hasImage}\n  Link ảnh hệ thống: ${imageUrl}`;
+        const isVideo = imageUrl.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null;
+        let mediaStatus = "CHƯA CÓ ẢNH/VIDEO";
+        if (imageUrl) {
+           mediaStatus = isVideo ? "CÓ SẴN VIDEO ĐỂ GỬI" : "CÓ SẴN ẢNH ĐỂ GỬI";
+        }
+        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Trạng thái: ${mediaStatus}\n  Link media hệ thống: ${imageUrl}`;
       }).join('\n\n');
 
       // --- 2. GỘP CHUNG VÀO 1 LẦN GỌI GPT DUY NHẤT ĐỂ HIỂU HOÀN TOÀN NGỮ CẢNH ---
@@ -75,10 +79,11 @@ ${historyText}
 (Dựa vào lịch sử trên để hiểu khách đang muốn gì. Nếu khách nói cụt lủn "lấy 1 cái", "bao nhiêu tiền", hãy tự suy luận sản phẩm từ lịch sử).
 
 🎯 NGUYÊN TẮC BÁN HÀNG VÀ CHỐT ĐƠN:
-1. GỬI ẢNH THÔNG MINH (QUAN TRỌNG NHẤT): 
-   - CHỈ ĐÍNH KÈM ẢNH khi tư vấn LẦN ĐẦU TIÊN về sản phẩm đó, HOẶC khi khách yêu cầu "cho xem ảnh", "có hình thật không".
-   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI ẢNH NỮA (trả về mảng ảnh rỗng).
-   - Nếu trả về ảnh, hãy nhặt "Link ảnh hệ thống" tương ứng.
+1. GỬI ẢNH / VIDEO THÔNG MINH (QUAN TRỌNG NHẤT): 
+   - CHỈ ĐÍNH KÈM MEDIA khi tư vấn LẦN ĐẦU TIÊN về sản phẩm đó, HOẶC khi khách yêu cầu "cho xem ảnh", "có hình không", "có video không", "cho xem video".
+   - NẾU khách bảo "cho xem video" -> Bắt buộc lấy "Link media hệ thống" nếu Trạng thái ghi là "CÓ SẴN VIDEO ĐỂ GỬI".
+   - NẾU khách bảo "cho xem ảnh" -> Ưu tiên lấy Link nếu Trạng thái ghi "CÓ SẴN ẢNH ĐỂ GỬI".
+   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh/video hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI NỮA (trả về mảng media rỗng).
 
 2. TƯ VẤN VÀ UPSALE:
    - Mua 1 cái ship 30.000đ. Mua 2 cái MIỄN PHÍ SHIP. Hãy lồng ghép up-sale.
@@ -92,7 +97,7 @@ ${historyText}
 TRẢ VỀ DUY NHẤT ĐỊNH DẠNG JSON SAU (KHÔNG DÙNG MARKDOWN):
 {
   "text": "Câu trả lời của bạn gửi cho khách (Text)",
-  "imageUrls": ["link_anh"] // Mảng chứa tối đa 4 link ảnh (hoặc mảng rỗng [] nếu không nên gửi ảnh).
+  "imageUrls": ["link_media"] // Mảng chứa tối đa 4 link ảnh/video (hoặc mảng rỗng [] nếu không nên gửi media).
 }
 `;
 
@@ -148,7 +153,7 @@ TRẢ VỀ DUY NHẤT ĐỊNH DẠNG JSON SAU (KHÔNG DÙNG MARKDOWN):
           await this.extractAndSaveOrder(account.workspaceId, aiReply);
       }
 
-      this.logger.log(`✅ AI xử lý xong. Khách: ${senderId} - Lấy ${productImages.length} ảnh.`);
+      this.logger.log(`✅ AI xử lý xong. Khách: ${senderId} - Lấy ${productImages.length} media.`);
 
     } catch (error) {
       this.logger.error("❌ Lỗi AI Autopilot:", error.message);

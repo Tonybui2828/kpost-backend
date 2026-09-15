@@ -205,7 +205,7 @@ export class FacebookService {
   }
 
   // ==========================================
-  // 3. CÁC HÀM PHỤ TRỢ
+  // 3. CÁC HÀM PHỤ TRỢ (ĐÃ UPDATE ĐỂ GỬI VIDEO CHO KHÁCH INBOX)
   // ==========================================
   async sendReply(pageId: string, accessToken: string, senderId: string, text: string, imageUrls?: string | string[]) {
     try {
@@ -225,24 +225,27 @@ export class FacebookService {
         );
       }
 
-      // 2. CHUẨN BỊ MẢNG ẢNH
-      let imagesToSend: string[] = [];
+      // 2. CHUẨN BỊ MẢNG MEDIA (Ảnh/Video)
+      let mediaToSend: string[] = [];
       if (typeof imageUrls === 'string' && imageUrls.trim() !== '') {
-         imagesToSend = [imageUrls]; // Nếu truyền 1 string cũ thì tự bọc thành mảng
+         mediaToSend = [imageUrls]; 
       } else if (Array.isArray(imageUrls)) {
-         imagesToSend = imageUrls; // Nếu đã là mảng thì nhận luôn
+         mediaToSend = imageUrls; 
       }
 
-      // 3. NHỊP 2: LẶP QUA MẢNG VÀ GỬI TỪNG ẢNH
-      for (const url of imagesToSend) {
+      // 3. NHỊP 2: LẶP QUA MẢNG VÀ GỬI TỪNG MEDIA
+      for (const url of mediaToSend) {
          if (url && typeof url === 'string' && url.trim() !== '') {
+            // Kiểm tra xem link này là video hay ảnh để báo cho Facebook
+            const mediaType = this.isVideo(url) ? "video" : "image";
+            
             response = await axios.post(
               fbApiUrl,
               {
                 recipient: { id: senderId },
                 message: {
                   attachment: {
-                    type: "image",
+                    type: mediaType, // Truyền chuẩn type để FB render đúng (Video Player hoặc Image)
                     payload: {
                       url: url,
                       is_reusable: true
@@ -254,7 +257,7 @@ export class FacebookService {
               { params: { access_token: accessToken } }
             );
             
-            // Dừng 500ms giữa mỗi ảnh để tránh bị Facebook đánh Spam (Rate Limit)
+            // Dừng 500ms giữa mỗi hình/video để tránh bị Facebook đánh Spam (Rate Limit)
             await new Promise(resolve => setTimeout(resolve, 500)); 
          }
       }
