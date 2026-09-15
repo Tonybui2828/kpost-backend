@@ -575,12 +575,27 @@ export class SocialController {
     }
   }
 
+  // --- HÀM NÀY DÙNG ĐỂ XÁC MINH VỚI FACEBOOK ---
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
-    if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === "saas_ai_token_123") {
-      return res.status(200).send(query['hub.challenge']); 
+    const mode = query['hub.mode'];
+    const token = query['hub.verify_token'];
+    const challenge = query['hub.challenge'];
+
+    // Lấy mã Token từ biến môi trường của Coolify
+    const verifyToken = process.env.FB_VERIFY_TOKEN || 'saas_ai_token_123';
+
+    if (mode && token) {
+      if (mode === 'subscribe' && token === verifyToken) {
+        console.log('✅ Xác minh Webhook Facebook thành công!');
+        // BẮT BUỘC: Phải trả về đúng cái challenge mà Facebook gửi tới
+        return res.status(200).send(challenge);
+      } else {
+        console.log('❌ Xác minh Webhook thất bại: Sai Token!');
+        return res.status(403).send('Forbidden');
+      }
     }
-    return res.status(403).send('Forbidden');
+    return res.status(400).send('Bad Request');
   }
 
   @Post('webhook')
