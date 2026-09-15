@@ -58,7 +58,10 @@ export class AutomatorService {
           where: { workspaceId: account.workspaceId }
       });
       const productContext = rawProducts.map((p: any) => {
-        const imageUrl = p.images || p.imageUrl || p.image || p.thumbnail || "";
+        // Fix lỗi: Chuyển dữ liệu ảnh về dạng chuỗi (nếu nó là mảng JSON)
+        let rawImage = p.images || p.imageUrl || p.image || p.thumbnail || "";
+        let imageUrl = typeof rawImage === 'string' ? rawImage : (Array.isArray(rawImage) && rawImage.length > 0 ? String(rawImage[0]) : "");
+        
         const isVideo = imageUrl.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null;
         let mediaStatus = "CHƯA CÓ ẢNH/VIDEO";
         if (imageUrl) {
