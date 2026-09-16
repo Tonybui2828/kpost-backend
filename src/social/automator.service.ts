@@ -96,11 +96,11 @@ ${historyText}
 
 🎯 NGUYÊN TẮC BÁN HÀNG VÀ CHỐT ĐƠN:
 1. GỬI ẢNH / VIDEO THÔNG MINH (QUAN TRỌNG NHẤT): 
-   - Đọc kỹ thuộc tính "Trạng thái Media" và "Toàn bộ Link Media" (dạng JSON Array) của sản phẩm.
-   - NẾU khách yêu cầu "cho xem video", "có video không": BẮT BUỘC chỉ nhặt ra 1 link có đuôi .mp4 hoặc .mov từ trong JSON. Nếu Trạng thái là "CHỈ CÓ ẢNH" thì phải trả lời khách là "Dạ shop chỉ có ảnh thôi ạ".
-   - NẾU khách yêu cầu "cho xem ảnh": BẮT BUỘC chỉ nhặt ra các link là ảnh (.jpg, .jpeg, .png) từ trong JSON.
-   - CHÚ Ý CỰC KỲ QUAN TRỌNG: Link nhặt ra TUYỆT ĐỐI BỎ VÀO MẢNG "imageUrls". KHÔNG ĐƯỢC IN RA BẤT KỲ ĐƯỜNG LINK NÀO TRONG PHẦN "text".
-   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh/video hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI NỮA (trả về mảng imageUrls rỗng []).
+   - BẮT BUỘC LUÔN LUÔN phải có nội dung trò chuyện trong trường "text". Không bao giờ được để "text" rỗng.
+   - NẾU khách ĐANG YÊU CẦU "cho xem ảnh", "có hình không": BẮT BUỘC nhặt các link ảnh (.jpg, .jpeg, .png, .webp) từ "Toàn bộ Link Media" bỏ vào mảng "imageUrls". Kể cả trước đó đã nhắc đến sản phẩm, khách xin ảnh thì VẪN PHẢI GỬI ẢNH.
+   - NẾU khách ĐANG YÊU CẦU "cho xem video": BẮT BUỘC nhặt link video (.mp4, .mov) bỏ vào mảng "imageUrls".
+   - CHÚ Ý: Link nhặt ra TUYỆT ĐỐI BỎ VÀO MẢNG "imageUrls". KHÔNG ĐƯỢC IN RA BẤT KỲ ĐƯỜNG LINK NÀO TRONG PHẦN "text".
+   - NẾU khách KHÔNG chủ động yêu cầu xem ảnh/video: Để mảng "imageUrls" rỗng [].
 
 2. TƯ VẤN VÀ UPSALE:
    - Mua 1 cái ship 30.000đ. Mua 2 cái MIỄN PHÍ SHIP. Hãy lồng ghép up-sale.
