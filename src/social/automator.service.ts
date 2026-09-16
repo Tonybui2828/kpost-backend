@@ -59,20 +59,28 @@ export class AutomatorService {
       });
       
       const productContext = rawProducts.map((p: any) => {
-        // Fix lỗi: Chuyển dữ liệu ảnh về dạng chuỗi (nếu nó là mảng JSON)
-        let rawImage = p.images || p.imageUrl || p.image || p.thumbnail || "";
-        let imageUrl = typeof rawImage === 'string' ? rawImage : (Array.isArray(rawImage) && rawImage.length > 0 ? String(rawImage[0]) : "");
+        // Fix hỗ trợ Mảng chứa cả Ảnh và Video
+        let rawImage = p.images || p.imageUrl || p.image || p.thumbnail || [];
         
-        let mediaStatus = "CHƯA CÓ DỮ LIỆU";
-        if (imageUrl) {
-           const isVideoUrl = imageUrl.toLowerCase().includes('.mp4') || 
-                              imageUrl.toLowerCase().includes('.mov') || 
-                              (imageUrl.toLowerCase().includes('firebasestorage.googleapis.com') && imageUrl.toLowerCase().includes('video'));
-           
-           mediaStatus = isVideoUrl ? "ĐÂY LÀ VIDEO (GỬI VIDEO NẾU KHÁCH XIN)" : "ĐÂY LÀ ẢNH (GỬI ẢNH NẾU KHÁCH XIN)";
+        // Tạo biến chứa toàn bộ chuỗi URL (Nếu là mảng thì gom lại)
+        let allUrlsStr = "";
+        if (typeof rawImage === 'string') {
+            allUrlsStr = rawImage;
+        } else if (Array.isArray(rawImage)) {
+            allUrlsStr = JSON.stringify(rawImage);
         }
         
-        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Loại Media: ${mediaStatus}\n  Link chứa Video/Ảnh: ${imageUrl}`;
+        // Tìm xem trong mảng đó có link nào là Video không
+        const hasVideo = allUrlsStr.toLowerCase().includes('.mp4') || 
+                         allUrlsStr.toLowerCase().includes('.mov') || 
+                         (allUrlsStr.toLowerCase().includes('supabase.co/storage') && allUrlsStr.toLowerCase().includes('.mp4'));
+                         
+        let mediaStatus = "CHƯA CÓ DỮ LIỆU";
+        if (allUrlsStr && allUrlsStr.length > 5) {
+           mediaStatus = hasVideo ? "CÓ CẢ ẢNH VÀ VIDEO" : "CHỈ CÓ ẢNH (KHÔNG CÓ VIDEO)";
+        }
+        
+        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Trạng thái Media: ${mediaStatus}\n  Toàn bộ Link Media (JSON): ${allUrlsStr}`;
       }).join('\n\n');
 
       // --- 2. GỘP CHUNG VÀO 1 LẦN GỌI GPT DUY NHẤT ĐỂ HIỂU HOÀN TOÀN NGỮ CẢNH ---
@@ -88,15 +96,15 @@ ${historyText}
 
 🎯 NGUYÊN TẮC BÁN HÀNG VÀ CHỐT ĐƠN:
 1. GỬI ẢNH / VIDEO THÔNG MINH (QUAN TRỌNG NHẤT): 
-   - Đọc kỹ thuộc tính "Loại Media" của sản phẩm trong kho hàng.
-   - NẾU khách yêu cầu "cho xem video", "có video không": BẮT BUỘC lấy "Link chứa Video/Ảnh" NẾU nó ghi là "ĐÂY LÀ VIDEO...". Nếu nó ghi là ẢNH thì phải trả lời khách là shop chỉ có ảnh.
-   - NẾU khách yêu cầu "cho xem ảnh": BẮT BUỘC lấy Link nếu nó ghi là "ĐÂY LÀ ẢNH...".
+   - Đọc kỹ thuộc tính "Trạng thái Media" và "Toàn bộ Link Media" (dạng JSON Array) của sản phẩm.
+   - NẾU khách yêu cầu "cho xem video", "có video không": BẮT BUỘC chỉ nhặt ra 1 link có đuôi .mp4 hoặc .mov từ trong JSON. Nếu Trạng thái là "CHỈ CÓ ẢNH" thì phải trả lời khách là "Dạ shop chỉ có ảnh thôi ạ".
+   - NẾU khách yêu cầu "cho xem ảnh": BẮT BUỘC chỉ nhặt ra các link là ảnh (.jpg, .jpeg, .png) từ trong JSON.
+   - CHÚ Ý CỰC KỲ QUAN TRỌNG: Link nhặt ra TUYỆT ĐỐI BỎ VÀO MẢNG "imageUrls". KHÔNG ĐƯỢC IN RA BẤT KỲ ĐƯỜNG LINK NÀO TRONG PHẦN "text".
    - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh/video hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI NỮA (trả về mảng imageUrls rỗng []).
 
 2. TƯ VẤN VÀ UPSALE:
    - Mua 1 cái ship 30.000đ. Mua 2 cái MIỄN PHÍ SHIP. Hãy lồng ghép up-sale.
    - Không lan man. Đọc kỹ mô tả sản phẩm để trả lời đúng trọng tâm.
-   - TUYỆT ĐỐI KHÔNG BAO GIỜ được chèn trực tiếp đường link ảnh/video (http...) vào trong nội dung câu trả lời (phần "text"). Link media chỉ được phép đặt vào trong mảng "imageUrls".
 
 3. XỬ LÝ CHỐT ĐƠN:
    - Không hỏi lại thông tin khách đã cho.
