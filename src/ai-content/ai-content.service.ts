@@ -142,9 +142,39 @@ Hàng sẽ được gửi đi sớm nhất, anh/chị để ý điện thoại g
     } catch (error) { return { url: `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` }; }
   }
 
+  // 🚀 ĐÃ SỬA: Cập nhật hàm generatePost để viết bài marketing chuẩn form và bắt lỗi tốt hơn
   async generatePost(topic: string, userId: string, workspaceId: string) {
-    const res = await this.openai.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "user", content: topic }] });
-    return this.prisma.post.create({ data: { content: res.choices[0].message.content || '', workspaceId, status: 'draft', userId: userId || null } });
+    try {
+      const prompt = `Viết một bài đăng bán hàng hoặc marketing thật hấp dẫn cho mạng xã hội (Facebook, Zalo) dựa trên chủ đề/thông tin sản phẩm sau. Bài viết cần có:
+1. Tiêu đề thu hút (viết hoa, có icon).
+2. Nêu bật nỗi đau/nhu cầu của khách hàng.
+3. Các ưu điểm/tính năng nổi bật (dùng bullet points hoặc icon).
+4. Lời kêu gọi hành động (Call to Action - chốt sale, gọi hotline, inbox) rõ ràng ở cuối.
+
+Chủ đề/Sản phẩm: ${topic}`;
+
+      const res = await this.openai.chat.completions.create({ 
+        model: "gpt-4o-mini", 
+        messages: [{ role: "user", content: prompt }] 
+      });
+      
+      const generatedContent = res.choices[0].message.content || '';
+
+      // Tùy thuộc vào việc frontend của bạn mong đợi trả về toàn bộ Object Post hay chỉ chuỗi text.
+      // Nếu frontend dùng Prisma để lưu và hiển thị lại, ta lưu xuống DB:
+      return this.prisma.post.create({ 
+        data: { 
+          content: generatedContent, 
+          workspaceId, 
+          status: 'draft', 
+          userId: userId || null 
+        } 
+      });
+    } catch (error) {
+      console.error("Lỗi AI generatePost:", error);
+      // Quăng lỗi ra để Frontend nhận được và không bị treo/báo lỗi chung chung
+      throw new Error("AI đang bận hoặc OpenAI API key của bạn bị lỗi/hết hạn. Vui lòng thử lại sau.");
+    }
   }
 
   private async saveToSupabase(rawData: string) {

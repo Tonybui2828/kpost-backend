@@ -122,9 +122,11 @@ export default function ProductsPage() {
     localStorage.setItem('pendingAIPost_topic', topic);
     if (imagesStr) localStorage.setItem('pendingAIPost_imgs', imagesStr);
     
+    // THÊM DÒNG NÀY: Lưu link sản phẩm lại để chuyển sang trang AI
+    if (p.productUrl) localStorage.setItem('pendingAIPost_link', p.productUrl);
+    
     window.location.href = `/`;
   };
-
   return (
     <div className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-800 font-sans">
       
