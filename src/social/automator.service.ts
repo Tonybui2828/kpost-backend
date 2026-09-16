@@ -57,17 +57,22 @@ export class AutomatorService {
       const rawProducts = await this.prisma.product.findMany({ 
           where: { workspaceId: account.workspaceId }
       });
+      
       const productContext = rawProducts.map((p: any) => {
         // Fix lỗi: Chuyển dữ liệu ảnh về dạng chuỗi (nếu nó là mảng JSON)
         let rawImage = p.images || p.imageUrl || p.image || p.thumbnail || "";
         let imageUrl = typeof rawImage === 'string' ? rawImage : (Array.isArray(rawImage) && rawImage.length > 0 ? String(rawImage[0]) : "");
         
-        const isVideo = imageUrl.match(/\.(mp4|mov|webm|mkv)(\?.*)?$/i) !== null;
-        let mediaStatus = "CHƯA CÓ ẢNH/VIDEO";
+        let mediaStatus = "CHƯA CÓ DỮ LIỆU";
         if (imageUrl) {
-           mediaStatus = isVideo ? "CÓ SẴN VIDEO ĐỂ GỬI" : "CÓ SẴN ẢNH ĐỂ GỬI";
+           const isVideoUrl = imageUrl.toLowerCase().includes('.mp4') || 
+                              imageUrl.toLowerCase().includes('.mov') || 
+                              (imageUrl.toLowerCase().includes('firebasestorage.googleapis.com') && imageUrl.toLowerCase().includes('video'));
+           
+           mediaStatus = isVideoUrl ? "ĐÂY LÀ VIDEO (GỬI VIDEO NẾU KHÁCH XIN)" : "ĐÂY LÀ ẢNH (GỬI ẢNH NẾU KHÁCH XIN)";
         }
-        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Trạng thái: ${mediaStatus}\n  Link media hệ thống: ${imageUrl}`;
+        
+        return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả: ${p.description || 'Chưa cập nhật'}\n  Loại Media: ${mediaStatus}\n  Link chứa Video/Ảnh: ${imageUrl}`;
       }).join('\n\n');
 
       // --- 2. GỘP CHUNG VÀO 1 LẦN GỌI GPT DUY NHẤT ĐỂ HIỂU HOÀN TOÀN NGỮ CẢNH ---
@@ -83,10 +88,10 @@ ${historyText}
 
 🎯 NGUYÊN TẮC BÁN HÀNG VÀ CHỐT ĐƠN:
 1. GỬI ẢNH / VIDEO THÔNG MINH (QUAN TRỌNG NHẤT): 
-   - CHỈ ĐÍNH KÈM MEDIA khi tư vấn LẦN ĐẦU TIÊN về sản phẩm đó, HOẶC khi khách yêu cầu "cho xem ảnh", "có hình không", "có video không", "cho xem video".
-   - NẾU khách bảo "cho xem video" -> Bắt buộc lấy "Link media hệ thống" nếu Trạng thái ghi là "CÓ SẴN VIDEO ĐỂ GỬI".
-   - NẾU khách bảo "cho xem ảnh" -> Ưu tiên lấy Link nếu Trạng thái ghi "CÓ SẴN ẢNH ĐỂ GỬI".
-   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh/video hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI NỮA (trả về mảng media rỗng).
+   - Đọc kỹ thuộc tính "Loại Media" của sản phẩm trong kho hàng.
+   - NẾU khách yêu cầu "cho xem video", "có video không": BẮT BUỘC lấy "Link chứa Video/Ảnh" NẾU nó ghi là "ĐÂY LÀ VIDEO...". Nếu nó ghi là ẢNH thì phải trả lời khách là shop chỉ có ảnh.
+   - NẾU khách yêu cầu "cho xem ảnh": BẮT BUỘC lấy Link nếu nó ghi là "ĐÂY LÀ ẢNH...".
+   - NẾU trong Lịch sử trò chuyện đã từng gửi ảnh/video hoặc đã nhắc tới sản phẩm này rồi, TUYỆT ĐỐI KHÔNG GỬI LẠI NỮA (trả về mảng imageUrls rỗng []).
 
 2. TƯ VẤN VÀ UPSALE:
    - Mua 1 cái ship 30.000đ. Mua 2 cái MIỄN PHÍ SHIP. Hãy lồng ghép up-sale.
@@ -100,7 +105,7 @@ ${historyText}
 TRẢ VỀ DUY NHẤT ĐỊNH DẠNG JSON SAU (KHÔNG DÙNG MARKDOWN):
 {
   "text": "Câu trả lời của bạn gửi cho khách (Text)",
-  "imageUrls": ["link_media"] // Mảng chứa tối đa 4 link ảnh/video (hoặc mảng rỗng [] nếu không nên gửi media).
+  "imageUrls": ["link_media"] // Mảng chứa tối đa 4 link (hoặc mảng rỗng [] nếu không nên gửi).
 }
 `;
 
