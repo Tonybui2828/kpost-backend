@@ -149,18 +149,22 @@ model Post {
 
 // 8. Bảng Sản phẩm
 model Product {
-  id           String    @id @default(uuid())
-  workspaceId  String
-  name         String
-  description  String?   @db.Text 
-  price        Float?
-  imageUrl     String?   
-  images       String[]  @default([]) 
-  productUrl   String?   
-  skuInternal  String    @unique
-  totalStock   Int       @default(0)
-  workspace    Workspace @relation(fields: [workspaceId], references: [id])
-  orderItems   OrderItem[] 
+  id             String    @id @default(uuid())
+  workspaceId    String
+  name           String
+  description    String?   @db.Text 
+  price          Float?
+  imageUrl       String?   
+  images         String[]  @default([]) 
+  
+  // --- ĐÃ THÊM 2 TRƯỜNG NÀY VÀO BẢNG SẢN PHẨM ---
+  productUrl     String?   
+  warrantyPeriod String?   
+
+  skuInternal    String    @unique
+  totalStock     Int       @default(0)
+  workspace      Workspace @relation(fields: [workspaceId], references: [id])
+  orderItems     OrderItem[] 
 }
 
 // 9. Bảng Hộp thư

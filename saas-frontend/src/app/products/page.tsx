@@ -20,9 +20,10 @@ export default function ProductsPage() {
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
+  // Đã thêm `warrantyPeriod` vào state để lưu trữ
   const [newProduct, setNewProduct] = useState({
     name: "", description: "", price: "", skuInternal: "", 
-    totalStock: "", images: [] as string[], productUrl: ""
+    totalStock: "", images: [] as string[], productUrl: "", warrantyPeriod: ""
   });
 
   // 1. SỬA LỖI HIỂN THỊ DỮ LIỆU KHI CHƯA ĐĂNG NHẬP
@@ -89,7 +90,7 @@ export default function ProductsPage() {
         await axios.post(`${API_URL}/products`, payload);
         alert("Đã thêm sản phẩm!");
       }
-      setNewProduct({ name: "", description: "", price: "", skuInternal: "", totalStock: "", images: [], productUrl: "" });
+      setNewProduct({ name: "", description: "", price: "", skuInternal: "", totalStock: "", images: [], productUrl: "", warrantyPeriod: "" });
       setEditingId(null);
       setShowForm(false);
       fetchProducts();
@@ -107,7 +108,8 @@ export default function ProductsPage() {
     setEditingId(p.id);
     setNewProduct({
       name: p.name, description: p.description || "", price: p.price, skuInternal: p.skuInternal, 
-      totalStock: p.totalStock, images: p.images || (p.imageUrl ? [p.imageUrl] : []), productUrl: p.productUrl || ""
+      totalStock: p.totalStock, images: p.images || (p.imageUrl ? [p.imageUrl] : []), 
+      productUrl: p.productUrl || "", warrantyPeriod: p.warrantyPeriod || ""
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -148,6 +150,8 @@ export default function ProductsPage() {
         <div className="mb-8 md:mb-10 bg-white p-5 md:p-8 rounded-[24px] md:rounded-[40px] shadow-2xl border border-blue-500/30">
           <form onSubmit={handleSaveProduct} className="space-y-6 md:space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10">
+              
+              {/* CỘT TRÁI - MEDIA VÀ LINK */}
               <div className="space-y-4">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex justify-between">
                    <span>Media (Ảnh/Video) ({newProduct.images.length}/10)</span>
@@ -169,7 +173,27 @@ export default function ProductsPage() {
                         </label>
                     )}
                 </div>
+
+                {/* THÊM MỚI 1: LƯU Ý MEDIA */}
+                <div className="mt-4 p-3 bg-slate-50 border border-slate-200 border-dashed rounded-xl">
+                  <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                    <strong className="text-blue-600">Lưu ý khi tải ảnh và video:</strong> Tối đa 10 ảnh dung lượng dưới 5MB/ảnh, video up định dạng mov hoặc mp4 dung lượng tối đa 25MB, nên tải video dọc, định dạng mp4 load nhanh hơn.
+                  </p>
+                </div>
+
+                {/* THÊM MỚI 2: NHẬP LINK SẢN PHẨM */}
+                <div className="mt-4 space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 block">Nhập link sản phẩm :</label>
+                  <input 
+                    placeholder="https://..." 
+                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                    value={newProduct.productUrl} 
+                    onChange={e => setNewProduct({...newProduct, productUrl: e.target.value})}
+                  />
+                </div>
               </div>
+              
+              {/* CỘT PHẢI - THÔNG TIN SẢN PHẨM */}
               <div className="space-y-4 text-black">
                 <div className="space-y-1">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Tên sản phẩm</label>
@@ -178,6 +202,17 @@ export default function ProductsPage() {
                 <div className="space-y-1">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Mô tả chi tiết</label>
                    <textarea placeholder="Chất liệu, tính năng..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 h-28 md:h-32 resize-none font-medium" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} />
+                </div>
+                
+                {/* THÊM MỚI 3: THỜI HẠN BẢO HÀNH */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 block">Thời hạn bảo hành :</label>
+                  <input 
+                    placeholder="VD: 12 tháng, 2 năm..." 
+                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                    value={newProduct.warrantyPeriod} 
+                    onChange={e => setNewProduct({...newProduct, warrantyPeriod: e.target.value})}
+                  />
                 </div>
               </div>
             </div>
@@ -216,6 +251,12 @@ export default function ProductsPage() {
                 <div className="mt-3 md:mt-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 min-h-[60px]">
                    <p className="text-[11px] text-slate-500 font-medium line-clamp-2 italic">"{p.description || 'Chưa có mô tả chi tiết...'}"</p>
                 </div>
+                {p.warrantyPeriod && (
+                  <p className="mt-2 text-xs text-orange-600 font-medium">Bảo hành: {p.warrantyPeriod}</p>
+                )}
+                {p.productUrl && (
+                  <p className="mt-1 text-[10px] text-blue-500 font-medium truncate">Link: {p.productUrl}</p>
+                )}
                 <button onClick={() => handleGoToAI(p)} className="w-full mt-4 md:mt-6 bg-slate-900 text-white font-black py-3 md:py-4 rounded-[16px] md:rounded-[20px] flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-lg">
                   <PenTool size={18} /> ĐĂNG BÀI VỚI AI 🚀
                 </button>
