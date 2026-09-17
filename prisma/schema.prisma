@@ -251,3 +251,37 @@ model SystemNotification {
   isRead      Boolean  @default(false)
   createdAt   DateTime @default(now())
 }
+// =======================================
+// BẢNG QUẢN LÝ KHÁCH HÀNG (Lấy từ Inbox Fanpage)
+// =======================================
+model Customer {
+  id               String   @id @default(uuid())
+  name             String   // Tên Facebook của khách
+  psid             String   // Page-Scoped ID (ID nhắn tin của khách với Page)
+  platformId       String   // ID của Fanpage (Để biết khách nhắn cho page nào)
+  workspaceId      String   // ID của Workspace
+  status           String   @default("chua_mua") // "chua_mua" hoặc "da_mua"
+  lastInteractedAt DateTime @default(now()) // Thời gian khách chat lần cuối (Quan trọng để tính luật 24h)
+  
+  remarketingTasks RemarketingTask[] // Liên kết 1-nhiều với bảng Lịch gửi
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// =======================================
+// BẢNG HÀNG ĐỢI REMARKETING (Cronjob sẽ đọc bảng này để gửi)
+// =======================================
+model RemarketingTask {
+  id          String   @id @default(uuid())
+  customerId  String
+  workspaceId String
+  prompt      String   // Kịch bản AI bạn nhập ở Frontend
+  status      String   @default("pending") // pending | processing | completed | failed
+  scheduledAt DateTime // Giờ bắt đầu gửi
+  
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

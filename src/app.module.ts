@@ -7,6 +7,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AiContentModule } from './ai-content/ai-content.module';
 import { AdminModule } from './admin/admin.module';
 import { EmailModule } from './email/email.module'; // 🚀 Thêm EmailModule vào đây
+import { RemarketingModule } from './remarketing/remarketing.module'; // 🚀 1. THÊM IMPORT NÀY
 
 // Controllers
 import { ProductsController } from './products/products.controller';
@@ -29,7 +30,7 @@ import { ShippingService } from './products/shipping.service';
 import { PaymentService } from './products/payment.service';
 import { GoogleStrategy } from './auth/google.strategy';
 import { GroupBotService } from './social/group-bot.service';
-import { InboxService } from './inbox/inbox.service'; // 🚀 1. THÊM IMPORT NÀY
+import { InboxService } from './inbox/inbox.service';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { InboxService } from './inbox/inbox.service'; // 🚀 1. THÊM IMPORT N�
     AiContentModule,
     AdminModule,
     EmailModule, // 🚀 Khai báo EmailModule để sử dụng toàn hệ thống
+    RemarketingModule, // 🚀 2. KHAI BÁO REMARKETING MODULE VÀO ĐÂY
   ],
   controllers: [
     ProductsController,
@@ -66,7 +68,7 @@ import { InboxService } from './inbox/inbox.service'; // 🚀 1. THÊM IMPORT N�
     PaymentService,
     GoogleStrategy,
     GroupBotService,
-    InboxService // 🚀 2. KHAI BÁO SERVICE NÀY VÀO ĐÂY ĐỂ SERVER KHÔNG BỊ SẬP
+    InboxService 
   ],
 })
 export class AppModule {}

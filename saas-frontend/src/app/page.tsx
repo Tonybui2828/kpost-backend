@@ -76,15 +76,22 @@ function AiMarketingContent() {
     }
   }, []);
 
-  // Lấy dữ liệu Fanpage & Fallback lấy params cũ từ URL
+  // 🚀 ĐÃ SỬA: Lấy dữ liệu Fanpage & Fallback lấy params cũ từ URL
   useEffect(() => {
     const fetchAccounts = async () => {
-      if (!workspaceId) return;
+      // Đã gỡ bỏ lệnh chặn if (!workspaceId) return; ở đây để danh sách load được ra
       try {
-        const res = await axios.get(`${API_URL}/social/accounts?workspaceId=${workspaceId}`);
+        const url = workspaceId 
+          ? `${API_URL}/social/accounts?workspaceId=${workspaceId}` 
+          : `${API_URL}/social/accounts`;
+          
+        const res = await axios.get(url);
         setAccounts(res.data || []);
-      } catch (e) { console.error("Lỗi lấy danh sách Page"); }
+      } catch (e) { 
+        console.error("Lỗi lấy danh sách Page"); 
+      }
     };
+    
     fetchAccounts();
 
     const t = searchParams.get("topic");
@@ -104,14 +111,12 @@ function AiMarketingContent() {
     setAvailableImages(prev => [...prev, ...newUrls]);
   };
 
-  // 🚀 ĐÃ SỬA: Hàm handleGenerateContent bắt lỗi chi tiết từ Server
   const handleGenerateContent = async () => {
     if (!topic) return alert("Nhập chủ đề!");
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/ai-content/generate`, { topic, userId: "admin-01", workspaceId });
       
-      // Đảm bảo lấy đúng nội dung từ server trả về
       const generated = res.data.content || res.data;
       
       setResult({ content: generated });
