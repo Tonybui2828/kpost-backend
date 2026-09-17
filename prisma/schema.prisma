@@ -30,8 +30,28 @@ model User {
   hasAcceptedTerms Boolean      @default(false) 
   role          String          @default("user") // "user" hoặc "super_admin"
 
+  // --- 🚀 BẢO MẬT 2FA VÀ THIẾT BỊ TIN CẬY ---
+  is2FAEnabled  Boolean         @default(false)
+  otpSecret     String?         // Lưu mã OTP tạm thời (đã mã hóa)
+  otpExpiresAt  DateTime?       // Hạn sử dụng của mã OTP
+  trustedDevices TrustedDevice[]
+
   workspaces    WorkspaceMember[] 
   createdAt     DateTime        @default(now())
+  // Sửa lỗi: Thêm @default(now()) để Prisma không bắt reset database
+  updatedAt     DateTime        @default(now()) @updatedAt 
+}
+
+// --- 🚀 BẢNG MỚI: QUẢN LÝ THIẾT BỊ TIN CẬY ---
+model TrustedDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  deviceName  String
+  ipAddress   String
+  lastActive  DateTime @default(now())
+  isTrusted   Boolean  @default(true) // Nếu false nghĩa là đã bị đăng xuất/chặn
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // 2. Bảng Không gian làm việc
@@ -41,8 +61,8 @@ model Workspace {
   ownerId        String
   phoneNumber    String?           
   
-  plan           String            @default("FREE") // Đổi sang chữ in hoa (FREE, PRO, GOLD, DIAMOND) cho đồng bộ
-  planExpiry      DateTime?         // Đổi tên thành planExpire cho đúng file AdminController
+  plan           String            @default("FREE") 
+  planExpiry     DateTime?         
   isAutoPay      Boolean           @default(false)  
   balance        Float             @default(0)      
   
@@ -54,11 +74,11 @@ model Workspace {
   senderProvince String?           
   senderDistrict String?           
 
-  // --- THÊM CÁC CỘT AFFILIATE TẠI ĐÂY ---
-  referredBy     String?           // Lưu mã người giới thiệu (ví dụ KPOST_123)
-  commission     Float             @default(0) // Số dư hoa hồng Affiliate
-  totalSignups   Int               @default(0) // Tổng số người đăng ký qua link
-  totalOrders    Int               @default(0) // Tổng số đơn hàng mua qua link
+  // --- CÁC CỘT AFFILIATE ---
+  referredBy     String?           
+  commission     Float             @default(0) 
+  totalSignups   Int               @default(0) 
+  totalOrders    Int               @default(0) 
   
   members        WorkspaceMember[] 
   socialAccounts SocialAccount[] 
@@ -68,16 +88,16 @@ model Workspace {
   socialGroups   SocialGroup[]     
   orders         Order[]           
   transactions   Transaction[]     
-  affiliateHistories AffiliateHistory[] // Lịch sử nhận hoa hồng
+  affiliateHistories AffiliateHistory[] 
   createdAt      DateTime          @default(now())
 }
 
 // BẢNG MỚI: Lịch sử hoa hồng Affiliate
 model AffiliateHistory {
   id            String    @id @default(uuid())
-  workspaceId   String    // Người nhận hoa hồng
-  sourceId      String    // Giao dịch phát sinh hoa hồng
-  amount        Float     // Tiền nhận được
+  workspaceId   String    
+  sourceId      String    
+  amount        Float     
   note          String    
   createdAt     DateTime  @default(now())
   workspace     Workspace @relation(fields: [workspaceId], references: [id])
@@ -102,7 +122,7 @@ model Voucher {
   discount    Float     
   type        String    @default("fixed") 
   minOrder    Float     @default(0)       
-  validUntil  DateTime? // Đã gộp thành 1 trường Hạn sử dụng chuẩn
+  validUntil  DateTime? 
   usageLimit  Int       @default(100)     
   usedCount   Int       @default(0)       
   isActive    Boolean   @default(true)
@@ -157,7 +177,6 @@ model Product {
   imageUrl       String?   
   images         String[]  @default([]) 
   
-  // --- ĐÃ THÊM 2 TRƯỜNG NÀY VÀO BẢNG SẢN PHẨM ---
   productUrl     String?   
   warrantyPeriod String?   
 
@@ -251,6 +270,7 @@ model SystemNotification {
   isRead      Boolean  @default(false)
   createdAt   DateTime @default(now())
 }
+
 // =======================================
 // BẢNG QUẢN LÝ KHÁCH HÀNG (Lấy từ Inbox Fanpage)
 // =======================================
@@ -261,9 +281,9 @@ model Customer {
   platformId       String   // ID của Fanpage (Để biết khách nhắn cho page nào)
   workspaceId      String   // ID của Workspace
   status           String   @default("chua_mua") // "chua_mua" hoặc "da_mua"
-  lastInteractedAt DateTime @default(now()) // Thời gian khách chat lần cuối (Quan trọng để tính luật 24h)
+  lastInteractedAt DateTime @default(now()) 
   
-  remarketingTasks RemarketingTask[] // Liên kết 1-nhiều với bảng Lịch gửi
+  remarketingTasks RemarketingTask[] 
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -276,7 +296,7 @@ model RemarketingTask {
   id          String   @id @default(uuid())
   customerId  String
   workspaceId String
-  prompt      String   // Kịch bản AI bạn nhập ở Frontend
+  prompt      String   
   status      String   @default("pending") // pending | processing | completed | failed
   scheduledAt DateTime // Giờ bắt đầu gửi
   

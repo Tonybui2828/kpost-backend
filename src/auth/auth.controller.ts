@@ -13,6 +13,14 @@ export class AuthController {
     private emailService: EmailService, 
   ) {}
 
+  // Hàm xác thực token nội bộ dùng chung cho các Request lấy Token từ Header
+  private verifyTokenFromHeader(req: any) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) throw new HttpException('Chưa đăng nhập', HttpStatus.UNAUTHORIZED);
+    const token = authHeader.split(' ')[1];
+    return this.jwtService.verify(token);
+  }
+
   // ==========================================
   // 1. ĐĂNG KÝ THỦ CÔNG
   // ==========================================
@@ -60,11 +68,10 @@ export class AuthController {
 
     // --- [MỚI] KIỂM TRA TÀI KHOẢN ADMIN ĐẶC BIỆT (KHÔNG CẦN CÓ TRONG DB) ---
     if (email === 'tech28.vn@gmail.com' && password === '123Iloveyou$$$') {
-      // Cấp luôn quyền admin bằng cách ký JWT đặc biệt
       const payload = { 
         email: email, 
         sub: 'super-admin-id', 
-        role: 'admin', // Vai trò Admin
+        role: 'admin', 
         wid: 'admin-workspace-01' 
       };
       const token = this.jwtService.sign(payload);
@@ -110,18 +117,13 @@ export class AuthController {
   }
 
   // ==========================================
-  // 3. ĐỔI MẬT KHẨU (KHI ĐÃ ĐĂNG NHẬP)
+  // 3. ĐỔI MẬT KHẨU (KHI ĐĐ ĐĂNG NHẬP)
   // ==========================================
   @Post('change-password')
   async changePassword(@Req() req, @Body() body: any) {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new HttpException('Chưa đăng nhập', HttpStatus.UNAUTHORIZED);
+      const decoded = this.verifyTokenFromHeader(req);
 
-      const token = authHeader.split(' ')[1];
-      const decoded = this.jwtService.verify(token);
-
-      // KHÔNG CHO PHÉP ĐỔI MẬT KHẨU CỦA ADMIN ẢO
       if (decoded.email === 'tech28.vn@gmail.com') {
          throw new HttpException('Tài khoản Quản trị không cho phép đổi mật khẩu từ giao diện này!', HttpStatus.BAD_REQUEST);
       }
@@ -267,24 +269,18 @@ export class AuthController {
   @Get('profile')
   async getProfile(@Req() req) {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) throw new Error();
+      const decoded = this.verifyTokenFromHeader(req);
 
-      const token = authHeader.split(' ')[1];
-      const decoded = this.jwtService.verify(token);
-
-      // --- TRẢ VỀ INFO CHO TÀI KHOẢN ADMIN ẢO ---
       if (decoded.email === 'tech28.vn@gmail.com') {
          return {
             id: 'super-admin-id',
             email: decoded.email,
             name: 'Quản Trị Viên',
             role: 'admin',
-            plan: 'DIAMOND', // Admin có gói cao nhất
+            plan: 'DIAMOND', 
             currentWorkspaceId: 'admin-workspace-01'
          };
       }
-      // -------------------------------------------
 
       const user = await this.prisma.user.findUnique({
         where: { id: decoded.sub },
@@ -305,6 +301,96 @@ export class AuthController {
       };
     } catch (e) {
       throw new HttpException('Mời bạn đăng nhập lại', HttpStatus.UNAUTHORIZED);
+    }
+  }
+
+  // ============================================
+  // 🚀 8. BẢO MẬT 2FA (OTP)
+  // ============================================
+
+  @Get('security-status')
+  async getSecurityStatus(@Req() req) {
+    try {
+      const decoded = this.verifyTokenFromHeader(req);
+      if (decoded.email === 'tech28.vn@gmail.com') return { is2FAEnabled: true };
+      
+      const user = await this.prisma.user.findUnique({ where: { id: decoded.sub } });
+      return { is2FAEnabled: user?.is2FAEnabled || false };
+    } catch (error) {
+      throw new HttpException('Lỗi xác thực', HttpStatus.UNAUTHORIZED);
+    }
+  }
+
+  @Post('setup-2fa')
+  async setup2FA(@Req() req) {
+    try {
+      const decoded = this.verifyTokenFromHeader(req);
+      if (decoded.email === 'tech28.vn@gmail.com') throw new HttpException('Tài khoản Admin không cần bật ở đây', HttpStatus.BAD_REQUEST);
+
+      const user = await this.prisma.user.findUnique({ where: { id: decoded.sub } });
+      if (!user) throw new HttpException('Không tìm thấy user', HttpStatus.NOT_FOUND);
+
+      // Sinh mã OTP 6 số
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiresAt = new Date(Date.now() + 5 * 60000); // 5 phút
+
+      const hashedOtp = await bcrypt.hash(otpCode, 10);
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { otpSecret: hashedOtp, otpExpiresAt }
+      });
+
+      // GỌI EMAIL SERVICE ĐỂ GỬI MAIL THẬT QUA ZOHO
+      await this.emailService.sendOTPEmail(user.email, otpCode);
+
+      return { message: 'Đã gửi mã OTP qua Email' };
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Post('verify-enable-2fa')
+  async verifyEnable2FA(@Req() req, @Body('code') code: string) {
+    try {
+      const decoded = this.verifyTokenFromHeader(req);
+      const user = await this.prisma.user.findUnique({ where: { id: decoded.sub } });
+
+      if (!user || !user.otpSecret || !user.otpExpiresAt) {
+        throw new HttpException('Không có yêu cầu bật 2FA nào đang chờ', HttpStatus.BAD_REQUEST);
+      }
+
+      if (new Date() > user.otpExpiresAt) {
+        throw new HttpException('Mã OTP đã hết hạn', HttpStatus.BAD_REQUEST);
+      }
+
+      const isMatch = await bcrypt.compare(code, user.otpSecret);
+      if (!isMatch) {
+        throw new HttpException('Mã OTP không chính xác', HttpStatus.BAD_REQUEST);
+      }
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { is2FAEnabled: true, otpSecret: null, otpExpiresAt: null }
+      });
+
+      return { message: 'Đã bật bảo mật 2FA thành công' };
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @Post('disable-2fa')
+  async disable2FA(@Req() req) {
+    try {
+      const decoded = this.verifyTokenFromHeader(req);
+      await this.prisma.user.update({
+        where: { id: decoded.sub },
+        data: { is2FAEnabled: false }
+      });
+      return { message: 'Đã tắt bảo mật 2FA' };
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

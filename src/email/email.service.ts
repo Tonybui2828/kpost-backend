@@ -141,4 +141,49 @@ export class EmailService {
       this.logger.error(`❌ Lỗi gửi mail rút tiền Affiliate: ${error.message}`);
     }
   }
+
+  // ==========================================
+  // 5. EMAIL GỬI MÃ XÁC THỰC OTP (2FA BẢO MẬT)
+  // ==========================================
+  async sendOTPEmail(to: string, otpCode: string): Promise<boolean> {
+    try {
+      const mailOptions = {
+        from: `"Kpost Security" <${process.env.ZOHO_MAIL_USER}>`, 
+        to: to,
+        subject: `[KPOST] Mã xác thực bảo mật OTP của bạn: ${otpCode}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-w: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <div style="background-color: #2563eb; padding: 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-style: italic;">KPOST AI SECURITY</h1>
+            </div>
+            <div style="padding: 32px; background-color: #ffffff;">
+              <h2 style="color: #1e293b; font-size: 20px; margin-top: 0;">Xin chào!</h2>
+              <p style="color: #475569; line-height: 1.6;">
+                Hệ thống nhận được yêu cầu <strong>Kích hoạt bảo mật đa tầng (OTP 2FA)</strong> cho tài khoản của bạn tại hệ thống Kpost AI.
+              </p>
+              <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 24px; text-align: center; border-radius: 12px; margin: 24px 0;">
+                <p style="color: #64748b; font-size: 14px; margin: 0 0 12px 0; text-transform: uppercase; font-weight: bold;">Mã xác thực của bạn là:</p>
+                <div style="font-size: 42px; font-weight: 900; letter-spacing: 8px; color: #2563eb;">
+                  ${otpCode}
+                </div>
+              </div>
+              <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+                Mã bảo mật này có hiệu lực trong <strong>5 phút</strong>. Tuyệt đối KHÔNG chia sẻ mã này cho bất kỳ ai, kể cả nhân viên Kpost.
+              </p>
+              <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email và thay đổi mật khẩu ngay lập tức.
+              </p>
+            </div>
+          </div>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      this.logger.log(`✅ Đã gửi mã OTP ${otpCode} tới ${to}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ Lỗi khi gửi mail OTP: ${error.message}`);
+      throw new Error('Lỗi gửi email xác thực. Vui lòng thử lại sau!');
+    }
+  }
 }
