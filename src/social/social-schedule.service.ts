@@ -21,7 +21,6 @@ export class SocialScheduleService {
         return options[Math.floor(Math.random() * options.length)];
       });
 
-      // Ưu tiên 1: Dùng OpenAI (ChatGPT) vì hệ thống bạn có key này
       if (process.env.OPENAI_API_KEY) {
           const res = await fetch('https://api.openai.com/v1/chat/completions', {
               method: 'POST',
@@ -40,7 +39,6 @@ export class SocialScheduleService {
           const data = await res.json();
           if (data?.choices?.[0]?.message?.content) return data.choices[0].message.content.trim();
       } 
-      // Ưu tiên 2: Fallback qua Gemini API nếu không có OpenAI
       else if (process.env.GEMINI_API_KEY) {
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
               method: 'POST',
@@ -66,10 +64,15 @@ export class SocialScheduleService {
     const { workspaceId, baseContent, pageIds, imageUrls, productUrl, scheduledAt, spinContent } = data;
     const validImages = Array.isArray(imageUrls) ? imageUrls : [];
 
-    // 🚀 ĐÃ SỬA: Đảm bảo workspaceId hợp lệ trước khi lưu DB
-    const safeWorkspaceId = workspaceId && workspaceId.trim() !== "" ? workspaceId : "default_workspace";
-
     for (const pageId of pageIds) {
+      // 🚀 GIẢI PHÁP TRIỆT ĐỂ: Tự động truy xuất Workspace ID thật từ Database dựa vào Page ID
+      const account = await this.prisma.socialAccount.findFirst({
+        where: { platformId: pageId }
+      });
+
+      // Lấy ID thật từ Database, nếu không có thì lấy ID từ frontend gửi lên
+      const realWorkspaceId = account?.workspaceId || workspaceId;
+
       let finalContent = baseContent;
       if (spinContent) {
          this.logger.log(`🌀 Đang gọi AI Spin nội dung độc nhất cho Page ${pageId}...`);
@@ -83,7 +86,7 @@ export class SocialScheduleService {
         await this.prisma.post.create({
           data: {
             content: contentWithMeta,
-            workspaceId: safeWorkspaceId, // 🚀 Dùng workspaceId an toàn
+            workspaceId: realWorkspaceId, // 🚀 TRUYỀN ID THẬT 100% VÀO ĐÂY
             productUrl: productUrl || null,
             status: 'scheduled',
             createdAt: new Date(scheduledAt),
@@ -92,7 +95,7 @@ export class SocialScheduleService {
         });
       } catch (error: any) {
         this.logger.error(`❌ Lỗi khi lưu bài lên lịch vào Prisma (Page ${pageId}): ${error.message}`);
-        throw new Error("Lỗi cơ sở dữ liệu khi lưu bài viết. Vui lòng kiểm tra lại cấu hình Workspace.");
+        throw new Error("Lỗi cơ sở dữ liệu khi lưu bài viết. Không tìm thấy ID của hệ thống.");
       }
     }
 
@@ -141,8 +144,7 @@ export class SocialScheduleService {
 
           const whereClause: any = {};
           
-          // 🚀 ĐÃ SỬA: Chỉ map theo workspaceId nếu nó không phải là cái default mình tự chế
-          if (post.workspaceId && post.workspaceId !== "default_workspace") {
+          if (post.workspaceId) {
             whereClause.workspaceId = post.workspaceId;
           }
           if (targetPageId) whereClause.platformId = targetPageId;
