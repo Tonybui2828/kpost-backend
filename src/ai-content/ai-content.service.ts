@@ -37,13 +37,12 @@ export class AiContentService {
   // ==========================================
   async suggestReply(msg: string, wsId: string) {
     try {
-      // 🚀 ĐÃ SỬA: Lấy thêm CẢ cột Ảnh để nạp vào Não AI
+      // 🚀 Lấy thêm CẢ cột Ảnh để nạp vào Não AI
       const products = await this.prisma.product.findMany({
         where: { workspaceId: wsId },
-        // Lấy tự do để đảm bảo lấy được ảnh dù nó tên là image hay imageUrl
       });
 
-      // 🚀 ĐÃ SỬA: Bơm toàn bộ Tên, Giá, Mô tả và CẢ TRẠNG THÁI ẢNH vào prompt
+      // 🚀 Bơm toàn bộ Tên, Giá, Mô tả và CẢ TRẠNG THÁI ẢNH vào prompt
       const productContext = products.map((p: any) => {
         const hasImage = (p.images || p.imageUrl || p.image || p.thumbnail) ? "CÓ SẴN ẢNH ĐỂ GỬI" : "CHƯA CÓ ẢNH";
         return `- Sản phẩm: ${p.name}\n  Giá: ${Number(p.price).toLocaleString()}đ\n  Mô tả/Thông số: ${p.description || 'Chưa cập nhật mô tả'}\n  Trạng thái ảnh: ${hasImage}`;
@@ -142,7 +141,7 @@ Hàng sẽ được gửi đi sớm nhất, anh/chị để ý điện thoại g
     } catch (error) { return { url: `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` }; }
   }
 
-  // 🚀 ĐÃ SỬA: Cập nhật hàm generatePost để viết bài marketing chuẩn form và bắt lỗi tốt hơn
+  // 🚀 ĐÃ SỬA: Bỏ Prisma để tránh lỗi DB. Trả thẳng content về Frontend
   async generatePost(topic: string, userId: string, workspaceId: string) {
     try {
       const prompt = `Viết một bài đăng bán hàng hoặc marketing thật hấp dẫn cho mạng xã hội (Facebook, Zalo) dựa trên chủ đề/thông tin sản phẩm sau. Bài viết cần có:
@@ -160,20 +159,12 @@ Chủ đề/Sản phẩm: ${topic}`;
       
       const generatedContent = res.choices[0].message.content || '';
 
-      // Tùy thuộc vào việc frontend của bạn mong đợi trả về toàn bộ Object Post hay chỉ chuỗi text.
-      // Nếu frontend dùng Prisma để lưu và hiển thị lại, ta lưu xuống DB:
-      return this.prisma.post.create({ 
-        data: { 
-          content: generatedContent, 
-          workspaceId, 
-          status: 'draft', 
-          userId: userId || null 
-        } 
-      });
+      // TRẢ VỀ TEXT CHO FRONTEND HIỂN THỊ LUÔN (Không gọi DB)
+      return { content: generatedContent };
+      
     } catch (error) {
       console.error("Lỗi AI generatePost:", error);
-      // Quăng lỗi ra để Frontend nhận được và không bị treo/báo lỗi chung chung
-      throw new Error("AI đang bận hoặc OpenAI API key của bạn bị lỗi/hết hạn. Vui lòng thử lại sau.");
+      throw new Error("AI đang bận hoặc OpenAI API key của bạn bị lỗi. Vui lòng thử lại sau.");
     }
   }
 
