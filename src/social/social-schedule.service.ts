@@ -66,6 +66,9 @@ export class SocialScheduleService {
     const { workspaceId, baseContent, pageIds, imageUrls, productUrl, scheduledAt, spinContent } = data;
     const validImages = Array.isArray(imageUrls) ? imageUrls : [];
 
+    // 🚀 ĐÃ SỬA: Đảm bảo workspaceId hợp lệ trước khi lưu DB
+    const safeWorkspaceId = workspaceId && workspaceId.trim() !== "" ? workspaceId : "default_workspace";
+
     for (const pageId of pageIds) {
       let finalContent = baseContent;
       if (spinContent) {
@@ -76,16 +79,21 @@ export class SocialScheduleService {
       const metaPayload = JSON.stringify({ images: validImages, pageId: pageId });
       const contentWithMeta = `${finalContent}\n\n[KPOST_META]${metaPayload}[/KPOST_META]`;
 
-      await this.prisma.post.create({
-        data: {
-          content: contentWithMeta,
-          workspaceId: workspaceId,
-          productUrl: productUrl || null,
-          status: 'scheduled',
-          createdAt: new Date(scheduledAt), // Ngày giờ UTC chuẩn từ frontend gửi lên
-          userId: 'batch-post' 
-        }
-      });
+      try {
+        await this.prisma.post.create({
+          data: {
+            content: contentWithMeta,
+            workspaceId: safeWorkspaceId, // 🚀 Dùng workspaceId an toàn
+            productUrl: productUrl || null,
+            status: 'scheduled',
+            createdAt: new Date(scheduledAt),
+            userId: 'batch-post' 
+          }
+        });
+      } catch (error: any) {
+        this.logger.error(`❌ Lỗi khi lưu bài lên lịch vào Prisma (Page ${pageId}): ${error.message}`);
+        throw new Error("Lỗi cơ sở dữ liệu khi lưu bài viết. Vui lòng kiểm tra lại cấu hình Workspace.");
+      }
     }
 
     return { success: true, message: `Đã lên lịch thành công` };
@@ -131,7 +139,12 @@ export class SocialScheduleService {
             } catch(e) {}
           } 
 
-          const whereClause: any = { workspaceId: post.workspaceId };
+          const whereClause: any = {};
+          
+          // 🚀 ĐÃ SỬA: Chỉ map theo workspaceId nếu nó không phải là cái default mình tự chế
+          if (post.workspaceId && post.workspaceId !== "default_workspace") {
+            whereClause.workspaceId = post.workspaceId;
+          }
           if (targetPageId) whereClause.platformId = targetPageId;
 
           const accounts = await this.prisma.socialAccount.findMany({ where: whereClause });
