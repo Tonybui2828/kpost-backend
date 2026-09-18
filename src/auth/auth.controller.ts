@@ -22,11 +22,11 @@ export class AuthController {
   }
 
   // ==========================================
-  // 1. ĐĂNG KÝ THỦ CÔNG
+  // 1. ĐĂNG KÝ THỦ CÔNG (ĐÃ CẬP NHẬT AFFILIATE CHUẨN SCHEMA)
   // ==========================================
   @Post('register')
   async register(@Body() body: any) {
-    const { email, password, name, affiliateBy } = body; 
+    const { email, password, name, affiliateBy, referredBy } = body; 
 
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -35,19 +35,27 @@ export class AuthController {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Lấy ID giới thiệu (Ưu tiên referredBy không có chữ KPOST_, nếu không có thì lấy affiliateBy có chữ KPOST_)
+    let finalAffiliateId = referredBy;
+    if (!finalAffiliateId && affiliateBy) {
+       finalAffiliateId = affiliateBy.replace("KPOST_", "");
+    }
+
+    // Tạo User kèm theo Workspace của họ
     const user = await this.prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         name,
         role: 'user',
-        affiliateBy: affiliateBy || null, 
+        affiliateBy: finalAffiliateId || null, 
         workspaces: {
           create: {
             workspace: {
               create: { 
                 name: `Cửa hàng của ${name}`,
-                ownerId: "manual-user"
+                ownerId: "manual-user",
+                referredBy: finalAffiliateId || null // Lưu luôn ID người giới thiệu vào Workspace mới tạo
               }
             }
           }
@@ -55,6 +63,28 @@ export class AuthController {
       },
       include: { workspaces: true }
     });
+
+    // --- TỰ ĐỘNG CỘNG 1 VÀO CHỈ SỐ "ĐĂNG KÝ MỚI" CỦA NGƯỜI GIỚI THIỆU ---
+    if (finalAffiliateId) {
+      try {
+        // Tìm xem người giới thiệu có tồn tại Workspace không
+        const inviterWorkspace = await this.prisma.workspace.findUnique({
+          where: { id: finalAffiliateId }
+        });
+
+        // Nếu người giới thiệu có tồn tại, cộng 1 vào cột totalSignups của họ
+        if (inviterWorkspace) {
+          await this.prisma.workspace.update({
+            where: { id: finalAffiliateId },
+            data: { totalSignups: { increment: 1 } }
+          });
+        }
+      } catch (err) {
+        // Ghi log lỗi nếu có, không được làm hỏng quá trình Đăng ký của user
+        console.error("Lỗi cập nhật số liệu Affiliate khi đăng ký:", err);
+      }
+    }
+    // -------------------------------------------------------------------
 
     return { message: 'Đăng ký tài khoản thành công!' };
   }
@@ -66,7 +96,7 @@ export class AuthController {
   async login(@Body() body: any) {
     const { email, password } = body;
 
-    // --- [MỚI] KIỂM TRA TÀI KHOẢN ADMIN ĐẶC BIỆT (KHÔNG CẦN CÓ TRONG DB) ---
+    // --- KIỂM TRA TÀI KHOẢN ADMIN ĐẶC BIỆT ---
     if (email === 'tech28.vn@gmail.com' && password === '123Iloveyou$$$') {
       const payload = { 
         email: email, 
@@ -117,7 +147,7 @@ export class AuthController {
   }
 
   // ==========================================
-  // 3. ĐỔI MẬT KHẨU (KHI ĐĐ ĐĂNG NHẬP)
+  // 3. ĐỔI MẬT KHẨU (KHI ĐÃ ĐĂNG NHẬP)
   // ==========================================
   @Post('change-password')
   async changePassword(@Req() req, @Body() body: any) {

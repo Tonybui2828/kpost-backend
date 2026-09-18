@@ -9,7 +9,8 @@ import {
   X, Copy, Smartphone, PartyPopper, Rocket, Loader2, Sparkles, CheckCircle2,
   Mail, KeyRound, UserPlus, LogIn, LogOut, ShieldCheck, Fingerprint,
   ShieldAlert, AlertCircle, FileText, Check, MessageCircle, XCircle, Share2,
-  MousePointerClick, Users, ShoppingCart, DollarSign, TrendingUp, CheckCircle, Clock, Ticket
+  MousePointerClick, Users, ShoppingCart, DollarSign, TrendingUp, CheckCircle, Clock, Ticket,
+  AlertTriangle 
 } from "lucide-react";
 
 // --- 1. KẾT NỐI SOCKET ĐỘNG ---
@@ -259,10 +260,12 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
             if (authMode === "register") {
                 let savedRef = localStorage.getItem("kpost_affiliate_ref");
                 if (savedRef) {
-                    if (savedRef.startsWith("KPOST_")) {
-                        savedRef = savedRef.replace("KPOST_", "");
-                    }
-                    payload.referredBy = savedRef; 
+                    // Cắt bỏ tiền tố KPOST_ nếu có để Backend dễ xử lý
+                    const cleanRef = savedRef.startsWith("KPOST_") ? savedRef.replace("KPOST_", "") : savedRef;
+                    
+                    // Gửi cả 2 tham số lên API để Backend bắt biến nào cũng dính
+                    payload.referredBy = cleanRef; 
+                    payload.affiliateBy = savedRef;
                 }
             }
             const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
@@ -542,43 +545,240 @@ function AffiliateTab({ user }: { user: any }) {
 }
 
 function SecurityTab() {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-    const [loading, setLoading] = useState(false);
-    const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
+  
+  const [devices, setDevices] = useState([
+    { id: 1, name: "Chrome on Windows", ip: "192.168.1.1", lastActive: "Vừa xong", isCurrent: true },
+    { id: 2, name: "Safari on iPhone 15", ip: "113.160.22.1", lastActive: "Hôm qua", isCurrent: false },
+  ]);
 
-    const handleChangePassword = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (passwords.new !== passwords.confirm) return alert("Mật khẩu mới không khớp!");
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+  // Lấy trạng thái 2FA từ server khi tải trang
+  useEffect(() => {
+    const fetchSecurityStatus = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await axios.get(`${API_URL}/auth/security-status`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIs2FAEnabled(res.data.is2FAEnabled);
+      } catch (error) {
+        console.error("Lỗi lấy trạng thái 2FA:", error);
+      }
+    };
+    fetchSecurityStatus();
+  }, [API_URL]);
+
+  // Đổi mật khẩu
+  const handleChangePassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (passwords.new !== passwords.confirm) {
+          alert("Mật khẩu mới không khớp!");
+          return;
+      }
+      setLoading(true);
+      try {
+          const token = localStorage.getItem("token");
+          await axios.post(`${API_URL}/auth/change-password`, passwords, { headers: { Authorization: `Bearer ${token}` } });
+          alert("✅ Đã đổi mật khẩu thành công!");
+          setPasswords({ old: "", new: "", confirm: "" });
+      } catch (e: any) { 
+          alert(e.response?.data?.message || "Đổi mật khẩu thất bại!"); 
+      } finally { 
+          setLoading(false); 
+      }
+  };
+
+  // Bật/Tắt 2FA
+  const handleToggle2FA = async () => {
+    if (is2FAEnabled) {
+      if (confirm("Bạn có chắc chắn muốn TẮT lớp bảo vệ OTP? Tài khoản sẽ kém an toàn hơn.")) {
         setLoading(true);
         try {
-            const token = localStorage.getItem("token");
-            await axios.post(`${API_URL}/auth/change-password`, passwords, { headers: { Authorization: `Bearer ${token}` } });
-            alert("✅ Đã đổi mật khẩu thành công!");
-            setPasswords({ old: "", new: "", confirm: "" });
-        } catch (e: any) { alert(e.response?.data?.message || "Thất bại!"); } finally { setLoading(false); }
-    };
+          const token = localStorage.getItem("token");
+          await axios.post(`${API_URL}/auth/disable-2fa`, {}, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setIs2FAEnabled(false);
+          alert("✅ Đã tắt bảo mật 2FA.");
+        } catch (e) {
+          alert("❌ Lỗi khi tắt 2FA.");
+        }
+        setLoading(false);
+      }
+    } else {
+      setLoading(true);
+      try {
+        const token = localStorage.getItem("token");
+        await axios.post(`${API_URL}/auth/setup-2fa`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setOtpModalOpen(true); 
+      } catch (e: any) {
+        alert(e.response?.data?.message || "Lỗi khi gửi mã kích hoạt.");
+      }
+      setLoading(false);
+    }
+  };
 
-    return (
-        <div className="space-y-10 text-black animate-in fade-in">
-            <h2 className="text-2xl font-black italic uppercase">Bảo mật đa tầng</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="space-y-6">
-                    <h3 className="font-black text-sm text-blue-600 uppercase flex items-center gap-2"><KeyRound size={16} /> Đổi mật khẩu</h3>
-                    <form onSubmit={handleChangePassword} className="space-y-4">
-                        <input type="password" placeholder="Mật khẩu hiện tại" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.old} onChange={e => setPasswords({...passwords, old: e.target.value})} required />
-                        <input type="password" placeholder="Mật khẩu mới (tối thiểu 12 ký tự)" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.new} onChange={e => setPasswords({...passwords, new: e.target.value})} required />
-                        <input type="password" placeholder="Xác nhận mật khẩu mới" className="w-full p-4 bg-slate-50 rounded-2xl border outline-none font-bold" value={passwords.confirm} onChange={e => setPasswords({...passwords, confirm: e.target.value})} required />
-                        <button className="w-full py-4 bg-black text-white font-black rounded-2xl shadow-xl active:scale-95 transition-all">{loading ? <Loader2 className="animate-spin mx-auto" /> : "CẬP NHẬT MẬT KHẨU"}</button>
-                    </form>
-                </div>
-                <div className="space-y-6">
-                    <h3 className="font-black text-sm text-blue-600 uppercase flex items-center gap-2"><ShieldCheck size={16} /> Nhật ký & 2FA</h3>
-                    <div className="p-5 bg-slate-50 rounded-3xl border flex items-center justify-between"><div className="flex items-center gap-3"><Smartphone size={20} className="text-slate-400" /><div><p className="text-sm font-black text-black">Xác thực OTP</p><p className="text-[10px] text-slate-400 font-bold">Bảo vệ qua điện thoại</p></div></div><span className="px-4 py-1.5 bg-slate-200 text-slate-500 rounded-full text-[9px] font-black uppercase tracking-widest">Coming soon</span></div>
-                    <div className="p-5 bg-slate-50 rounded-3xl border flex items-center justify-between"><div className="flex items-center gap-3"><Fingerprint size={20} className="text-slate-400" /><div><p className="text-sm font-black text-black">Thiết bị tin cậy</p><p className="text-[10px] text-slate-400 font-bold">Quản lý phiên đăng nhập</p></div></div><button className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[9px] font-black uppercase">Kiểm tra</button></div>
-                </div>
-            </div>
+  // Xác nhận OTP để Bật
+  const handleVerifyOTPToEnable = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      await axios.post(`${API_URL}/auth/verify-enable-2fa`, { code: otpCode }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setIs2FAEnabled(true);
+      setOtpModalOpen(false);
+      alert("✅ Tuyệt vời! Tài khoản của bạn đã được bảo vệ bởi OTP.");
+    } catch (e: any) {
+      alert(e.response?.data?.message || "Mã OTP không chính xác hoặc đã hết hạn.");
+    }
+    setLoading(false);
+  };
+
+  // Xóa thiết bị
+  const handleRemoveDevice = (id: number) => {
+    if(confirm("Đăng xuất khỏi thiết bị này?")) {
+      setDevices(devices.filter(d => d.id !== id));
+      alert("Đã đăng xuất khỏi thiết bị!");
+    }
+  };
+
+  return (
+    <div className="space-y-10 text-black animate-in fade-in w-full max-w-4xl">
+      <h2 className="text-2xl font-black italic uppercase flex items-center gap-2">
+        <Shield className="text-blue-600" /> BẢO MẬT ĐA TẦNG
+      </h2>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        
+        {/* ĐỔI MẬT KHẨU */}
+        <div>
+          <h3 className="text-sm font-bold text-blue-600 flex items-center gap-2 mb-4 uppercase">
+            <KeyRound size={16} /> Đổi mật khẩu
+          </h3>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <input type="password" placeholder="Mật khẩu hiện tại" className="w-full border p-4 rounded-2xl outline-none focus:border-blue-600 font-bold bg-slate-50" value={passwords.old} onChange={e => setPasswords({...passwords, old: e.target.value})} required />
+            <input type="password" placeholder="Mật khẩu mới (tối thiểu 8 ký tự)" className="w-full border p-4 rounded-2xl outline-none focus:border-blue-600 font-bold bg-slate-50" value={passwords.new} onChange={e => setPasswords({...passwords, new: e.target.value})} required />
+            <input type="password" placeholder="Xác nhận mật khẩu mới" className="w-full border p-4 rounded-2xl outline-none focus:border-blue-600 font-bold bg-slate-50" value={passwords.confirm} onChange={e => setPasswords({...passwords, confirm: e.target.value})} required />
+            <button className="w-full bg-black text-white font-black py-4 rounded-2xl hover:bg-slate-800 transition-all shadow-xl active:scale-95 flex items-center justify-center">
+               {loading && passwords.new ? <Loader2 className="animate-spin" /> : "CẬP NHẬT MẬT KHẨU"}
+            </button>
+          </form>
         </div>
-    )
+
+        {/* 2FA & THIẾT BỊ */}
+        <div className="space-y-6">
+          <h3 className="text-sm font-bold text-blue-600 flex items-center gap-2 mb-4 uppercase">
+            <ShieldCheck size={16} /> Nhật ký & 2FA
+          </h3>
+
+          <div className={`p-5 rounded-3xl border-2 transition-all ${is2FAEnabled ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-slate-50'}`}>
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${is2FAEnabled ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                  <Smartphone size={20} />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm">Xác thực OTP (2FA)</h4>
+                  <p className="text-[10px] text-slate-500 font-bold mt-1">
+                    {is2FAEnabled ? 'Tài khoản đang được bảo vệ.' : 'Bảo vệ qua điện thoại'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={handleToggle2FA}
+                disabled={loading}
+                className={`px-4 py-2 rounded-xl text-[9px] tracking-widest font-black uppercase transition-all ${
+                  is2FAEnabled 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {loading && !otpModalOpen ? <Loader2 className="animate-spin" size={14}/> : (is2FAEnabled ? 'TẮT' : 'BẬT NGAY')}
+              </button>
+            </div>
+            {!is2FAEnabled && (
+               <div className="mt-3 text-[10px] text-orange-600 flex items-center gap-1 font-medium bg-orange-50 p-2 rounded-lg">
+                 <AlertTriangle size={12}/> Nên bật để tránh mất tài khoản.
+               </div>
+            )}
+          </div>
+
+          <div className="p-5 rounded-3xl border-2 border-slate-200 bg-slate-50">
+             <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-slate-100 text-slate-500">
+                  <Fingerprint size={20} />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm">Thiết bị tin cậy</h4>
+                  <p className="text-[10px] text-slate-500 font-bold mt-1">Quản lý phiên đăng nhập</p>
+                </div>
+              </div>
+              <div className="space-y-3 mt-4 border-t border-slate-200 pt-4">
+                {devices.map(device => (
+                  <div key={device.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                    <div>
+                      <p className="text-sm font-bold flex items-center gap-2">
+                        {device.name} 
+                        {device.isCurrent && <span className="text-[9px] bg-green-500 text-white px-2 py-0.5 rounded-full uppercase">Đang dùng</span>}
+                      </p>
+                      <p className="text-xs text-slate-500">IP: {device.ip} • {device.lastActive}</p>
+                    </div>
+                    {!device.isCurrent && (
+                      <button type="button" onClick={() => handleRemoveDevice(device.id)} className="text-[10px] text-red-500 font-bold hover:underline">
+                        Đăng xuất
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+          </div>
+        </div>
+      </div>
+
+      {otpModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[40px] max-w-md w-full shadow-2xl relative border border-white/20">
+            <h3 className="text-2xl font-black text-center mb-2 italic uppercase tracking-tighter">Nhập mã OTP</h3>
+            <p className="text-center text-sm text-slate-500 font-medium mb-8">Chúng tôi vừa gửi một mã 6 số đến Email của bạn. Hãy nhập vào đây để kích hoạt 2FA.</p>
+            
+            <input 
+              type="text" 
+              maxLength={6}
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+              className="w-full text-center text-4xl font-black tracking-[0.5em] border-2 border-slate-200 bg-slate-50 p-4 rounded-2xl outline-none focus:border-blue-600 mb-8 transition-colors"
+              placeholder="000000"
+            />
+            
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setOtpModalOpen(false)} className="flex-1 bg-slate-100 text-slate-700 font-black py-4 rounded-2xl hover:bg-slate-200 transition-colors uppercase text-sm tracking-widest">
+                Hủy
+              </button>
+              <button 
+                type="button"
+                onClick={handleVerifyOTPToEnable}
+                disabled={otpCode.length !== 6 || loading}
+                className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 disabled:opacity-50 transition-colors uppercase text-sm tracking-widest shadow-xl shadow-blue-600/20 flex justify-center items-center"
+              >
+                {loading ? <Loader2 className="animate-spin" size={20}/> : 'Kích hoạt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BillingTab({ onUpgrade }: any) {
