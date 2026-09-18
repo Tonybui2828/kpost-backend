@@ -31,9 +31,17 @@ export class SocialController {
   // ===============================================
   // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (CHỐNG LỖI MULTIPART 100%)
   // ===============================================
+ // ===============================================
+  // API LƯU MEDIA QUA BASE64 (TỰ ĐỘNG BÓC TÁCH MỌI KIỂU GỬI)
+  // ===============================================
   @Post('upload')
-  async uploadMedia(@Body() body: { files: { name: string, base64: string }[] }, @Req() req: any) {
-    const files = body.files;
+  async uploadMedia(@Body() body: any, @Req() req: any) {
+    // Tự động nhận diện cả trường hợp gửi { files: [...] } hoặc gửi trực tiếp mảng [...]
+    let files = body?.files || body;
+    if (!Array.isArray(files) && typeof body === 'object') {
+      files = Object.values(body).find(val => Array.isArray(val)) as any[] || [];
+    }
+
     if (!files || !Array.isArray(files) || files.length === 0) {
       throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh', HttpStatus.BAD_REQUEST);
     }
@@ -51,10 +59,10 @@ export class SocialController {
 
     for (const file of files) {
       try {
-        if (!file.base64) continue;
+        const rawBase64 = typeof file === 'string' ? file : file?.base64;
+        if (!rawBase64) continue;
 
-        // Tách phần dữ liệu Base64
-        const matches = file.base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const matches = rawBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         let buffer: Buffer;
         let ext = '.jpg';
 
@@ -67,7 +75,7 @@ export class SocialController {
           else if (mimeType.includes('gif')) ext = '.gif';
           else if (mimeType.includes('mp4')) ext = '.mp4';
         } else {
-          buffer = Buffer.from(file.base64, 'base64');
+          buffer = Buffer.from(rawBase64, 'base64');
         }
 
         const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
