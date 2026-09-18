@@ -1,7 +1,5 @@
-import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus } from '@nestjs/common';
 import { Response, Request } from 'express'; 
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import * as fs from 'fs';
 import axios from 'axios'; 
@@ -31,65 +29,64 @@ export class SocialController {
   ) {}
 
   // ===============================================
-  // API TẢI MEDIA TỪ MÁY TÍNH LÊN ĐỂ ĐĂNG FACEBOOK
+  // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (CHỐNG LỖI MULTIPART 100%)
   // ===============================================
   @Post('upload')
-  @UseInterceptors(FilesInterceptor('files', 10, {
-    storage: diskStorage({
-      destination: (req, file, cb) => {
-        const uploadPath = './uploads';
-        if (!fs.existsSync(uploadPath)) {
-          fs.mkdirSync(uploadPath, { recursive: true });
-        }
-        cb(null, uploadPath);
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const fileExt = extname(file.originalname) || '.jpg';
-        cb(null, `${uniqueSuffix}${fileExt}`);
-      }
-    }),
-    limits: {
-      fileSize: 20 * 1024 * 1024 // Tối đa 20MB mỗi file
-    }
-  }))
-  // ===============================================
-  // API TẢI MEDIA TỪ MÁY TÍNH LÊN ĐỂ ĐĂNG FACEBOOK
-  // ===============================================
-  @Post('upload')
-  @UseInterceptors(FilesInterceptor('files', 10, {
-    storage: diskStorage({
-      destination: (req, file, cb) => {
-        const uploadPath = './uploads';
-        if (!fs.existsSync(uploadPath)) {
-          fs.mkdirSync(uploadPath, { recursive: true });
-        }
-        cb(null, uploadPath);
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const fileExt = extname(file.originalname) || '.jpg';
-        cb(null, `${uniqueSuffix}${fileExt}`);
-      }
-    }),
-    limits: {
-      fileSize: 20 * 1024 * 1024 // Tối đa 20MB mỗi file
-    }
-  }))
-  uploadMedia(@UploadedFiles() files: any[], @Req() req: any) {
-    if (!files || files.length === 0) {
-      throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh/video', HttpStatus.BAD_REQUEST);
+  async uploadMedia(@Body() body: { files: { name: string, base64: string }[] }, @Req() req: any) {
+    const files = body.files;
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh', HttpStatus.BAD_REQUEST);
     }
 
-    // Xác định Base URL của server để tạo link công khai cho Facebook tải ảnh
+    const uploadPath = './uploads';
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
     const host = req.get('host');
     const baseUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
 
-    const urls = files.map(file => `${baseUrl}/uploads/${file.filename}`);
+    const urls: string[] = [];
+
+    for (const file of files) {
+      try {
+        if (!file.base64) continue;
+
+        // Tách phần dữ liệu Base64
+        const matches = file.base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        let buffer: Buffer;
+        let ext = '.jpg';
+
+        if (matches && matches.length === 3) {
+          const mimeType = matches[1];
+          buffer = Buffer.from(matches[2], 'base64');
+          if (mimeType.includes('png')) ext = '.png';
+          else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = '.jpg';
+          else if (mimeType.includes('webp')) ext = '.webp';
+          else if (mimeType.includes('gif')) ext = '.gif';
+          else if (mimeType.includes('mp4')) ext = '.mp4';
+        } else {
+          buffer = Buffer.from(file.base64, 'base64');
+        }
+
+        const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+        const filePath = join(uploadPath, fileName);
+
+        fs.writeFileSync(filePath, buffer);
+        urls.push(`${baseUrl}/uploads/${fileName}`);
+      } catch (err: any) {
+        console.error('Lỗi ghi file ảnh:', err);
+      }
+    }
+
+    if (urls.length === 0) {
+      throw new HttpException('Không thể lưu file ảnh', HttpStatus.BAD_REQUEST);
+    }
+
     return {
       success: true,
-      message: `Đã tải lên thành công ${files.length} file media`,
+      message: `Đã tải lên thành công ${urls.length} file ảnh`,
       urls
     };
   }
@@ -103,13 +100,11 @@ export class SocialController {
   async getBankInfo(@Query('workspaceId') workspaceId: string) {
       const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
       
-      // Tìm các lệnh rút tiền (Đang chờ duyệt + Đã rút thành công) để trừ vào Số dư
       const withdrawals = await this.prisma.withdrawalRequest.findMany({
           where: { workspaceId, status: { in: ['pending', 'completed'] } }
       });
       const totalWithdrawn = withdrawals.reduce((sum, w) => sum + w.amount, 0);
       
-      // Số dư khả dụng = Tổng hoa hồng - Số tiền đã rút (hoặc đang chờ rút)
       const availableBalance = (ws?.commission || 0) - totalWithdrawn;
 
       return {
@@ -138,19 +133,16 @@ export class SocialController {
       const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
       if (!ws) throw new HttpException("Không tìm thấy Workspace", HttpStatus.BAD_REQUEST);
 
-      // Tính lại số dư khả dụng một lần nữa cho chắc chắn
       const withdrawals = await this.prisma.withdrawalRequest.findMany({
           where: { workspaceId, status: { in: ['pending', 'completed'] } }
       });
       const totalWithdrawn = withdrawals.reduce((sum, w) => sum + w.amount, 0);
       const availableBalance = (ws.commission || 0) - totalWithdrawn;
 
-      // Validate điều kiện rút
       if (amount < 500000) throw new HttpException("Số tiền rút tối thiểu là 500.000đ", HttpStatus.BAD_REQUEST);
       if (amount > availableBalance) throw new HttpException("Số dư khả dụng không đủ!", HttpStatus.BAD_REQUEST);
       if (!ws.bankName || !ws.bankAccount || !ws.bankOwnerName) throw new HttpException("Vui lòng cập nhật ngân hàng", HttpStatus.BAD_REQUEST);
 
-      // Lưu lệnh rút tiền vào Database
       await this.prisma.withdrawalRequest.create({
           data: {
               workspaceId,
@@ -161,7 +153,6 @@ export class SocialController {
           }
       });
 
-      // Gửi Email thông báo cho Admin
       try {
           await this.emailService.sendEmail(
               'support@kpost.vn', 
@@ -212,10 +203,8 @@ export class SocialController {
     const currentPlan = workspace.plan || 'free';
     const maxLimit = planLimits[currentPlan] || 1;
 
-    // HỖ TRỢ LƯU BẰNG USER TOKEN (Quét tất cả Page)
     if (data.isUserToken) {
        try {
-         // Gọi API Facebook để lấy danh sách Page từ User Token
          const axios = require('axios');
          const response = await axios.get(`https://graph.facebook.com/v21.0/me/accounts?access_token=${data.accessToken}`);
          const pages = response.data.data || [];
@@ -226,7 +215,6 @@ export class SocialController {
 
          let addedCount = 0;
          for (const page of pages) {
-            // Kiểm tra limit
             const currentCount = await this.prisma.socialAccount.count({ where: { workspaceId: data.workspaceId } });
             if (currentCount >= maxLimit) break;
 
@@ -265,7 +253,6 @@ export class SocialController {
        }
     }
 
-    // LUỒNG CŨ (Lưu 1 Fanpage bằng Page Token)
     const existingAccount = await this.prisma.socialAccount.findFirst({
       where: { platformId: data.platformId }
     });

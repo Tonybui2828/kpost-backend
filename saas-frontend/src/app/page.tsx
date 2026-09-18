@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { 
   Loader2, Sparkles, Globe, Edit3, 
   Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Square, CheckCircle2,
-  Image as ImageIcon, Plus 
+  Image as ImageIcon, Plus, X
 } from "lucide-react";
 
 function AiMarketingContent() {
@@ -18,6 +18,7 @@ function AiMarketingContent() {
   const [editableContent, setEditableContent] = useState(""); 
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false); 
+  const [uploading, setUploading] = useState(false); // Trạng thái upload media
   const [isEditing, setIsEditing] = useState(false);
 
   // --- QUẢN LÝ ẢNH ---
@@ -38,21 +39,22 @@ function AiMarketingContent() {
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
 
-  // 👉 1. ĐOẠN CODE BẮT LINK AFFILIATE
+  // 👉 1. BẮT LINK AFFILIATE
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const refCode = urlParams.get('ref');
       if (refCode) {
         localStorage.setItem("kpost_affiliate_ref", refCode);
-        console.log("✅ Đã bắt và lưu mã Affiliate thành công:", refCode);
       }
+      const ws = localStorage.getItem("workspaceId");
+      if (ws) setWorkspaceId(ws);
     } catch (error) {
       console.error("Lỗi bắt mã Affiliate:", error);
     }
   }, []);
 
-  // KIỂM TRA LOCAL STORAGE KHI LOAD TRANG AI MARKETING
+  // KIỂM TRA LOCAL STORAGE KHI LOAD TRANG
   useEffect(() => {
     const savedTopic = localStorage.getItem("pendingAIPost_topic");
     const savedImgs = localStorage.getItem("pendingAIPost_imgs");
@@ -76,10 +78,9 @@ function AiMarketingContent() {
     }
   }, []);
 
-  // 🚀 ĐÃ SỬA: Lấy dữ liệu Fanpage & Fallback lấy params cũ từ URL
+  // Lấy dữ liệu Fanpage
   useEffect(() => {
     const fetchAccounts = async () => {
-      // Đã gỡ bỏ lệnh chặn if (!workspaceId) return; ở đây để danh sách load được ra
       try {
         const url = workspaceId 
           ? `${API_URL}/social/accounts?workspaceId=${workspaceId}` 
@@ -104,11 +105,56 @@ function AiMarketingContent() {
     }
   }, [searchParams, API_URL, workspaceId]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 🔥 HÀM UPLOAD MEDIA QUA BASE64 (KHÔNG BAO GIỜ BỊ LỖI MULTIPART)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const newUrls = Array.from(files).map(file => URL.createObjectURL(file));
-    setAvailableImages(prev => [...prev, ...newUrls]);
+
+    setUploading(true);
+    try {
+      // Đọc từng file sang Base64
+      const filePromises = Array.from(files).map((file) => {
+        return new Promise<{ name: string; base64: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: file.name, base64: reader.result as string });
+          reader.onerror = (error) => reject(error);
+          reader.readAsDataURL(file);
+        });
+      });
+
+      const base64Files = await Promise.all(filePromises);
+
+      const token = localStorage.getItem("token");
+      // Gửi dạng JSON chuẩn - Nginx/Proxy xử lý êm ru 100%
+      const res = await axios.post(
+        `${API_URL}/social/upload`,
+        { files: base64Files },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        }
+      );
+
+      const uploadedUrls: string[] = res.data?.urls || [];
+
+      if (uploadedUrls.length > 0) {
+        setAvailableImages((prev) => [...new Set([...uploadedUrls, ...prev])]);
+        setSelectedImages((prev) => [...new Set([...prev, ...uploadedUrls])].slice(0, 10));
+      } else {
+        alert("Không nhận được đường dẫn ảnh từ server!");
+      }
+    } catch (err: any) {
+      console.error("Lỗi upload media:", err);
+      alert("Lỗi tải ảnh lên: " + (err.response?.data?.message || err.message || "Vui lòng thử lại"));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveImage = (e: React.MouseEvent, urlToRemove: string) => {
+    e.stopPropagation();
+    setAvailableImages(prev => prev.filter(u => u !== urlToRemove));
+    setSelectedImages(prev => prev.filter(u => u !== urlToRemove));
   };
 
   const handleGenerateContent = async () => {
@@ -116,9 +162,7 @@ function AiMarketingContent() {
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/ai-content/generate`, { topic, userId: "admin-01", workspaceId });
-      
       const generated = res.data.content || res.data;
-      
       setResult({ content: generated });
       setEditableContent(generated);
     } catch (error: any) { 
@@ -156,7 +200,11 @@ function AiMarketingContent() {
         const pagesToPost = accounts.filter((acc: any) => selectedPageIds.includes(acc.platformId));
         for (const acc of pagesToPost) {
           await axios.post(`${API_URL}/social/facebook/post`, {
-            pageId: acc.platformId, accessToken: acc.accessToken, message: editableContent, imageUrls: selectedImages, productUrl 
+            pageId: acc.platformId, 
+            accessToken: acc.accessToken, 
+            message: editableContent, 
+            imageUrls: selectedImages, 
+            productUrl 
           });
         }
         alert(`🚀 Thành công! Đã xuất bản lên ${selectedPageIds.length} Page.`);
@@ -172,20 +220,37 @@ function AiMarketingContent() {
       <div className="max-w-5xl mx-auto pb-20">
         <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">AI CONTENT CREATOR</h1>
 
-        {/* ============================================================== */}
-        {/* 1. CHỌN ẢNH BÀI ĐĂNG (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)                */}
-        {/* ============================================================== */}
+        {/* 1. CHỌN ẢNH BÀI ĐĂNG (ĐÃ HỖ TRỢ UPLOAD TỪ MÁY TÍNH THẬT) */}
         <div className="mb-10 bg-white p-6 rounded-[32px] border shadow-sm text-black">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest flex items-center gap-2">
-                <ImageIcon size={14} className="text-blue-600" /> Bộ sưu tập ảnh sản phẩm ({selectedImages.length}/10)
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
+                  <ImageIcon size={14} className="text-blue-600" /> Bộ sưu tập ảnh sản phẩm ({selectedImages.length}/10)
+              </p>
+              {uploading && (
+                <span className="text-xs font-bold text-blue-600 flex items-center gap-1">
+                  <Loader2 size={13} className="animate-spin" /> Đang tải ảnh từ máy tính lên...
+                </span>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {/* Ô BẤM THÊM MEDIA TỪ MÁY TÍNH */}
                 <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50"
+                  onClick={() => !uploading && fileInputRef.current?.click()}
+                  className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all bg-slate-50 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
                 >
-                  <Plus size={32} className="mb-2" />
-                  <span className="text-[10px] font-black uppercase tracking-wider">Thêm Media</span>
+                  {uploading ? (
+                    <>
+                      <Loader2 size={28} className="animate-spin text-blue-600 mb-1" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-600">Đang tải...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={32} className="mb-1" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Thêm Media</span>
+                      <span className="text-[9px] text-slate-400 font-medium">(Ảnh / Video)</span>
+                    </>
+                  )}
                   <input 
                      type="file" 
                      multiple 
@@ -195,11 +260,31 @@ function AiMarketingContent() {
                      onChange={handleFileUpload}
                   />
                 </div>
+
+                {/* DANH SÁCH ẢNH */}
                 {availableImages.map((url, idx) => (
-                    <div key={idx} onClick={() => setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : (prev.length < 10 ? [...prev, url] : prev))}
-                         className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${selectedImages.includes(url) ? 'border-blue-600 scale-95 shadow-md' : 'border-white opacity-40'}`}>
+                    <div 
+                      key={idx} 
+                      onClick={() => setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : (prev.length < 10 ? [...prev, url] : prev))}
+                      className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${selectedImages.includes(url) ? 'border-blue-600 scale-95 shadow-md' : 'border-white opacity-60 hover:opacity-100'}`}
+                    >
                         <img src={url} className="w-full h-full object-cover" alt="product" />
-                        {selectedImages.includes(url) && <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1"><CheckCircle2 size={16} /></div>}
+                        
+                        {/* Dấu tích chọn */}
+                        {selectedImages.includes(url) && (
+                          <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 shadow-md">
+                            <CheckCircle2 size={16} />
+                          </div>
+                        )}
+
+                        {/* Nút xóa ảnh */}
+                        <button 
+                          onClick={(e) => handleRemoveImage(e, url)}
+                          className="absolute top-2 left-2 bg-black/60 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Xóa ảnh này"
+                        >
+                          <X size={12} />
+                        </button>
                     </div>
                 ))}
             </div>
@@ -222,9 +307,7 @@ function AiMarketingContent() {
              </div>
              <textarea className={`w-full p-6 rounded-[24px] text-lg leading-relaxed outline-none border-2 transition-all mb-8 ${isEditing ? 'border-orange-200 bg-orange-50/10' : 'border-transparent bg-slate-50'}`} rows={6} value={editableContent} readOnly={!isEditing} onChange={(e) => setEditableContent(e.target.value)} />
              
-             {/* ============================================================== */}
-             {/* HẸN GIỜ & SPIN CONTENT (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)              */}
-             {/* ============================================================== */}
+             {/* HẸN GIỜ & SPIN CONTENT */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-black">
                 <div className="p-6 bg-blue-50/50 rounded-[35px] border-2 border-dashed border-blue-200">
                     <div className="flex items-center gap-2 mb-3">
@@ -244,7 +327,6 @@ function AiMarketingContent() {
                         <div className="animate-in fade-in slide-in-from-top-2">
                           <input type="datetime-local" className="w-full mb-3 bg-white border-2 border-blue-100 px-4 py-3 rounded-2xl text-xs font-bold text-blue-600 outline-none" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
                           
-                          {/* TÍNH NĂNG CHỐNG SPAM */}
                           <label className="flex items-center gap-2 cursor-pointer bg-orange-50 p-3 rounded-xl border border-orange-100">
                               <input type="checkbox" className="w-4 h-4 rounded text-orange-600" checked={spinContent} onChange={(e) => setSpinContent(e.target.checked)} />
                               <div className="flex flex-col">
@@ -261,9 +343,7 @@ function AiMarketingContent() {
                 </div>
              </div>
 
-             {/* ============================================================== */}
-             {/* PAGE FOLDERS (ĐÃ PHỤC HỒI NGUYÊN TRẠNG)                         */}
-             {/* ============================================================== */}
+             {/* NHÓM FANPAGE THEO FOLDER */}
              <div className="mb-8 p-6 bg-slate-50 rounded-[32px] border border-slate-100">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-black"><FolderCheck size={14} /> Nhóm Fanpage theo Folder ({selectedPageIds.length} đã chọn)</h3>
