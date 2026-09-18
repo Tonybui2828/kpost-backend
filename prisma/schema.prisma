@@ -80,6 +80,11 @@ model Workspace {
   totalSignups   Int               @default(0) 
   totalOrders    Int               @default(0) 
   
+  // --- THÊM PHỤC VỤ TÍNH NĂNG RÚT TIỀN AFFILIATE ---
+  bankName       String?           // Tên ngân hàng
+  bankAccount    String?           // Số tài khoản
+  bankOwnerName  String?           // Chủ tài khoản
+  
   members        WorkspaceMember[] 
   socialAccounts SocialAccount[] 
   posts          Post[]            
@@ -89,6 +94,7 @@ model Workspace {
   orders         Order[]           
   transactions   Transaction[]     
   affiliateHistories AffiliateHistory[] 
+  withdrawalRequests WithdrawalRequest[] // Liên kết đến bảng yêu cầu rút tiền
   createdAt      DateTime          @default(now())
 }
 
@@ -99,6 +105,19 @@ model AffiliateHistory {
   sourceId      String    
   amount        Float     
   note          String    
+  createdAt     DateTime  @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+// BẢNG MỚI: Quản lý Yêu cầu rút tiền Affiliate
+model WithdrawalRequest {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  amount        Float
+  bankName      String
+  bankAccount   String
+  bankOwnerName String
+  status        String    @default("pending") // pending (chờ duyệt), completed (đã chuyển), rejected (từ chối)
   createdAt     DateTime  @default(now())
   workspace     Workspace @relation(fields: [workspaceId], references: [id])
 }

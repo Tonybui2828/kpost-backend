@@ -423,33 +423,99 @@ function AffiliateTab({ user }: { user: any }) {
   const [timeFilter, setTimeFilter] = useState('month');
   const [stats, setStats] = useState({ clicks: 0, signups: 0, orders: 0, revenue: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+  
+  // -- STATE RÚT TIỀN & NGÂN HÀNG --
+  const [bankInfo, setBankInfo] = useState({ bankName: '', bankAccount: '', bankOwnerName: '' });
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   const wsId = user?.currentWorkspaceId || user?.wid || localStorage.getItem("workspaceId");
   const affiliateId = wsId || "GUEST";
   const dynamicAffiliateLink = `https://kpost.vn/?ref=KPOST_${affiliateId}`;
 
   useEffect(() => {
-    const fetchStats = async () => {
-      if (!user?.currentWorkspaceId) {
+    const fetchData = async () => {
+      if (!wsId || wsId === "GUEST") {
         setIsLoadingStats(false);
         return;
       }
       try {
-        const res = await axios.get(`${API_URL}/social/affiliate/stats?workspaceId=${user.currentWorkspaceId}`);
-        setStats(res.data);
+        // Lấy thống kê cơ bản
+        const resStats = await axios.get(`${API_URL}/social/affiliate/stats?workspaceId=${wsId}`);
+        setStats(resStats.data);
+
+        // Lấy thông tin ngân hàng và Số dư đã trừ các lệnh rút
+        const resBank = await axios.get(`${API_URL}/social/affiliate/bank-info?workspaceId=${wsId}`);
+        if (resBank.data) {
+            setBankInfo({
+                bankName: resBank.data.bankName || "",
+                bankAccount: resBank.data.bankAccount || "",
+                bankOwnerName: resBank.data.bankOwnerName || ""
+            });
+            setAvailableBalance(resBank.data.availableBalance || 0);
+        }
       } catch (error) {
         console.error("Lỗi lấy dữ liệu Affiliate:", error);
       } finally {
         setIsLoadingStats(false);
       }
     };
-    fetchStats();
-  }, [user?.currentWorkspaceId, API_URL]);
+    fetchData();
+  }, [wsId, API_URL]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(dynamicAffiliateLink);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  const handleSaveBankInfo = async () => {
+     try {
+        await axios.post(`${API_URL}/social/affiliate/bank-info`, {
+            workspaceId: wsId,
+            ...bankInfo
+        });
+        toast.success("Đã lưu thông tin thanh toán thành công!");
+        setIsEditingBank(false);
+     } catch(e) {
+        toast.error("Lỗi khi lưu thông tin thanh toán");
+     }
+  };
+
+  const handleWithdraw = async () => {
+     const amount = Number(withdrawAmount.replace(/[^0-9]/g, ''));
+     if (amount < 500000) return toast.error("Lệnh rút tối thiểu là 500.000đ");
+     if (amount > availableBalance) return toast.error("Số dư khả dụng không đủ!");
+     if (!bankInfo.bankName || !bankInfo.bankAccount || !bankInfo.bankOwnerName) {
+        return toast.error("Vui lòng cập nhật Thông tin thanh toán trước khi rút!");
+     }
+
+     setIsWithdrawing(true);
+     try {
+        await axios.post(`${API_URL}/social/affiliate/withdraw`, {
+            workspaceId: wsId,
+            amount: amount
+        });
+        toast.success("Tạo lệnh rút tiền thành công! Vui lòng chờ admin xử lý.");
+        setAvailableBalance(prev => prev - amount);
+        setWithdrawAmount("");
+     } catch(e: any) {
+        toast.error(e.response?.data?.message || "Lỗi xử lý lệnh rút tiền!");
+     } finally {
+        setIsWithdrawing(false);
+     }
+  };
+
+  // Hàm format tiền tệ (hiển thị cho đẹp khi gõ)
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const val = e.target.value.replace(/[^0-9]/g, '');
+     if (val) {
+        setWithdrawAmount(Number(val).toLocaleString());
+     } else {
+        setWithdrawAmount("");
+     }
   };
 
   return (
@@ -470,23 +536,6 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-blue-50/50 rounded-[24px] p-6 border border-blue-100">
-             <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">Chính sách hoa hồng</h3>
-             <ul className="space-y-3 text-sm font-medium text-slate-700">
-               <li className="flex items-center gap-2"><Check className="text-blue-500" size={16}/> Hoa hồng <strong className="text-blue-700">10%</strong> trên giá trị đơn sau giảm giá.</li>
-               <li className="flex items-center gap-2"><Check className="text-blue-500" size={16}/> Cookie được lưu <strong className="text-blue-700">12 tháng</strong>.</li>
-             </ul>
-          </div>
-          <div className="bg-orange-50/50 rounded-[24px] p-6 border border-orange-100">
-             <h3 className="text-xs font-black text-orange-600 uppercase tracking-widest mb-4">Quy định thanh toán</h3>
-             <ul className="space-y-3 text-sm font-medium text-slate-700">
-               <li className="flex items-center gap-2"><Check className="text-orange-500" size={16}/> Lệnh rút tối thiểu <strong className="text-orange-700">500.000 VNĐ</strong>.</li>
-               <li className="flex items-center gap-2"><Check className="text-orange-500" size={16}/> Thanh toán vào <strong className="text-orange-700">Thứ 2</strong> và <strong className="text-orange-700">Thứ 6</strong>.</li>
-             </ul>
-          </div>
-       </div>
-
        <div>
           <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2">Link Giới Thiệu Của Bạn</label>
           <div className="flex gap-2">
@@ -497,6 +546,7 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
+       {/* THỐNG KÊ RÚT GỌN */}
        <div>
           <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Tổng quan thống kê</h3></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -512,32 +562,109 @@ function AffiliateTab({ user }: { user: any }) {
                 <div className="flex items-center gap-2 mb-2 text-purple-500"><ShoppingCart size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Đã mua gói</span></div>
                 {isLoadingStats ? <div className="h-8 w-16 bg-slate-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-slate-900">{stats.orders.toLocaleString()}</p>}
              </div>
-             <div className="p-5 rounded-2xl bg-green-50 border border-green-100 relative overflow-hidden">
-                <div className="flex items-center gap-2 mb-2 text-green-600"><DollarSign size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Số dư hoa hồng</span></div>
-                {isLoadingStats ? <div className="h-8 w-24 bg-green-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-green-700">{stats.revenue.toLocaleString()}đ</p>}
+             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-2 text-slate-600"><DollarSign size={16}/> <span className="text-[10px] font-black uppercase tracking-widest">Tổng doanh thu</span></div>
+                {isLoadingStats ? <div className="h-8 w-24 bg-slate-200 animate-pulse rounded"></div> : <p className="text-2xl font-black italic text-slate-700">{stats.revenue.toLocaleString()}đ</p>}
              </div>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-2 italic">* Số liệu được cập nhật theo thời gian thực từ hệ thống.</p>
        </div>
 
-       <div className="p-6 rounded-[32px] border border-slate-100 bg-slate-50">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
-             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2"><TrendingUp size={18} className="text-blue-500"/> Doanh thu theo thời gian</h3>
-             <div className="flex bg-white rounded-xl p-1 border border-slate-200 shadow-sm flex-wrap">
-               {['day', 'week', 'month', 'quarter', 'year'].map(t => (
-                 <button key={t} onClick={() => setTimeFilter(t)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${timeFilter === t ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
-                   {t === 'day' ? 'Ngày' : t === 'week' ? 'Tuần' : t === 'month' ? 'Tháng' : t === 'quarter' ? 'Quý' : 'Năm'}
-                 </button>
-               ))}
+       {/* KHOẢNG RÚT TIỀN VÀ NGÂN HÀNG */}
+       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+          
+          {/* KHUNG BÊN TRÁI: THÔNG TIN THANH TOÁN */}
+          <div className="bg-slate-50 rounded-[24px] p-6 border border-slate-200">
+             <div className="flex items-center justify-between mb-6">
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
+                   <CreditCard className="text-blue-500" size={18}/> Thông tin nhận tiền
+                </h3>
+                <button onClick={() => setIsEditingBank(!isEditingBank)} className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase underline">
+                   {isEditingBank ? "Hủy" : "Cập nhật"}
+                </button>
              </div>
+
+             {isEditingBank ? (
+                <div className="space-y-4">
+                   <div>
+                      <label className="text-xs font-bold text-slate-500">Tên ngân hàng (VD: Vietcombank)</label>
+                      <input className="w-full mt-1 p-3 border rounded-xl outline-none font-bold text-sm" value={bankInfo.bankName} onChange={e => setBankInfo({...bankInfo, bankName: e.target.value})} placeholder="Nhập tên ngân hàng"/>
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-slate-500">Số tài khoản</label>
+                      <input className="w-full mt-1 p-3 border rounded-xl outline-none font-bold text-sm" value={bankInfo.bankAccount} onChange={e => setBankInfo({...bankInfo, bankAccount: e.target.value})} placeholder="Nhập số tài khoản"/>
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-slate-500">Tên chủ tài khoản</label>
+                      <input className="w-full mt-1 p-3 border rounded-xl outline-none font-bold text-sm uppercase" value={bankInfo.bankOwnerName} onChange={e => setBankInfo({...bankInfo, bankOwnerName: e.target.value.toUpperCase()})} placeholder="NGUYEN VAN A"/>
+                   </div>
+                   <button onClick={handleSaveBankInfo} className="w-full py-3 bg-blue-600 text-white font-black text-xs uppercase rounded-xl shadow-lg active:scale-95 transition-transform mt-2">
+                      Lưu thông tin
+                   </button>
+                </div>
+             ) : (
+                <div className="space-y-3">
+                   {bankInfo.bankAccount ? (
+                      <>
+                         <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                            <span className="text-xs font-medium text-slate-500">Ngân hàng</span>
+                            <span className="text-sm font-bold text-slate-900">{bankInfo.bankName}</span>
+                         </div>
+                         <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                            <span className="text-xs font-medium text-slate-500">Số tài khoản</span>
+                            <span className="text-sm font-black text-blue-600 tracking-wider">{bankInfo.bankAccount}</span>
+                         </div>
+                         <div className="flex justify-between items-center">
+                            <span className="text-xs font-medium text-slate-500">Chủ tài khoản</span>
+                            <span className="text-sm font-bold text-slate-900">{bankInfo.bankOwnerName}</span>
+                         </div>
+                      </>
+                   ) : (
+                      <div className="text-center py-6 text-slate-400">
+                         <p className="text-sm font-bold italic mb-2">Chưa cập nhật thông tin!</p>
+                         <p className="text-xs">Vui lòng cập nhật để thực hiện lệnh rút.</p>
+                      </div>
+                   )}
+                </div>
+             )}
           </div>
-          <div className="h-48 flex items-end gap-2 justify-between mt-8 opacity-30">
-             {[0, 0, 0, 0, 0, 0, 0].map((h, i) => (
-               <div key={i} className="w-full bg-blue-100 rounded-t-lg relative group" style={{height: `5%`}}></div>
-             ))}
-          </div>
-          <div className="flex justify-between mt-4 text-[10px] font-black uppercase text-slate-400">
-             <span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span><span>CN</span>
+
+          {/* KHUNG BÊN PHẢI: TẠO LỆNH RÚT */}
+          <div className="bg-green-50 rounded-[24px] p-6 border border-green-200 shadow-sm relative overflow-hidden">
+             <div className="absolute -right-4 -top-4 opacity-5 text-green-600"><DollarSign size={150} /></div>
+             <h3 className="text-sm font-black uppercase tracking-widest text-green-800 flex items-center gap-2 mb-6">
+                <Ticket className="text-green-600" size={18}/> Rút hoa hồng
+             </h3>
+             
+             <div className="mb-6 relative z-10">
+                <p className="text-[11px] font-black uppercase tracking-widest text-green-600 mb-1">Số dư khả dụng</p>
+                {isLoadingStats ? <div className="h-10 w-32 bg-green-200 animate-pulse rounded"></div> : 
+                   <p className="text-4xl font-black italic text-green-700 tracking-tighter">{availableBalance.toLocaleString()}<span className="text-2xl">đ</span></p>
+                }
+             </div>
+
+             <div className="space-y-3 relative z-10">
+                <div className="relative">
+                   <input 
+                      type="text"
+                      className="w-full p-4 border border-green-200 rounded-xl outline-none text-green-900 font-black text-lg bg-white focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-all placeholder:text-slate-300 placeholder:font-medium"
+                      placeholder="Nhập số tiền muốn rút..."
+                      value={withdrawAmount}
+                      onChange={handleAmountChange}
+                   />
+                   <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-green-600">VNĐ</span>
+                </div>
+                
+                <button 
+                   onClick={handleWithdraw} 
+                   disabled={isWithdrawing || isLoadingStats}
+                   className="w-full py-4 bg-green-600 text-white font-black text-sm uppercase tracking-widest rounded-xl shadow-xl shadow-green-600/20 hover:bg-green-700 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50"
+                >
+                   {isWithdrawing ? <Loader2 className="animate-spin" size={18} /> : "GỬI LỆNH RÚT TIỀN"}
+                </button>
+                <p className="text-[10px] text-green-700 font-medium text-center mt-2 flex justify-center items-center gap-1">
+                   <AlertCircle size={12} /> Tối thiểu 500.000đ / lần rút
+                </p>
+             </div>
           </div>
        </div>
     </div>

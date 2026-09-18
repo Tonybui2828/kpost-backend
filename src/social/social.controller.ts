@@ -10,6 +10,7 @@ import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
 import { SocialScheduleService } from './social-schedule.service';
 import { GroupBotService } from './group-bot.service'; 
+import { EmailService } from '../email/email.service'; // Chèn thêm EmailService để gửi mail thông báo
 
 @Controller('social')
 export class SocialController {
@@ -21,8 +22,98 @@ export class SocialController {
     private readonly paymentService: PaymentService,
     private readonly automatorService: AutomatorService,
     private readonly socialScheduleService: SocialScheduleService,
-    private readonly groupBotService: GroupBotService 
+    private readonly groupBotService: GroupBotService,
+    private readonly emailService: EmailService // Gọi biến EmailService vào đây
   ) {}
+
+  // ===============================================
+  // CỤM API RÚT TIỀN AFFILIATE 
+  // ===============================================
+
+  // 1. API: Lấy thông tin ngân hàng & Tính số dư thực tế
+  @Get('affiliate/bank-info')
+  async getBankInfo(@Query('workspaceId') workspaceId: string) {
+      const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+      
+      // Tìm các lệnh rút tiền (Đang chờ duyệt + Đã rút thành công) để trừ vào Số dư
+      const withdrawals = await this.prisma.withdrawalRequest.findMany({
+          where: { workspaceId, status: { in: ['pending', 'completed'] } }
+      });
+      const totalWithdrawn = withdrawals.reduce((sum, w) => sum + w.amount, 0);
+      
+      // Số dư khả dụng = Tổng hoa hồng - Số tiền đã rút (hoặc đang chờ rút)
+      const availableBalance = (ws?.commission || 0) - totalWithdrawn;
+
+      return {
+          bankName: ws?.bankName || "",
+          bankAccount: ws?.bankAccount || "",
+          bankOwnerName: ws?.bankOwnerName || "",
+          availableBalance: availableBalance > 0 ? availableBalance : 0
+      };
+  }
+
+  // 2. API: Cập nhật thông tin tài khoản ngân hàng
+  @Post('affiliate/bank-info')
+  async updateBankInfo(@Body() body: any) {
+      const { workspaceId, bankName, bankAccount, bankOwnerName } = body;
+      await this.prisma.workspace.update({
+          where: { id: workspaceId },
+          data: { bankName, bankAccount, bankOwnerName }
+      });
+      return { success: true };
+  }
+
+  // 3. API: Gửi yêu cầu rút tiền
+  @Post('affiliate/withdraw')
+  async requestWithdraw(@Body() body: any) {
+      const { workspaceId, amount } = body;
+      const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+      if (!ws) throw new HttpException("Không tìm thấy Workspace", HttpStatus.BAD_REQUEST);
+
+      // Tính lại số dư khả dụng một lần nữa cho chắc chắn
+      const withdrawals = await this.prisma.withdrawalRequest.findMany({
+          where: { workspaceId, status: { in: ['pending', 'completed'] } }
+      });
+      const totalWithdrawn = withdrawals.reduce((sum, w) => sum + w.amount, 0);
+      const availableBalance = (ws.commission || 0) - totalWithdrawn;
+
+      // Validate điều kiện rút
+      if (amount < 500000) throw new HttpException("Số tiền rút tối thiểu là 500.000đ", HttpStatus.BAD_REQUEST);
+      if (amount > availableBalance) throw new HttpException("Số dư khả dụng không đủ!", HttpStatus.BAD_REQUEST);
+      if (!ws.bankName || !ws.bankAccount || !ws.bankOwnerName) throw new HttpException("Vui lòng cập nhật ngân hàng", HttpStatus.BAD_REQUEST);
+
+      // Lưu lệnh rút tiền vào Database
+      await this.prisma.withdrawalRequest.create({
+          data: {
+              workspaceId,
+              amount,
+              bankName: ws.bankName,
+              bankAccount: ws.bankAccount,
+              bankOwnerName: ws.bankOwnerName
+          }
+      });
+
+      // Gửi Email thông báo cho Admin (support@kpost.vn)
+      try {
+          // Gửi mail dùng EmailService có sẵn trong hệ thống của bạn
+          await this.emailService.sendEmail(
+              'support@kpost.vn', // Email nhận thông báo
+              `[KPOST] Yêu cầu rút tiền Affiliate: ${amount.toLocaleString()}đ`,
+              `Có yêu cầu rút hoa hồng mới từ hệ thống:
+              - Mã không gian: ${workspaceId}
+              - Số tiền rút: ${amount.toLocaleString()} VNĐ
+              - Ngân hàng: ${ws.bankName}
+              - Số tài khoản: ${ws.bankAccount}
+              - Chủ tài khoản: ${ws.bankOwnerName}`
+          );
+      } catch (err) {
+          console.error("Lỗi gửi mail admin:", err.message);
+      }
+
+      return { success: true, message: "Đã tạo lệnh rút tiền!" };
+  }
+  
+  // ===============================================
 
   @Get('affiliate/stats')
   async getAffiliateStats(@Query('workspaceId') workspaceId: string) {
