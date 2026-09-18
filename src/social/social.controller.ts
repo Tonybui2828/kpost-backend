@@ -53,7 +53,30 @@ export class SocialController {
       fileSize: 20 * 1024 * 1024 // Tối đa 20MB mỗi file
     }
   }))
-  uploadMedia(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request) {
+  // ===============================================
+  // API TẢI MEDIA TỪ MÁY TÍNH LÊN ĐỂ ĐĂNG FACEBOOK
+  // ===============================================
+  @Post('upload')
+  @UseInterceptors(FilesInterceptor('files', 10, {
+    storage: diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = './uploads';
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileExt = extname(file.originalname) || '.jpg';
+        cb(null, `${uniqueSuffix}${fileExt}`);
+      }
+    }),
+    limits: {
+      fileSize: 20 * 1024 * 1024 // Tối đa 20MB mỗi file
+    }
+  }))
+  uploadMedia(@UploadedFiles() files: any[], @Req() req: any) {
     if (!files || files.length === 0) {
       throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh/video', HttpStatus.BAD_REQUEST);
     }
