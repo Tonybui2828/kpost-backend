@@ -34,15 +34,42 @@ export class SocialController {
  // ===============================================
   // API LƯU MEDIA QUA BASE64 (TỰ ĐỘNG BÓC TÁCH MỌI KIỂU GỬI)
   // ===============================================
+ // ===============================================
+  // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (ĐÃ CÓ LOG SOI LỖI)
+  // ===============================================
   @Post('upload')
   async uploadMedia(@Body() body: any, @Req() req: any) {
-    // Tự động nhận diện cả trường hợp gửi { files: [...] } hoặc gửi trực tiếp mảng [...]
-    let files = body?.files || body;
-    if (!Array.isArray(files) && typeof body === 'object') {
-      files = Object.values(body).find(val => Array.isArray(val)) as any[] || [];
+    console.log("📥 [UPLOAD DEBUG] Body nhận được:", {
+      type: typeof body,
+      isArray: Array.isArray(body),
+      keys: body ? Object.keys(body) : null,
+      filesLength: body?.files?.length || body?.length
+    });
+
+    // 1. Thu thập mảng file từ mọi nguồn khả dĩ trong body
+    let rawFiles: any[] = [];
+
+    if (Array.isArray(body)) {
+      rawFiles = body;
+    } else if (body && typeof body === 'object') {
+      if (Array.isArray(body.files)) {
+        rawFiles = body.files;
+      } else if (Array.isArray(body.images)) {
+        rawFiles = body.images;
+      } else {
+        // Tìm bất kỳ thuộc tính nào là mảng bên trong body
+        const anyArray = Object.values(body).find(val => Array.isArray(val));
+        if (anyArray) rawFiles = anyArray as any[];
+      }
     }
 
-    if (!files || !Array.isArray(files) || files.length === 0) {
+    // Nếu vẫn rỗng nhưng chính body có thuộc tính base64 (trường hợp gửi 1 file lẻ)
+    if (rawFiles.length === 0 && body?.base64) {
+      rawFiles = [body];
+    }
+
+    if (!rawFiles || rawFiles.length === 0) {
+      console.error("🚨 [UPLOAD DEBUG] Không tìm thấy dữ liệu file trong body:", body);
       throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh', HttpStatus.BAD_REQUEST);
     }
 
@@ -57,12 +84,13 @@ export class SocialController {
 
     const urls: string[] = [];
 
-    for (const file of files) {
+    for (const item of rawFiles) {
       try {
-        const rawBase64 = typeof file === 'string' ? file : file?.base64;
-        if (!rawBase64) continue;
+        const base64String = typeof item === 'string' ? item : (item?.base64 || item?.data || '');
+        if (!base64String) continue;
 
-        const matches = rawBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        // Bóc tách mime-type và chuỗi Base64
+        const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         let buffer: Buffer;
         let ext = '.jpg';
 
@@ -75,7 +103,7 @@ export class SocialController {
           else if (mimeType.includes('gif')) ext = '.gif';
           else if (mimeType.includes('mp4')) ext = '.mp4';
         } else {
-          buffer = Buffer.from(rawBase64, 'base64');
+          buffer = Buffer.from(base64String, 'base64');
         }
 
         const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
@@ -84,14 +112,15 @@ export class SocialController {
         fs.writeFileSync(filePath, buffer);
         urls.push(`${baseUrl}/uploads/${fileName}`);
       } catch (err: any) {
-        console.error('Lỗi ghi file ảnh:', err);
+        console.error('🚨 [UPLOAD DEBUG] Lỗi ghi file ảnh:', err);
       }
     }
 
     if (urls.length === 0) {
-      throw new HttpException('Không thể lưu file ảnh', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Không thể giải mã và lưu file ảnh', HttpStatus.BAD_REQUEST);
     }
 
+    console.log(`✅ [UPLOAD DEBUG] Lưu thành công ${urls.length} ảnh:`, urls);
     return {
       success: true,
       message: `Đã tải lên thành công ${urls.length} file ảnh`,

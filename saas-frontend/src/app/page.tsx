@@ -105,14 +105,14 @@ function AiMarketingContent() {
     }
   }, [searchParams, API_URL, workspaceId]);
 
-  // 🔥 HÀM UPLOAD MEDIA QUA BASE64 (KHÔNG BAO GIỜ BỊ LỖI MULTIPART)
+  // 🔥 HÀM UPLOAD MEDIA QUA BASE64 (ĐÃ ĐƯỢC TỐI ƯU GỬI ĐÚNG CHUẨN JSON VÀ HEADERS)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setUploading(true);
     try {
-      // Đọc từng file sang Base64
+      // Đọc từng file được chọn từ máy tính sang Base64
       const filePromises = Array.from(files).map((file) => {
         return new Promise<{ name: string; base64: string }>((resolve, reject) => {
           const reader = new FileReader();
@@ -123,14 +123,17 @@ function AiMarketingContent() {
       });
 
       const base64Files = await Promise.all(filePromises);
-
       const token = localStorage.getItem("token");
-      // Gửi dạng JSON chuẩn - Nginx/Proxy xử lý êm ru 100%
+
+      // Gửi dạng JSON chuẩn có định danh Content-Type rõ ràng
       const res = await axios.post(
         `${API_URL}/social/upload`,
         { files: base64Files },
         {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
         }
       );
 
@@ -138,6 +141,7 @@ function AiMarketingContent() {
 
       if (uploadedUrls.length > 0) {
         setAvailableImages((prev) => [...new Set([...uploadedUrls, ...prev])]);
+        // Tự động chọn luôn các ảnh vừa tải
         setSelectedImages((prev) => [...new Set([...prev, ...uploadedUrls])].slice(0, 10));
       } else {
         alert("Không nhận được đường dẫn ảnh từ server!");
