@@ -918,6 +918,7 @@ function BillingTab({ onUpgrade }: any) {
     const [voucherMessage, setVoucherMessage] = useState("");
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
 
+    // 1. ĐÃ ĐỒNG BỘ HOA HỒNG TẤT CẢ CÁC GÓI LÀ 10%
     const plans = [
         { 
             name: "PRO", color: "blue",
@@ -927,12 +928,12 @@ function BillingTab({ onUpgrade }: any) {
         { 
             name: "GOLD", color: "amber", 
             prices: { '1m': 990000, '3m': 2890000, '6m': 5890000, '12m': 11690000 },
-            features: ["Tất cả tính năng Gói PRO", "Add 100 Fanpage", "Add 100 sản phẩm", "Mở tính năng Affiliate hoa hồng 15%"] 
+            features: ["Tất cả tính năng Gói PRO", "Add 100 Fanpage", "Add 100 sản phẩm", "Mở tính năng Affiliate hoa hồng 10%"] 
         },
         { 
             name: "DIAMOND", color: "purple", 
             prices: { '1m': 3990000, '3m': 11890000, '6m': 23390000, '12m': 46590000 },
-            features: ["Tất cả tính năng Gói GOLD & PRO", "Add 500 Fanpage", "Thêm 500 sản phẩm", "Mở tính năng Affiliate hoa hồng 20%"] 
+            features: ["Tất cả tính năng Gói GOLD & PRO", "Add 500 Fanpage", "Thêm 500 sản phẩm", "Mở tính năng Affiliate hoa hồng 10%"] 
         },
     ];
 
@@ -983,23 +984,30 @@ function BillingTab({ onUpgrade }: any) {
         <div className="space-y-10 text-black animate-in fade-in">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <h2 className="text-2xl font-black italic uppercase">Nâng cấp thành viên</h2>
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex-wrap justify-center">
                     {[
                         { id: '1m', label: '1 Tháng' }, { id: '3m', label: '3 Tháng' },
                         { id: '6m', label: '6 Tháng' }, { id: '12m', label: '1 Năm' }
                     ].map(d => (
-                        <button key={d.id} onClick={() => setDuration(d.id)} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${duration === d.id ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}>{d.label}</button>
+                        <button key={d.id} onClick={() => setDuration(d.id)} className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${duration === d.id ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}>{d.label}</button>
                     ))}
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
                 {plans.map((p) => {
                     const price = p.prices[duration as keyof typeof p.prices];
                     return (
-                        <div key={p.name} className={`p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
+                        <div key={p.name} className={`p-6 2xl:p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
                             <p className={`font-black uppercase text-[11px] tracking-widest mb-4 ${p.color === 'blue' ? 'text-blue-600' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-600'}`}>Hạng {p.name}</p>
-                            <div className="flex items-end gap-1 mb-8"><span className="text-4xl font-black italic tracking-tighter">{price.toLocaleString()}đ</span></div>
+                            
+                            {/* 2. ĐÃ FIX KÍCH THƯỚC CHỮ SỐ TIỀN RESPONSIVE TRÁNH BỊ TRÀN Ô */}
+                            <div className="flex items-end gap-1 mb-8">
+                                <span className="text-3xl md:text-4xl lg:text-4xl xl:text-2xl 2xl:text-4xl font-black italic tracking-tighter">
+                                    {price.toLocaleString()}đ
+                                </span>
+                            </div>
+
                             <ul className="space-y-4 mb-8 flex-1">
                                 {p.features.map(f => (
                                     <li key={f} className="text-xs font-bold text-slate-600 flex items-start gap-3 leading-relaxed">
