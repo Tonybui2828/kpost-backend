@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import { 
   Users, Search, Clock, Send, MessageSquare, 
-  Sparkles, ShieldCheck, CheckSquare, Square, Loader2, RefreshCw
+  Sparkles, ShieldCheck, CheckSquare, Square, 
+  Loader2, RefreshCw, CheckCircle2, AlertCircle, Hourglass
 } from "lucide-react";
 
 interface Customer {
@@ -13,6 +14,20 @@ interface Customer {
   lastChat: string;
   rawDate: Date;
   page: string;
+}
+
+interface RemarketingHistoryItem {
+  id: string;
+  customerId: string;
+  customer?: {
+    name: string;
+    pageName?: string;
+    platformId?: string;
+  };
+  prompt: string;
+  scheduledAt: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  createdAt: string;
 }
 
 export default function RemarketingPage() {
@@ -27,7 +42,11 @@ export default function RemarketingPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  // --- HÀM TÍNH THỜI GIAN TƯƠNG TÁC TƯƠNG ĐỐI ---
+  // LỊCH SỬ TIẾN ĐỘ
+  const [historyList, setHistoryList] = useState<RemarketingHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // --- HÀM FORMAT THỜI GIAN ---
   const formatRelativeTime = (dateInput: string | Date) => {
     if (!dateInput) return "Vừa xong";
     const date = new Date(dateInput);
@@ -40,12 +59,22 @@ export default function RemarketingPage() {
     const diffHours = Math.floor(diffMin / 60);
     if (diffHours < 24) return `${diffHours} giờ trước`;
     const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 30) return `${diffDays} ngày trước`;
-    const diffMonths = Math.floor(diffDays / 30);
-    return `${diffMonths} tháng trước`;
+    return `${diffDays} ngày trước`;
   };
 
-  // --- GỌI API LẤY KHÁCH HÀNG THỰC TẾ TỪ BACKEND / INBOX ---
+  const formatExactTime = (dateInput: string | Date) => {
+    if (!dateInput) return "--:--";
+    const d = new Date(dateInput);
+    return d.toLocaleString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+  };
+
+  // --- 1. LẤY DANH SÁCH KHÁCH HÀNG TỪ INBOX ---
   const fetchCustomers = useCallback(async () => {
     setFetching(true);
     try {
@@ -55,7 +84,6 @@ export default function RemarketingPage() {
 
       let loadedCustomers: Customer[] = [];
 
-      // 1. Thử gọi API chuyên dụng của Remarketing (nếu có)
       try {
         const res = await axios.get(`${API_URL}/remarketing/customers?workspaceId=${workspaceId}`, { headers });
         if (res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -68,16 +96,12 @@ export default function RemarketingPage() {
             page: c.page || c.pageName || "Fanpage"
           }));
         }
-      } catch (e) {
-        // Nếu API chuyên dụng chưa có, tiếp tục fallback sang Hộp thư
-      }
+      } catch (e) {}
 
-      // 2. Fallback: Lấy danh sách khách hàng thật từ Hộp thư Inbox
       if (loadedCustomers.length === 0) {
         const inboxRes = await axios.get(`${API_URL}/social/inbox?workspaceId=${workspaceId}`, { headers });
         const messages = inboxRes.data || [];
 
-        // Gom nhóm theo senderId để lấy danh sách khách hàng duy nhất
         const customerMap = new Map<string, any>();
         for (const msg of messages) {
           if (!msg.senderId || msg.type === "outbound") continue;
@@ -108,11 +132,31 @@ export default function RemarketingPage() {
     }
   }, [API_URL]);
 
+  // --- 2. LẤY DANH SÁCH LỊCH SỬ REMARKETING ---
+  const fetchHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const workspaceId = localStorage.getItem("workspaceId") || "default_workspace";
+      const token = localStorage.getItem("token");
+      const headers = { Authorization: token ? `Bearer ${token}` : "" };
+
+      const res = await axios.get(`${API_URL}/remarketing/history?workspaceId=${workspaceId}`, { headers });
+      if (res.data && Array.isArray(res.data)) {
+        setHistoryList(res.data);
+      }
+    } catch (error) {
+      console.error("Lỗi tải lịch sử Remarketing:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [API_URL]);
+
   useEffect(() => {
     fetchCustomers();
-  }, [fetchCustomers]);
+    fetchHistory();
+  }, [fetchCustomers, fetchHistory]);
 
-  // --- LỌC KHÁCH HÀNG THEO TAB VÀ TÌM KIẾM ---
+  // Lọc khách hàng
   const filteredCustomers = useMemo(() => {
     return customers
       .filter(c => c.status === activeTab)
@@ -123,7 +167,6 @@ export default function RemarketingPage() {
       });
   }, [customers, activeTab, searchTerm]);
 
-  // Chọn / Bỏ chọn tất cả
   const toggleSelectAll = () => {
     if (selectedCustomers.length === filteredCustomers.length && filteredCustomers.length > 0) {
       setSelectedCustomers([]);
@@ -132,14 +175,13 @@ export default function RemarketingPage() {
     }
   };
 
-  // Chọn / Bỏ chọn từng khách
   const toggleSelect = (id: string) => {
     setSelectedCustomers(prev => 
       prev.includes(id) ? prev.filter(cId => cId !== id) : [...prev, id]
     );
   };
 
-  // --- KÍCH HOẠT CHIẾN DỊCH AI REMARKETING ---
+  // --- 3. KÍCH HOẠT CHIẾN DỊCH AI ---
   const handleLaunchCampaign = async () => {
     if (selectedCustomers.length === 0) return alert("Vui lòng chọn ít nhất 1 khách hàng!");
     if (!aiPrompt.trim()) return alert("Vui lòng nhập kịch bản/yêu cầu cho AI!");
@@ -166,6 +208,10 @@ export default function RemarketingPage() {
       alert(res.data?.message || "✅ Đã kích hoạt chiến dịch AI Remarketing thành công!");
       setSelectedCustomers([]);
       setAiPrompt("");
+      setScheduleTime("");
+
+      // Tự động load lại lịch sử gửi tin bên dưới ngay sau khi bấm kích hoạt
+      fetchHistory();
     } catch (error: any) {
       alert("Lỗi: " + (error.response?.data?.message || error.message || "Không thể khởi chạy chiến dịch"));
     } finally {
@@ -175,24 +221,29 @@ export default function RemarketingPage() {
 
   return (
     <div className="p-4 md:p-8 bg-slate-50 min-h-screen text-black">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-          <h1 className="text-3xl font-black uppercase italic">AI Remarketing & Chăm Sóc</h1>
-          <button 
-            onClick={fetchCustomers}
-            disabled={fetching}
-            className="flex items-center gap-2 self-start px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition shadow-sm active:scale-95 disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={fetching ? "animate-spin text-blue-600" : ""} />
-            Làm mới dữ liệu
-          </button>
+      <div className="max-w-6xl mx-auto space-y-10">
+        
+        {/* HEADER TRANG */}
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+            <h1 className="text-3xl font-black uppercase italic">AI Remarketing & Chăm Sóc</h1>
+            <button 
+              onClick={() => { fetchCustomers(); fetchHistory(); }}
+              disabled={fetching || loadingHistory}
+              className="flex items-center gap-2 self-start px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={fetching || loadingHistory ? "animate-spin text-blue-600" : ""} />
+              Làm mới dữ liệu
+            </button>
+          </div>
+
+          <p className="text-slate-500 flex items-center gap-2 text-sm">
+            <ShieldCheck size={18} className="text-green-600"/> 
+            Tự động Spin nội dung chống Spam & Tuân thủ thuật toán Facebook
+          </p>
         </div>
 
-        <p className="text-slate-500 mb-8 flex items-center gap-2 text-sm">
-          <ShieldCheck size={18} className="text-green-600"/> 
-          Tự động Spin nội dung chống Spam & Tuân thủ thuật toán Facebook
-        </p>
-
+        {/* KHU VỰC 1: BẢNG KHÁCH HÀNG & THIẾT LẬP CHIẾN DỊCH */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* CỘT TRÁI: DANH SÁCH KHÁCH HÀNG */}
           <div className="lg:col-span-2 bg-white rounded-[32px] p-6 shadow-sm border border-slate-100 flex flex-col justify-between">
@@ -222,7 +273,7 @@ export default function RemarketingPage() {
                   </button>
                 </div>
 
-                {/* Ô TÌM KIẾM NHANH */}
+                {/* Ô TÌM KIẾM */}
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs w-full sm:w-56 focus-within:border-blue-500 transition">
                   <Search size={14} className="text-slate-400 shrink-0" />
                   <input 
@@ -235,7 +286,7 @@ export default function RemarketingPage() {
                 </div>
               </div>
 
-              {/* BẢNG KHÁCH HÀNG THẬT */}
+              {/* BẢNG KHÁCH HÀNG */}
               <div className="overflow-x-auto min-h-[300px]">
                 {fetching ? (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
@@ -303,7 +354,7 @@ export default function RemarketingPage() {
               </div>
             </div>
 
-            {/* THANH THỐNG KÊ ĐÃ CHỌN DƯỚI BẢNG */}
+            {/* THỐNG KÊ ĐÃ CHỌN */}
             {filteredCustomers.length > 0 && (
               <div className="pt-4 mt-4 border-t border-slate-100 flex justify-between items-center text-xs font-bold text-slate-500">
                 <span>Đã chọn: <strong className="text-blue-600">{selectedCustomers.length}</strong> / {filteredCustomers.length} khách</span>
@@ -316,7 +367,7 @@ export default function RemarketingPage() {
             )}
           </div>
 
-          {/* CỘT PHẢI: THIẾT LẬP CHIẾN DỊCH AI */}
+          {/* CỘT PHẢI: THIẾT LẬP CHIẾN DỊCH */}
           <div className="bg-white rounded-[32px] p-6 shadow-xl border-t-8 border-blue-600 flex flex-col justify-between">
             <div>
               <h3 className="text-xl font-black mb-6 flex items-center gap-2">
@@ -372,6 +423,127 @@ export default function RemarketingPage() {
             </button>
           </div>
         </div>
+
+        {/* KHU VỰC 2: MỤC LỊCH SỬ INBOX REMARKETING (MỚI THÊM) */}
+        <div className="bg-white rounded-[32px] p-6 sm:p-8 shadow-sm border border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b pb-4">
+            <div>
+              <h2 className="text-xl font-black uppercase italic flex items-center gap-2">
+                <MessageSquare className="text-blue-600" size={22} />
+                Lịch Sử Inbox & Tiến Độ Remarketing
+              </h2>
+              <p className="text-slate-400 text-xs mt-1">
+                Theo dõi lịch hẹn gửi từng khách và trạng thái gửi tin tự động theo thời gian thực
+              </p>
+            </div>
+            <button 
+              onClick={fetchHistory}
+              disabled={loadingHistory}
+              className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-xl transition self-start"
+            >
+              <RefreshCw size={13} className={loadingHistory ? "animate-spin" : ""} />
+              Cập nhật tiến độ
+            </button>
+          </div>
+
+          <div className="overflow-x-auto min-h-[220px]">
+            {loadingHistory ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
+                <Loader2 size={28} className="animate-spin text-blue-600" />
+                <p className="text-xs font-bold uppercase tracking-wider">Đang tải lịch sử gửi tin...</p>
+              </div>
+            ) : historyList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+                <Hourglass size={36} className="text-slate-300 mb-2" />
+                <p className="text-sm font-black text-slate-700 uppercase">Chưa có lịch sử gửi tin nào</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Khi bạn chọn khách hàng và bấm "Kích hoạt chiến dịch", các lượt gửi sẽ hiển thị tại đây.
+                </p>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-slate-100 text-slate-400 text-[11px] font-black uppercase tracking-wider">
+                    <th className="p-3">Khách Hàng Nhận</th>
+                    <th className="p-3">Kịch Bản / Yêu Cầu</th>
+                    <th className="p-3">Lịch Hẹn Gửi</th>
+                    <th className="p-3">Thông Báo Trạng Thái</th>
+                    <th className="p-3 text-right">Khởi Tạo Lúc</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyList.map(task => {
+                    const customerName = task.customer?.name || `Khách #${task.customerId.slice(-4)}`;
+                    return (
+                      <tr key={task.id} className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors">
+                        {/* Tên khách */}
+                        <td className="p-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-black text-xs shrink-0">
+                              {customerName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{customerName}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">ID: {task.customerId.slice(0, 10)}...</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Kịch bản */}
+                        <td className="p-3 max-w-[280px]">
+                          <p className="text-xs text-slate-600 line-clamp-2 italic" title={task.prompt}>
+                            "{task.prompt}"
+                          </p>
+                        </td>
+
+                        {/* Lịch hẹn gửi */}
+                        <td className="p-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                            <Clock size={14} className="text-blue-500" />
+                            {formatExactTime(task.scheduledAt)}
+                          </div>
+                        </td>
+
+                        {/* Cột thông báo trạng thái */}
+                        <td className="p-3 whitespace-nowrap">
+                          {task.status === "completed" && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-black border border-green-200">
+                              <CheckCircle2 size={13} /> Đã gửi thành công
+                            </span>
+                          )}
+
+                          {task.status === "pending" && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-black border border-amber-200">
+                              <Hourglass size={13} /> Đang chờ gửi
+                            </span>
+                          )}
+
+                          {task.status === "processing" && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-black border border-blue-200">
+                              <Loader2 size={13} className="animate-spin" /> Đang gửi...
+                            </span>
+                          )}
+
+                          {task.status === "failed" && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-black border border-red-200">
+                              <AlertCircle size={13} /> Gửi thất bại
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Thời gian tạo */}
+                        <td className="p-3 text-right text-xs text-slate-400 whitespace-nowrap">
+                          {formatRelativeTime(task.createdAt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

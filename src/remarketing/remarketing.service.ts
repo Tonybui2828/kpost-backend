@@ -81,7 +81,20 @@ export class RemarketingService {
     return { success: true, message: `✅ Đã đưa ${validCustomerIds.length} khách hàng vào hàng đợi Remarketing thành công!` };
   }
 
-  // 2. AI CÁ NHÂN HÓA TIN NHẮN THEO LUẬT 24H
+  // 2. API: LẤY LỊCH SỬ GỬI TIN & TIẾN ĐỘ CHO BẢNG FRONTEND
+  async getCampaignHistory(workspaceId: string) {
+    const safeWorkspaceId = workspaceId && workspaceId.trim() !== "" ? workspaceId : "default_workspace";
+    return this.prisma.remarketingTask.findMany({
+      where: { workspaceId: safeWorkspaceId },
+      include: {
+        customer: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50 // Lấy 50 lượt gửi gần nhất
+    });
+  }
+
+  // 3. AI CÁ NHÂN HÓA TIN NHẮN THEO LUẬT 24H
   private async generatePersonalizedMessage(customerName: string, prompt: string, isOver24h: boolean): Promise<string> {
     try {
       const systemInstruction = isOver24h 
@@ -102,7 +115,7 @@ export class RemarketingService {
     }
   }
 
-  // 3. CRONJOB: GỬI TIN CÓ ĐỘ TRỄ CHỐNG SPAM
+  // 4. CRONJOB: GỬI TIN CÓ ĐỘ TRỄ CHỐNG SPAM
   @Cron(CronExpression.EVERY_MINUTE)
   async processRemarketingQueue() {
     if (this.isCronRunning) return;
