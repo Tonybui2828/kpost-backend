@@ -19,6 +19,31 @@ export class EmailService {
   }
 
   // ==========================================
+  // 0. EMAIL THÔNG BÁO TỔNG QUÁT DÙNG CHUNG (Cập nhật mới)
+  // ==========================================
+  async sendEmail(toEmail: string, subject: string, contentHtml: string): Promise<boolean> {
+    if (!toEmail) return false;
+    try {
+      const mailOptions = {
+        from: `"Kpost System" <${process.env.ZOHO_MAIL_USER}>`,
+        to: toEmail,
+        subject: subject,
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+             ${contentHtml.replace(/\n/g, '<br>')}
+          </div>
+        `,
+      };
+      await this.transporter.sendMail(mailOptions);
+      this.logger.log(`✅ Đã gửi email (Chủ đề: ${subject}) tới: ${toEmail}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ Lỗi gửi email: ${error.message}`);
+      return false;
+    }
+  }
+
+  // ==========================================
   // 1. EMAIL THÔNG BÁO ĐẶT HÀNH THÀNH CÔNG
   // ==========================================
   async sendOrderSuccessEmail(toEmail: string, orderData: any) {

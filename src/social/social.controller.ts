@@ -10,7 +10,7 @@ import { PaymentService } from '../products/payment.service';
 import { AutomatorService } from './automator.service';
 import { SocialScheduleService } from './social-schedule.service';
 import { GroupBotService } from './group-bot.service'; 
-import { EmailService } from '../email/email.service'; // Chèn thêm EmailService để gửi mail thông báo
+import { EmailService } from '../email/email.service';
 
 @Controller('social')
 export class SocialController {
@@ -23,7 +23,7 @@ export class SocialController {
     private readonly automatorService: AutomatorService,
     private readonly socialScheduleService: SocialScheduleService,
     private readonly groupBotService: GroupBotService,
-    private readonly emailService: EmailService // Gọi biến EmailService vào đây
+    private readonly emailService: EmailService
   ) {}
 
   // ===============================================
@@ -93,14 +93,13 @@ export class SocialController {
           }
       });
 
-      // Gửi Email thông báo cho Admin (support@kpost.vn)
+      // Gửi Email thông báo cho Admin
       try {
-          // Gửi mail dùng EmailService có sẵn trong hệ thống của bạn
           await this.emailService.sendEmail(
-              'support@kpost.vn', // Email nhận thông báo
+              'support@kpost.vn', 
               `[KPOST] Yêu cầu rút tiền Affiliate: ${amount.toLocaleString()}đ`,
               `Có yêu cầu rút hoa hồng mới từ hệ thống:
-              - Mã không gian: ${workspaceId}
+              - Mã không gian (Workspace ID): ${workspaceId}
               - Số tiền rút: ${amount.toLocaleString()} VNĐ
               - Ngân hàng: ${ws.bankName}
               - Số tài khoản: ${ws.bankAccount}
