@@ -1,5 +1,9 @@
-import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Delete, Param, Patch, Res, Req, HttpException, HttpStatus, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import { Response, Request } from 'express'; 
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import * as fs from 'fs';
 import axios from 'axios'; 
 import * as jwt from 'jsonwebtoken';
 import { FacebookService } from './facebook.service';
@@ -25,6 +29,47 @@ export class SocialController {
     private readonly groupBotService: GroupBotService,
     private readonly emailService: EmailService
   ) {}
+
+  // ===============================================
+  // API TẢI MEDIA TỪ MÁY TÍNH LÊN ĐỂ ĐĂNG FACEBOOK
+  // ===============================================
+  @Post('upload')
+  @UseInterceptors(FilesInterceptor('files', 10, {
+    storage: diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = './uploads';
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileExt = extname(file.originalname) || '.jpg';
+        cb(null, `${uniqueSuffix}${fileExt}`);
+      }
+    }),
+    limits: {
+      fileSize: 20 * 1024 * 1024 // Tối đa 20MB mỗi file
+    }
+  }))
+  uploadMedia(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request) {
+    if (!files || files.length === 0) {
+      throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh/video', HttpStatus.BAD_REQUEST);
+    }
+
+    // Xác định Base URL của server để tạo link công khai cho Facebook tải ảnh
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.get('host');
+    const baseUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
+
+    const urls = files.map(file => `${baseUrl}/uploads/${file.filename}`);
+    return {
+      success: true,
+      message: `Đã tải lên thành công ${files.length} file media`,
+      urls
+    };
+  }
 
   // ===============================================
   // CỤM API RÚT TIỀN AFFILIATE 
@@ -171,7 +216,7 @@ export class SocialController {
                   where: { id: existing.id },
                   data: {
                     workspaceId: data.workspaceId,
-                    accessToken: page.access_token, // Lấy PAGE TOKEN từ mảng trả về
+                    accessToken: page.access_token,
                     accountName: page.name,
                     isAiAutoReply: false
                   }
@@ -183,7 +228,7 @@ export class SocialController {
                     platform: 'facebook',
                     platformId: page.id,
                     accountName: page.name,
-                    accessToken: page.access_token, // Lấy PAGE TOKEN từ mảng trả về
+                    accessToken: page.access_token,
                     isAiAutoReply: false,
                     aiTone: 'friendly'
                   }
@@ -231,7 +276,6 @@ export class SocialController {
 
   @Post('sync-inbox')
   async syncInbox(@Body() body: { workspaceId: string }) {
-    // 1. Tìm thông tin gói cước của Workspace
     const workspace = await this.prisma.workspace.findUnique({
        where: { id: body.workspaceId }
     });
@@ -240,13 +284,11 @@ export class SocialController {
        throw new HttpException("Không tìm thấy tài khoản.", HttpStatus.NOT_FOUND);
     }
 
-    // 2. Kiểm tra gói cước
     const plan = workspace.plan?.toUpperCase();
     if (!['PRO', 'GOLD', 'DIAMOND'].includes(plan)) {
       throw new HttpException("Tính năng đồng bộ Hộp thư chỉ dành cho thành viên gói PRO, GOLD và DIAMOND. Vui lòng nâng cấp!", HttpStatus.FORBIDDEN);
     }
 
-    // 3. Cho phép đồng bộ nếu hợp lệ
     return this.facebookService.syncAllMessages(body.workspaceId);
   }
 
@@ -410,9 +452,6 @@ export class SocialController {
     }
   }
 
-  // ==========================================
-  // API LƯU VOUCHER VÀO VÍ - ĐÃ FIX LỖI PARSE MẢNG JSON SIÊU CẤP
-  // ==========================================
   @Post('add-voucher-to-wallet')
   async addVoucherToWallet(@Body() body: { code: string, workspaceId: string }, @Req() req: Request) {
     if (!body.code) {
@@ -477,12 +516,10 @@ export class SocialController {
             throw new HttpException('Tài khoản không tồn tại trên hệ thống', HttpStatus.NOT_FOUND);
         }
 
-        // --- HÀM BÓC TÁCH MẢNG SIÊU CẤP ĐỂ TÌM DỮ LIỆU THỰC SỰ ĐANG CÓ TRONG DB ---
         let currentVouchers: string[] = [];
         const rawVouchers: any = user.vouchers; 
         
         if (rawVouchers) {
-            // Hàm đệ quy bóc tách mọi lớp JSON lồng nhau
             const extractCleanArray = (data: any): any => {
                 if (typeof data === 'string') {
                     try {
@@ -497,7 +534,6 @@ export class SocialController {
 
             const cleanData = extractCleanArray(rawVouchers);
 
-            // Ép thành mảng chuẩn
             if (Array.isArray(cleanData)) {
                 currentVouchers = cleanData.map(c => String(c).replace(/[^a-zA-Z0-9]/g, '').trim()).filter(c => c.length > 0);
             } else if (typeof cleanData === 'string' && cleanData.trim().length > 0) {
@@ -505,18 +541,13 @@ export class SocialController {
             }
         }
         
-        // Kiểm tra xem đã lưu chưa
         if (currentVouchers.includes(code)) {
             throw new HttpException('Bạn đã lưu mã này vào ví rồi', HttpStatus.BAD_REQUEST);
         }
 
-        // Thêm mã mới vào mảng
         currentVouchers.push(code);
-        
-        // Loại bỏ trùng lặp nếu có
         const uniqueVouchers = Array.from(new Set(currentVouchers));
         
-        // Ghi đè vào DB bằng MẢNG CHUẨN
         await this.prisma.user.update({
             where: { id: user.id },
             data: { 
@@ -665,20 +696,17 @@ export class SocialController {
     }
   }
 
-  // --- HÀM NÀY DÙNG ĐỂ XÁC MINH VỚI FACEBOOK ---
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
     const mode = query['hub.mode'];
     const token = query['hub.verify_token'];
     const challenge = query['hub.challenge'];
 
-    // Lấy mã Token từ biến môi trường của Coolify
     const verifyToken = process.env.FB_VERIFY_TOKEN || 'saas_ai_token_123';
 
     if (mode && token) {
       if (mode === 'subscribe' && token === verifyToken) {
         console.log('✅ Xác minh Webhook Facebook thành công!');
-        // BẮT BUỘC: Phải trả về đúng cái challenge mà Facebook gửi tới
         return res.status(200).send(challenge);
       } else {
         console.log('❌ Xác minh Webhook thất bại: Sai Token!');
@@ -690,7 +718,6 @@ export class SocialController {
 
   @Post('webhook')
   async handleWebhook(@Body() body: any, @Res() res: Response) {
-    // 1. BẮT BUỘC TRẢ VỀ 200 OK NGAY LẬP TỨC ĐỂ TRÁNH FACEBOOK TIMEOUT
     res.status(HttpStatus.OK).send('EVENT_RECEIVED');
 
     try {
@@ -701,23 +728,18 @@ export class SocialController {
       const messaging = entry.messaging ? entry.messaging[0] : null;
       const changes = entry.changes ? entry.changes[0] : null;
 
-      // Tìm cấu hình Fanpage
       const account = await this.prisma.socialAccount.findFirst({
         where: { platformId: pageId },
       });
 
       if (!account) return;
 
-      // ============================================
-      // A. XỬ LÝ TIN NHẮN (MESSENGER)
-      // ============================================
       if (messaging && messaging.message && !messaging.message.is_echo) {
         const senderId = messaging.sender.id;
         const text = messaging.message.text;
 
-        if (senderId === pageId || !text) return; // Bỏ qua nếu shop tự nhắn hoặc là ảnh/sticker
+        if (senderId === pageId || !text) return;
 
-        // Lưu tin nhắn vào DB
         const isDuplicate = await this.prisma.inboxMessage.findUnique({
           where: { platformId: messaging.message.mid }
         });
@@ -738,7 +760,6 @@ export class SocialController {
 
           this.chatGateway.sendMessageToUI(savedMsg);
 
-          // GỌI AI CHẠY NGẦM (Không dùng await để không block tiến trình)
           if (account.isAiAutoReply) {
             this.automatorService.processIncomingMessage(pageId, senderId, text, 'inbox', messaging.message.mid)
                 .catch(err => console.error("Lỗi AI Inbox:", err.message));
@@ -746,9 +767,6 @@ export class SocialController {
         }
       }
 
-      // ============================================
-      // B. XỬ LÝ BÌNH LUẬN (COMMENT)
-      // ============================================
       if (changes && changes.value.item === 'comment' && changes.value.verb === 'add') {
         const commentText = changes.value.message;
         const commentId = changes.value.comment_id;
@@ -772,7 +790,6 @@ export class SocialController {
             }
           });
 
-          // GỌI AI CHẠY NGẦM
           if (account.isAiAutoReply) {
             this.automatorService.processIncomingMessage(pageId, senderId, commentText, 'comment', commentId)
                 .catch(err => console.error("Lỗi AI Comment:", err.message));
