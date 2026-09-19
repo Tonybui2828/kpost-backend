@@ -29,13 +29,37 @@ export class SocialController {
   ) {}
 
   // ===============================================
+  // HÀM KIỂM TRA QUYỀN HẠN & HẠN DÙNG WORKSPACE
+  // ===============================================
+  private validateWorkspaceAccess(workspace: any, actionName = 'sử dụng tính năng này') {
+    if (!workspace) {
+      throw new HttpException("Không tìm thấy thông tin tài khoản (Workspace)", HttpStatus.NOT_FOUND);
+    }
+
+    const currentPlan = (workspace.plan || 'free').toUpperCase();
+
+    // 1. Chặn hoàn toàn tài khoản FREE
+    if (currentPlan === 'FREE') {
+      throw new HttpException(
+        `Tài khoản Miễn phí không có quyền ${actionName}. Vui lòng nâng cấp gói cước để sử dụng!`,
+        HttpStatus.FORBIDDEN
+      );
+    }
+
+    // 2. Chặn tài khoản đã hết hạn sử dụng (planExpiry < Ngày hiện tại)
+    if (workspace.planExpiry && new Date(workspace.planExpiry) < new Date()) {
+      const expireDateStr = new Date(workspace.planExpiry).toLocaleDateString('vi-VN');
+      throw new HttpException(
+        `Gói cước của bạn đã hết hạn từ ngày ${expireDateStr}. Vui lòng gia hạn để tiếp tục ${actionName}!`,
+        HttpStatus.PAYMENT_REQUIRED
+      );
+    }
+
+    return currentPlan;
+  }
+
+  // ===============================================
   // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (CHỐNG LỖI MULTIPART 100%)
-  // ===============================================
- // ===============================================
-  // API LƯU MEDIA QUA BASE64 (TỰ ĐỘNG BÓC TÁCH MỌI KIỂU GỬI)
-  // ===============================================
- // ===============================================
-  // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (ĐÃ CÓ LOG SOI LỖI)
   // ===============================================
   @Post('upload')
   async uploadMedia(@Body() body: any, @Req() req: any) {
@@ -46,7 +70,6 @@ export class SocialController {
       filesLength: body?.files?.length || body?.length
     });
 
-    // 1. Thu thập mảng file từ mọi nguồn khả dĩ trong body
     let rawFiles: any[] = [];
 
     if (Array.isArray(body)) {
@@ -57,13 +80,11 @@ export class SocialController {
       } else if (Array.isArray(body.images)) {
         rawFiles = body.images;
       } else {
-        // Tìm bất kỳ thuộc tính nào là mảng bên trong body
         const anyArray = Object.values(body).find(val => Array.isArray(val));
         if (anyArray) rawFiles = anyArray as any[];
       }
     }
 
-    // Nếu vẫn rỗng nhưng chính body có thuộc tính base64 (trường hợp gửi 1 file lẻ)
     if (rawFiles.length === 0 && body?.base64) {
       rawFiles = [body];
     }
@@ -89,7 +110,6 @@ export class SocialController {
         const base64String = typeof item === 'string' ? item : (item?.base64 || item?.data || '');
         if (!base64String) continue;
 
-        // Bóc tách mime-type và chuỗi Base64
         const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         let buffer: Buffer;
         let ext = '.jpg';
@@ -131,8 +151,6 @@ export class SocialController {
   // ===============================================
   // CỤM API RÚT TIỀN AFFILIATE 
   // ===============================================
-
-  // 1. API: Lấy thông tin ngân hàng & Tính số dư thực tế
   @Get('affiliate/bank-info')
   async getBankInfo(@Query('workspaceId') workspaceId: string) {
       const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
@@ -141,7 +159,6 @@ export class SocialController {
           where: { workspaceId, status: { in: ['pending', 'completed'] } }
       });
       const totalWithdrawn = withdrawals.reduce((sum, w) => sum + w.amount, 0);
-      
       const availableBalance = (ws?.commission || 0) - totalWithdrawn;
 
       return {
@@ -152,7 +169,6 @@ export class SocialController {
       };
   }
 
-  // 2. API: Cập nhật thông tin tài khoản ngân hàng
   @Post('affiliate/bank-info')
   async updateBankInfo(@Body() body: any) {
       const { workspaceId, bankName, bankAccount, bankOwnerName } = body;
@@ -163,7 +179,6 @@ export class SocialController {
       return { success: true };
   }
 
-  // 3. API: Gửi yêu cầu rút tiền
   @Post('affiliate/withdraw')
   async requestWithdraw(@Body() body: any) {
       const { workspaceId, amount } = body;
@@ -208,8 +223,6 @@ export class SocialController {
       return { success: true, message: "Đã tạo lệnh rút tiền!" };
   }
   
-  // ===============================================
-
   @Get('affiliate/stats')
   async getAffiliateStats(@Query('workspaceId') workspaceId: string) {
     if (!workspaceId) return { clicks: 0, signups: 0, orders: 0, revenue: 0 };
@@ -228,21 +241,24 @@ export class SocialController {
     }
   }
 
+  // ===============================================
+  // KẾT NỐI FANPAGE (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
+  // ===============================================
   @Post('accounts') 
   async saveAccount(@Body() data: any) { 
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: data.workspaceId },
       include: { _count: { select: { socialAccounts: true } } }
     });
-    if (!workspace) throw new HttpException("Không tìm thấy Workspace", HttpStatus.NOT_FOUND);
 
-    const planLimits: Record<string, number> = { 'free': 1, 'PRO': 50, 'GOLD': 100, 'DIAMOND': 500 };
-    const currentPlan = workspace.plan || 'free';
-    const maxLimit = planLimits[currentPlan] || 1;
+    // Chặn nếu là FREE hoặc hết hạn
+    const currentPlan = this.validateWorkspaceAccess(workspace, 'kết nối Fanpage');
+
+    const planLimits: Record<string, number> = { 'PRO': 50, 'GOLD': 100, 'DIAMOND': 500 };
+    const maxLimit = planLimits[currentPlan] || 0;
 
     if (data.isUserToken) {
        try {
-         const axios = require('axios');
          const response = await axios.get(`https://graph.facebook.com/v21.0/me/accounts?access_token=${data.accessToken}`);
          const pages = response.data.data || [];
          
@@ -327,9 +343,7 @@ export class SocialController {
        where: { id: body.workspaceId }
     });
 
-    if (!workspace) {
-       throw new HttpException("Không tìm thấy tài khoản.", HttpStatus.NOT_FOUND);
-    }
+    this.validateWorkspaceAccess(workspace, 'đồng bộ Hộp thư');
 
     const plan = workspace.plan?.toUpperCase();
     if (!['PRO', 'GOLD', 'DIAMOND'].includes(plan)) {
@@ -355,8 +369,14 @@ export class SocialController {
     });
   }
 
+  // ===============================================
+  // ĐĂNG BÀI LÊN NHÓM (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
+  // ===============================================
   @Post('facebook/post-groups')
   async postToGroups(@Body() body: any) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
+    this.validateWorkspaceAccess(workspace, 'đăng bài lên Nhóm');
+
     const groups = await this.prisma.socialGroup.findMany({ where: { workspaceId: body.workspaceId } });
     const results = [];
     for (const group of groups) {
@@ -373,16 +393,39 @@ export class SocialController {
     return results;
   }
 
+  // ===============================================
+  // ĐĂNG BÀI LÊN FANPAGE (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
+  // ===============================================
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
+    // Tìm tài khoản Fanpage để xác định Workspace
+    const account = await this.prisma.socialAccount.findFirst({
+      where: { platformId: body.pageId }
+    });
+
+    const workspaceId = body.workspaceId || account?.workspaceId;
+    if (workspaceId) {
+      const workspace = await this.prisma.workspace.findUnique({
+        where: { id: workspaceId }
+      });
+      // Kiểm tra chặn gói FREE và hết hạn
+      this.validateWorkspaceAccess(workspace, 'xuất bản bài viết');
+    }
+
     const imagesToPost = body.imageUrls || body.imageUrl;
     const res = await this.facebookService.postToPage(body.pageId, body.accessToken, body.message, imagesToPost); 
     if (res?.id && body.productUrl) await this.facebookService.commentOnPost(res.id, body.accessToken, `🔗 Link mua sản phẩm tại đây: ${body.productUrl}`);
     return res;
   }
 
+  // ===============================================
+  // LÊN LỊCH ĐĂNG BÀI (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
+  // ===============================================
   @Post('schedule')
   async schedulePost(@Body() body: any) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
+    this.validateWorkspaceAccess(workspace, 'lên lịch đăng bài');
+
     return this.prisma.post.create({
       data: { content: body.content, workspaceId: body.workspaceId, productUrl: body.productUrl || null, status: 'scheduled', createdAt: new Date(body.scheduledAt), userId: body.imageUrl || "" }
     });
@@ -391,6 +434,11 @@ export class SocialController {
   @Post('schedule-batch')
   async scheduleBatch(@Body() body: any) {
     try {
+      if (body.workspaceId) {
+        const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
+        this.validateWorkspaceAccess(workspace, 'lên lịch đăng bài hàng loạt');
+      }
+
       if (!this.socialScheduleService) {
          throw new Error("Lỗi Server: Chưa kết nối SocialScheduleService.");
       }
@@ -399,7 +447,7 @@ export class SocialController {
       console.error("[scheduleBatch] Lỗi:", error);
       throw new HttpException(
         error.message || 'Lỗi hệ thống khi lên lịch hàng loạt', 
-        HttpStatus.INTERNAL_SERVER_ERROR
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
   }
@@ -934,6 +982,11 @@ export class SocialController {
       if (!code) throw new Error("Khách hàng từ chối cấp quyền.");
       
       const { workspaceId } = JSON.parse(state);
+
+      // Chặn nếu tài khoản FREE hoặc hết hạn kết nối qua OAuth
+      const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+      this.validateWorkspaceAccess(workspace, 'kết nối Facebook OAuth');
+
       const appId = process.env.FACEBOOK_APP_ID;
       const appSecret = process.env.FACEBOOK_APP_SECRET;
       const redirectUri = `${process.env.BACKEND_URL}/social/auth/facebook/callback`;
