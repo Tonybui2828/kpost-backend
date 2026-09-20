@@ -153,6 +153,7 @@ export class SocialController {
   // ===============================================
   @Get('affiliate/bank-info')
   async getBankInfo(@Query('workspaceId') workspaceId: string) {
+      if (!workspaceId) return { bankName: "", bankAccount: "", bankOwnerName: "", availableBalance: 0 };
       const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
       
       const withdrawals = await this.prisma.withdrawalRequest.findMany({
@@ -242,28 +243,33 @@ export class SocialController {
   }
 
   // ===============================================
-  // KẾT NỐI FANPAGE (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
+  // KẾT NỐI FANPAGE (CÔ LẬP RIÊNG THEO WORKSPACE ID)
   // ===============================================
   @Post('accounts') 
   async saveAccount(@Body() data: any) { 
+    if (!data.workspaceId) {
+      throw new HttpException("Thiếu mã Workspace", HttpStatus.BAD_REQUEST);
+    }
+
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: data.workspaceId },
       include: { _count: { select: { socialAccounts: true } } }
     });
 
-    // Chặn nếu là FREE hoặc hết hạn
+    // 1. Chặn nếu là FREE hoặc hết hạn
     const currentPlan = this.validateWorkspaceAccess(workspace, 'kết nối Fanpage');
 
     const planLimits: Record<string, number> = { 'PRO': 50, 'GOLD': 100, 'DIAMOND': 500 };
     const maxLimit = planLimits[currentPlan] || 0;
 
+    // 2. KẾT NỐI QUA USER TOKEN (Quét tất cả Fanpage của User)
     if (data.isUserToken) {
        try {
          const response = await axios.get(`https://graph.facebook.com/v21.0/me/accounts?access_token=${data.accessToken}`);
          const pages = response.data.data || [];
          
          if (pages.length === 0) {
-           throw new HttpException("Tài khoản này không quản lý Fanpage nào.", HttpStatus.BAD_REQUEST);
+           throw new HttpException("Tài khoản Facebook này không quản lý Fanpage nào.", HttpStatus.BAD_REQUEST);
          }
 
          let addedCount = 0;
@@ -271,15 +277,18 @@ export class SocialController {
             const currentCount = await this.prisma.socialAccount.count({ where: { workspaceId: data.workspaceId } });
             if (currentCount >= maxLimit) break;
 
+            // ✅ CHỈ TÌM FANPAGE CỦA ĐÚNG WORKSPACE NÀY (Không tìm chéo sang người khác)
             const existing = await this.prisma.socialAccount.findFirst({
-              where: { platformId: page.id }
+              where: { 
+                platformId: page.id,
+                workspaceId: data.workspaceId 
+              }
             });
 
             if (existing) {
                await this.prisma.socialAccount.update({
                   where: { id: existing.id },
                   data: {
-                    workspaceId: data.workspaceId,
                     accessToken: page.access_token,
                     accountName: page.name,
                     isAiAutoReply: false
@@ -306,20 +315,19 @@ export class SocialController {
        }
     }
 
+    // 3. KẾT NỐI ĐƠN LẺ BẰNG PAGE TOKEN
+    // ✅ CHỈ TÌM FANPAGE CỦA ĐÚNG WORKSPACE NÀY (Chống ghi đè nhầm của khách khác)
     const existingAccount = await this.prisma.socialAccount.findFirst({
-      where: { platformId: data.platformId }
+      where: { 
+        platformId: data.platformId,
+        workspaceId: data.workspaceId 
+      }
     });
     
     if (existingAccount) {
-      if (existingAccount.workspaceId !== data.workspaceId) {
-        if (workspace._count.socialAccounts >= maxLimit) {
-          throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
-        }
-      }
       return this.prisma.socialAccount.update({
         where: { id: existingAccount.id },
         data: {
-          workspaceId: data.workspaceId,
           accessToken: data.accessToken,
           accountName: data.accountName,
           isAiAutoReply: false
@@ -327,15 +335,37 @@ export class SocialController {
       });
     }
 
+    // Kiểm tra giới hạn số lượng Page của gói
     if (workspace._count.socialAccounts >= maxLimit) {
       throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
     }
+
     return this.prisma.socialAccount.create({ data }); 
   }
 
-  @Get('accounts') async getAccounts(@Query('workspaceId') workspaceId: string) { return this.prisma.socialAccount.findMany({ where: { workspaceId } }); }
-  @Patch('accounts/:id') async updateAccount(@Param('id') id: string, @Body() data: any) { return this.prisma.socialAccount.update({ where: { id }, data }); }
-  @Delete('accounts/:id') async deleteAccount(@Param('id') id: string) { return this.prisma.socialAccount.delete({ where: { id } }); }
+  // ===============================================
+  // LẤY DANH SÁCH FANPAGE (BẢO VỆ CHỐNG RÒ RỈ DỮ LIỆU)
+  // ===============================================
+  @Get('accounts') 
+  async getAccounts(@Query('workspaceId') workspaceId: string) { 
+    // ✅ BẮT BUỘC có workspaceId hợp lệ, nếu không có tuyệt đối không query DB (trả về rỗng)
+    if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null' || workspaceId.trim() === '') {
+      return [];
+    }
+    return this.prisma.socialAccount.findMany({ 
+      where: { workspaceId: workspaceId.trim() } 
+    }); 
+  }
+
+  @Patch('accounts/:id') 
+  async updateAccount(@Param('id') id: string, @Body() data: any) { 
+    return this.prisma.socialAccount.update({ where: { id }, data }); 
+  }
+
+  @Delete('accounts/:id') 
+  async deleteAccount(@Param('id') id: string) { 
+    return this.prisma.socialAccount.delete({ where: { id } }); 
+  }
 
   @Post('sync-inbox')
   async syncInbox(@Body() body: { workspaceId: string }) {
@@ -355,6 +385,7 @@ export class SocialController {
 
   @Get('inbox')
   async getInbox(@Query('workspaceId') workspaceId: string) {
+    if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null') return [];
     return this.prisma.inboxMessage.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' }
@@ -363,6 +394,7 @@ export class SocialController {
 
   @Get('chat-history')
   async getChatHistory(@Query('senderId') senderId: string, @Query('workspaceId') workspaceId: string) {
+    if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null') return [];
     return this.prisma.inboxMessage.findMany({
       where: { senderId, workspaceId },
       orderBy: { createdAt: 'asc' }
@@ -452,7 +484,11 @@ export class SocialController {
     }
   }
 
-  @Get('scheduled-posts') async getScheduledPosts(@Query('workspaceId') workspaceId: string) { return this.prisma.post.findMany({ where: { workspaceId, status: 'scheduled' }, orderBy: { createdAt: 'asc' } }); }
+  @Get('scheduled-posts') 
+  async getScheduledPosts(@Query('workspaceId') workspaceId: string) { 
+    if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null') return [];
+    return this.prisma.post.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } }); 
+  }
 
   @Delete('scheduled-posts/:id')
   async deleteScheduledPost(@Param('id') id: string) {
@@ -1001,8 +1037,12 @@ export class SocialController {
       const pages = pagesRes.data.data;
 
       for (const page of pages) {
+        // ✅ CÔ LẬP THEO ĐÚNG WORKSPACE ID CỦA KHÁCH KHI KẾT NỐI QUA OAUTH
         const existingPage = await this.prisma.socialAccount.findFirst({
-          where: { platformId: page.id, workspaceId: workspaceId }
+          where: { 
+            platformId: page.id, 
+            workspaceId: workspaceId 
+          }
         });
 
         if (existingPage) {
