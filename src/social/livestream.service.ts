@@ -69,14 +69,13 @@ export class LiveStreamService {
       try {
         this.logger.log(`🎬 Bắt đầu tạo Live trên Fanpage: ${acc.accountName} (${acc.platformId})`);
 
-        // A. Gọi Facebook API để tạo phiên Live Video
+        // A. Gọi Facebook API để tạo phiên Live Video (Đã loại bỏ save_vod)
         const fbRes = await axios.post(
           `https://graph.facebook.com/v21.0/${acc.platformId}/live_videos`,
           {
             title: title || 'Livestream cùng Trợ lý AI',
             description: description || '',
-            status: 'LIVE_NOW',
-            save_vod: true // Tự động lưu video sau khi kết thúc Live
+            status: 'LIVE_NOW'
           },
           {
             headers: { Authorization: `Bearer ${acc.accessToken}` }
