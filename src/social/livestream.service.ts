@@ -83,8 +83,8 @@ export class LiveStreamService {
         const writer = fs.createWriteStream(tempPath);
         response.data.pipe(writer);
         await new Promise((resolve, reject) => {
-          writer.on('finish', resolve);
-          writer.on('error', reject);
+          writer.on('finish', () => resolve(true));
+          writer.on('error', (err) => reject(err));
         });
         localVideoPath = tempPath;
         this.logger.log(`✅ Đã lưu file video nguồn tạm thời: ${localVideoPath}`);
