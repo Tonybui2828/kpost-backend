@@ -104,38 +104,82 @@ export class AdminService {
         image: user.image,
         status: user.status || 'active',
         vouchers: user.vouchers || [],
-        plan: workspace?.plan || 'FREE',
-        planExpire: workspace?.planExpiry || null,
+        plan: workspace?.plan || (user as any).plan || 'FREE',
+        planExpire: workspace?.planExpiry || (user as any).planExpire || null,
         createdAt: user.createdAt,
       };
     });
   }
 
-  // Nâng cấp hoặc tặng ngày sử dụng
-  async updateUserPlan(userId: string, plan: string, extraDays: number) {
+  // Nâng cấp, Tăng/Giảm thời hạn gói (hỗ trợ số âm) hoặc Chọn trực tiếp ngày trên lịch
+  async updateUserPlan(
+    userId: string, 
+    plan: string, 
+    extraDays?: number, 
+    customExpireDate?: string
+  ) {
     const member = await this.prisma.workspaceMember.findFirst({
       where: { userId }
     });
 
-    if (!member) throw new Error('Người dùng chưa có Workspace');
+    const workspace = member 
+      ? await this.prisma.workspace.findUnique({ where: { id: member.workspaceId } })
+      : await this.prisma.workspace.findFirst({ where: { ownerId: userId } });
 
-    const workspace = await this.prisma.workspace.findUnique({ where: { id: member.workspaceId } });
-    const currentDate = workspace?.planExpiry && workspace.planExpiry > new Date() 
-                        ? new Date(workspace.planExpiry) 
-                        : new Date();
+    let newExpireDate: Date | null = null;
+    const planUpper = plan ? plan.toUpperCase() : 'PRO';
 
-    const newExpireDate = new Date(currentDate);
-    newExpireDate.setDate(currentDate.getDate() + Number(extraDays));
+    if (planUpper === 'FREE') {
+      newExpireDate = null;
+    } else if (customExpireDate) {
+      // 1. Nếu Admin chọn một ngày cụ thể trên lịch
+      newExpireDate = new Date(`${customExpireDate}T23:59:59.999Z`);
+    } else if (typeof extraDays === 'number') {
+      // 2. Nếu tăng (+5) hoặc giảm (-5, -1) số ngày
+      const currentDate = workspace?.planExpiry && new Date(workspace.planExpiry) > new Date()
+        ? new Date(workspace.planExpiry)
+        : new Date();
 
-    await this.prisma.workspace.update({
-      where: { id: member.workspaceId },
-      data: {
-        plan: plan.toUpperCase(),
-        planExpiry: newExpireDate 
-      }
-    });
+      newExpireDate = new Date(currentDate);
+      newExpireDate.setDate(currentDate.getDate() + Number(extraDays));
+    } else {
+      newExpireDate = workspace?.planExpiry || new Date();
+    }
 
-    return { success: true, message: `Đã nâng cấp lên gói ${plan} và thêm ${extraDays} ngày.` };
+    // Cập nhật bảng Workspace nếu có
+    if (workspace) {
+      await this.prisma.workspace.update({
+        where: { id: workspace.id },
+        data: {
+          plan: planUpper,
+          planExpiry: newExpireDate 
+        }
+      });
+    }
+
+    // Cập nhật đồng bộ vào bảng User nếu bảng User có các trường này
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          plan: planUpper,
+          planExpire: newExpireDate
+        } as any
+      });
+    } catch (e) {
+      // Bỏ qua nếu schema User không lưu trực tiếp plan
+    }
+
+    const actionText = typeof extraDays === 'number' && extraDays < 0 
+      ? `giảm ${Math.abs(extraDays)} ngày` 
+      : customExpireDate 
+        ? `đặt hạn đến ${newExpireDate?.toLocaleDateString('vi-VN')}` 
+        : `thêm ${extraDays || 0} ngày`;
+
+    return { 
+      success: true, 
+      message: `Đã cập nhật gói ${planUpper} (${actionText}) thành công.` 
+    };
   }
 
   // Tặng Voucher
@@ -154,7 +198,7 @@ export class AdminService {
     return { success: true, message: `Đã tặng voucher ${voucherCode}` };
   }
 
-  // Xóa/Khóa tài khoản
+  // Xóa/Khóa tài khoản (Soft delete)
   async deleteUser(userId: string) {
     await this.prisma.user.update({
       where: { id: userId },
@@ -163,7 +207,7 @@ export class AdminService {
     return { success: true, message: 'Đã khóa tài khoản' };
   }
 
-  // Khôi phục
+  // Khôi phục tài khoản
   async restoreUser(userId: string) {
     await this.prisma.user.update({
       where: { id: userId },
@@ -179,15 +223,7 @@ export class AdminService {
   // Xóa cứng 1 user (Hard Delete)
   async hardDeleteUser(userId: string) {
     try {
-      // 1. Dọn dẹp dữ liệu liên kết trước để tránh lỗi Foreign Key của Prisma
-      // Bỏ qua lỗi nếu bảng không tồn tại bằng .catch()
       await this.prisma.workspaceMember.deleteMany({ where: { userId } }).catch(() => {});
-      
-      // Nếu bạn có các bảng khác như Transaction, Account, Session, hãy xóa luôn:
-      // await this.prisma.transaction.deleteMany({ where: { userId } }).catch(() => {});
-      // await this.prisma.account.deleteMany({ where: { userId } }).catch(() => {});
-
-      // 2. Cuối cùng mới xóa User
       await this.prisma.user.delete({
         where: { id: userId }
       });
@@ -219,10 +255,7 @@ export class AdminService {
   // Xóa cứng hàng loạt
   async bulkHardDeleteUsers(userIds: string[]) {
     try {
-      // Dọn dẹp dữ liệu liên kết hàng loạt
       await this.prisma.workspaceMember.deleteMany({ where: { userId: { in: userIds } } }).catch(() => {});
-      // await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } }).catch(() => {});
-
       await this.prisma.user.deleteMany({
         where: { id: { in: userIds } }
       });
@@ -249,7 +282,6 @@ export class AdminService {
       }
     });
 
-    // Tạo thông báo cho từng Workspace sắp hết hạn
     for (const ws of expiringWorkspaces) {
       await this.prisma.systemNotification.create({
         data: {
