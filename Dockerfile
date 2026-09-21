@@ -1,14 +1,11 @@
 FROM node:22-slim
 
-# 1. Cài đặt các thư viện hệ thống cần thiết cho Puppeteer, Bcrypt VÀ FFMPEG ĐỂ PHÁT LIVESTREAM
+# 1. Cài đặt các thư viện cần thiết cho Puppeteer, FFmpeg và OpenSSL
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    python3 \
-    make \
-    g++ \
-    unzip \
-    curl \
     openssl \
+    curl \
+    unzip \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -36,7 +33,8 @@ RUN npm install
 # 4. Copy toàn bộ mã nguồn
 COPY . .
 
-# 5. Khởi tạo Prisma và Build Backend
+# 5. Khởi tạo Prisma client và Build NestJS với cờ tránh tràn RAM
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npx prisma generate
 RUN npm run build
 
