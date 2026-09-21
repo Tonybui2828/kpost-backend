@@ -27,11 +27,11 @@ export class LiveStreamService {
    */
   async startMultiLive(body: {
     workspaceId: string;
-    videoUrl: string; // Link file MP4 tải lên hoặc đường dẫn file
+    videoUrl: string;
     title: string;
     description: string;
-    pageIds: string[]; // Danh sách ID các Fanpage muốn Live
-    loop?: boolean; // Lặp lại video liên tục hay không
+    pageIds: string[];
+    loop?: boolean;
   }) {
     const { workspaceId, videoUrl, title, description, pageIds, loop = true } = body;
 
@@ -40,7 +40,7 @@ export class LiveStreamService {
     }
 
     if (!videoUrl) {
-      throw new HttpException('Vui lòng cung cấp video để phát Livestream', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Vui lòng cung cấp video MP4 để phát Livestream', HttpStatus.BAD_REQUEST);
     }
 
     // Lấy danh sách tài khoản Fanpage từ Database
@@ -52,35 +52,34 @@ export class LiveStreamService {
     });
 
     if (accounts.length === 0) {
-      throw new HttpException('Không tìm thấy thông tin quyền truy cập của các Fanpage đã chọn', HttpStatus.NOT_FOUND);
+      throw new HttpException('Không tìm thấy thông tin các Fanpage đã chọn trong hệ thống', HttpStatus.NOT_FOUND);
+    }
+
+    // Xác định nguồn video (Local File hoặc URL)
+    let inputSource = videoUrl;
+    if (videoUrl.includes('/uploads/')) {
+      const fileName = videoUrl.split('/uploads/')[1];
+      const localPath = join(process.cwd(), 'uploads', fileName);
+      if (fs.existsSync(localPath)) {
+        inputSource = localPath;
+      }
     }
 
     const currentActive = this.activeStreams.get(workspaceId) || [];
     const results = [];
 
-    // Xử lý đường dẫn file video nguồn
-    let localVideoPath = videoUrl;
-    if (videoUrl.includes('/uploads/')) {
-      const fileName = videoUrl.split('/uploads/')[1];
-      localVideoPath = join(process.cwd(), 'uploads', fileName);
-    }
-
-    // Nếu là đường dẫn cục bộ nhưng file không tồn tại
-    if (!videoUrl.startsWith('http') && !fs.existsSync(localVideoPath)) {
-      throw new HttpException(`Không tìm thấy file video tại: ${localVideoPath}`, HttpStatus.BAD_REQUEST);
-    }
-
+    // Chạy song song từng Fanpage để không bị chặn lẫn nhau
     for (const acc of accounts) {
       try {
-        this.logger.log(`🎬 Bắt đầu tạo phiên Live trên Fanpage: ${acc.accountName} (${acc.platformId})`);
+        this.logger.log(`🎬 [1/3] Khởi tạo phiên Live trên Page: ${acc.accountName} (${acc.platformId})`);
 
-        // A. Gọi Facebook Graph API v21.0 tạo phiên Live Video
+        // BƯỚC A: Tạo phiên Live trên Facebook Graph API v21.0
         const fbRes = await axios.post(
           `https://graph.facebook.com/v21.0/${acc.platformId}/live_videos`,
           {
             title: title || 'Livestream cùng Trợ lý AI',
             description: description || '',
-            status: 'LIVE_NOW'
+            status: 'UNPUBLISHED' // Tạo phiên ở chế độ sẵn sàng nhận luồng
           },
           {
             headers: { Authorization: `Bearer ${acc.accessToken}` }
@@ -91,23 +90,24 @@ export class LiveStreamService {
         const streamUrl = fbRes.data?.secure_stream_url || fbRes.data?.stream_url;
 
         if (!streamUrl) {
-          throw new Error('Facebook không trả về RTMP Stream URL');
+          throw new Error('Facebook không trả về RTMP URL');
         }
 
-        this.logger.log(`✅ Lấy được RTMP URL cho ${acc.accountName}. Bắt đầu đẩy luồng bằng FFmpeg...`);
+        this.logger.log(`✅ [2/3] Lấy RTMP URL thành công: ${acc.accountName}. Bắt đầu đẩy luồng FFmpeg...`);
 
-        // B. Cấu hình FFmpeg phát sóng chuẩn Facebook Live RTMP
+        // BƯỚC B: Cấu hình FFmpeg đẩy luồng RTMP lên Facebook
         const ffmpegArgs = [
-          '-re', // Đọc input theo tốc độ thực tế (realtime)
-          ...(loop ? ['-stream_loop', '-1'] : []), // Lặp lại vô hạn nếu bật loop
-          '-i', localVideoPath,
+          '-re',
+          ...(loop ? ['-stream_loop', '-1'] : []),
+          '-i', inputSource,
           '-c:v', 'libx264',
           '-preset', 'veryfast',
+          '-tune', 'zerolatency',
           '-b:v', '2500k',
           '-maxrate', '3000k',
           '-bufsize', '5000k',
           '-pix_fmt', 'yuv420p',
-          '-g', '60', // Keyframe 2 giây chuẩn Facebook
+          '-g', '60',
           '-c:a', 'aac',
           '-b:a', '128k',
           '-ar', '44100',
@@ -118,21 +118,38 @@ export class LiveStreamService {
         const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
 
         ffmpegProcess.stderr.on('data', (data) => {
-          // Ghi nhận log khi cần thiết
-          const output = data.toString();
-          if (output.includes('error') || output.includes('Error')) {
-            this.logger.warn(`[FFmpeg Warning ${acc.accountName}]: ${output.slice(0, 200)}`);
+          const logStr = data.toString();
+          if (logStr.includes('error') || logStr.includes('Error')) {
+            this.logger.warn(`[FFmpeg Warning ${acc.accountName}]: ${logStr.slice(0, 150)}`);
           }
         });
 
         ffmpegProcess.on('close', (code) => {
-          this.logger.log(`🛑 Luồng FFmpeg của Fanpage ${acc.accountName} đã kết thúc với mã: ${code}`);
+          this.logger.log(`🛑 Luồng FFmpeg của Page ${acc.accountName} kết thúc (code: ${code})`);
           this.removeStream(workspaceId, acc.platformId);
         });
 
         ffmpegProcess.on('error', (err) => {
           this.logger.error(`🚨 Lỗi tiến trình FFmpeg trên ${acc.accountName}:`, err.message);
         });
+
+        // BƯỚC C: Sau 4 giây khi FFmpeg đã bơm dữ liệu RTMP vào Facebook -> Kích hoạt GO LIVE CHÍNH THỨC
+        setTimeout(async () => {
+          try {
+            this.logger.log(`🚀 [3/3] Kích hoạt phát sóng GO LIVE chính thức trên ${acc.accountName}...`);
+            await axios.post(
+              `https://graph.facebook.com/v21.0/${liveVideoId}`,
+              { status: 'LIVE_NOW' },
+              { headers: { Authorization: `Bearer ${acc.accessToken}` } }
+            );
+            this.logger.log(`🎉 Page ${acc.accountName} ĐÃ PHÁT SÓNG TRỰC TIẾP CÔNG KHAI THÀNH CÔNG!`);
+          } catch (publishErr: any) {
+            this.logger.error(
+              `Lỗi khi Go Live trên ${acc.accountName}:`,
+              publishErr.response?.data?.error?.message || publishErr.message
+            );
+          }
+        }, 4000);
 
         const streamInfo: ActiveStream = {
           process: ffmpegProcess,
@@ -151,29 +168,27 @@ export class LiveStreamService {
         });
 
       } catch (err: any) {
-        const errorDetail = err.response?.data?.error || err.response?.data || err.message;
-        this.logger.error(`🚨 Thất bại khi phát Live trên ${acc.accountName}:`, JSON.stringify(errorDetail));
+        const errDetail = err.response?.data?.error?.message || err.message;
+        this.logger.error(`🚨 Thất bại khi tạo Live trên ${acc.accountName}:`, errDetail);
         results.push({
           pageId: acc.platformId,
           pageName: acc.accountName,
           status: 'failed',
-          error: err.response?.data?.error?.message || err.message
+          error: errDetail
         });
       }
     }
 
     this.activeStreams.set(workspaceId, currentActive);
 
-    const successCount = results.filter(r => r.status === 'streaming').length;
-
-    if (successCount === 0) {
-      const firstError = results[0]?.error || 'Lỗi không xác định khi kết nối Facebook Live';
-      throw new HttpException(`Không thể phát sóng: ${firstError}`, HttpStatus.BAD_REQUEST);
+    const successList = results.filter(r => r.status === 'streaming');
+    if (successList.length === 0) {
+      throw new HttpException(`Không thể phát sóng: ${results[0]?.error || 'Lỗi không xác định'}`, HttpStatus.BAD_REQUEST);
     }
 
     return {
       success: true,
-      message: `Đã bắt đầu phát sóng Live trên ${successCount}/${accounts.length} Fanpage`,
+      message: `Đã kích hoạt phát Live trên ${successList.length}/${accounts.length} Fanpage thành công!`,
       details: results
     };
   }
@@ -188,10 +203,8 @@ export class LiveStreamService {
     for (const stream of streams) {
       if (!pageId || stream.pageId === pageId) {
         try {
-          // Dừng tiến trình FFmpeg
           stream.process.kill('SIGTERM');
           
-          // Lấy token để gọi Facebook đóng phiên Live Video
           const account = await this.prisma.socialAccount.findFirst({
             where: { workspaceId, platformId: stream.pageId }
           });
