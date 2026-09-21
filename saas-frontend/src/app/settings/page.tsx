@@ -55,14 +55,34 @@ export default function SettingsPage() {
   const fetchProfile = async () => {
     try {
         const token = localStorage.getItem("token");
-        if (!token) { setIsFetchingUser(false); return; }
+        if (!token) { 
+          setUser(null);
+          setWorkspaceId("");
+          setIsFetchingUser(false); 
+          return; 
+        }
+
         const res = await axios.get(`${API_URL}/auth/profile`, {
             headers: { Authorization: `Bearer ${token}` }
         });
+        
         setUser(res.data);
-        setWorkspaceId(res.data.currentWorkspaceId || res.data.wid || "");
-    } catch (e) { 
-        console.log("Guest mode active"); 
+        const resolvedWid = res.data.currentWorkspaceId || res.data.wid || res.data.workspaceId || "";
+        setWorkspaceId(resolvedWid);
+        
+        // Đồng bộ chuẩn lại localStorage theo đúng dữ liệu server xác nhận
+        if (resolvedWid) {
+          localStorage.setItem("workspaceId", resolvedWid);
+        }
+    } catch (e: any) { 
+        console.log("Guest mode active hoặc token hết hạn:", e?.response?.status);
+        // Nếu token không hợp lệ hoặc hết hạn, dọn sạch dữ liệu cũ tránh rò rỉ
+        if (e?.response?.status === 401 || e?.response?.status === 403) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("workspaceId");
+          setUser(null);
+          setWorkspaceId("");
+        }
     } finally { 
         setIsFetchingUser(false); 
     }
@@ -122,9 +142,22 @@ export default function SettingsPage() {
     } catch (e) { alert("Lỗi hệ thống thanh toán!"); }
   };
 
+  // ✅ ĐĂNG XUẤT AN TOÀN TUYỆT ĐỐI (Xóa sạch toàn bộ dữ liệu máy khách)
   const handleLogout = () => {
-      localStorage.clear();
-      window.location.reload();
+      try {
+        localStorage.removeItem("token");
+        localStorage.removeItem("workspaceId");
+        localStorage.removeItem("user");
+        localStorage.removeItem("kpost_saved_vouchers");
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (err) {
+        console.error("Lỗi xóa storage:", err);
+      }
+      toast.success("Đã đăng xuất thành công!");
+      setTimeout(() => {
+        window.location.href = "/settings";
+      }, 300);
   };
 
   return (
@@ -187,7 +220,7 @@ export default function SettingsPage() {
                onClick={() => setActiveTab(tab.id)}
                className={`w-full flex items-center justify-between px-6 py-4 rounded-[24px] font-black transition-all ${
                  activeTab === tab.id 
-                   ? (tab.id === 'affiliate' ? "bg-blue-600 text-white shadow-xl scale-[1.05]" : "bg-blue-600 text-white shadow-xl scale-[1.05]")
+                   ? "bg-blue-600 text-white shadow-xl scale-[1.05]"
                    : (tab.id === 'affiliate' ? "text-blue-600 hover:bg-blue-50" : "text-slate-400 hover:bg-white hover:text-slate-600")
                }`}
              >
@@ -205,7 +238,7 @@ export default function SettingsPage() {
 
         {/* ================= MAIN CONTENT ================= */}
         <div className="flex-1 bg-white rounded-[50px] shadow-2xl border border-white p-12 min-h-[700px] text-black">
-            {activeTab === "account" && <AccountTab user={user} loading={isFetchingUser} />}
+            {activeTab === "account" && <AccountTab user={user} loading={isFetchingUser} onLoginSuccess={fetchProfile} />}
             {activeTab === "affiliate" && <AffiliateTab user={user} />}
             {activeTab === "billing" && <BillingTab onUpgrade={handleUpgrade} />}
             {activeTab === "security" && <SecurityTab />}
@@ -223,7 +256,7 @@ export default function SettingsPage() {
 // CÁC TAB CHI TIẾT
 // ==========================================
 
-function AccountTab({ user, loading }: { user: any, loading: boolean }) {
+function AccountTab({ user, loading, onLoginSuccess }: { user: any, loading: boolean, onLoginSuccess: () => void }) {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [authMode, setAuthMode] = useState("login"); 
     const [formData, setFormData] = useState({ email: "", password: "", name: "" });
@@ -260,10 +293,7 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
             if (authMode === "register") {
                 let savedRef = localStorage.getItem("kpost_affiliate_ref");
                 if (savedRef) {
-                    // Cắt bỏ tiền tố KPOST_ nếu có để Backend dễ xử lý
                     const cleanRef = savedRef.startsWith("KPOST_") ? savedRef.replace("KPOST_", "") : savedRef;
-                    
-                    // Gửi cả 2 tham số lên API để Backend bắt biến nào cũng dính
                     payload.referredBy = cleanRef; 
                     payload.affiliateBy = savedRef;
                 }
@@ -272,13 +302,23 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
             const res = await axios.post(`${API_URL}${endpoint}`, payload);
             
             if (authMode === "login") {
-                localStorage.setItem("token", res.data.token);
-                localStorage.setItem("workspaceId", res.data.wid);
-                
-                if(res.data.email === 'tech28.vn@gmail.com') {
-                     toast.success("Xin chào Quản trị viên!");
+                // ✅ Lưu chính xác Token và WorkspaceId của khách đăng nhập
+                const token = res.data.token;
+                const wid = res.data.wid || res.data.currentWorkspaceId || res.data.workspaceId;
+
+                localStorage.setItem("token", token);
+                if (wid) {
+                  localStorage.setItem("workspaceId", wid);
                 }
                 
+                if (res.data.email === 'tech28.vn@gmail.com') {
+                     toast.success("Xin chào Quản trị viên!");
+                } else {
+                     toast.success("Đăng nhập thành công!");
+                }
+                
+                onLoginSuccess();
+
                 setTimeout(() => {
                     window.location.href = "/dashboard";
                 }, 500);
@@ -354,7 +394,7 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
                     </div>
                     <div className="p-6 bg-slate-50 rounded-3xl border">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Không gian</p>
-                      <p className="text-sm font-mono font-bold text-slate-600 truncate">{user.currentWorkspaceId || "Chưa có"}</p>
+                      <p className="text-sm font-mono font-bold text-slate-600 truncate">{user.currentWorkspaceId || user.wid || "Chưa có"}</p>
                     </div>
                 </div>
             </div>
@@ -420,7 +460,6 @@ function AccountTab({ user, loading }: { user: any, loading: boolean }) {
 function AffiliateTab({ user }: { user: any }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   const [copySuccess, setCopySuccess] = useState(false);
-  const [timeFilter, setTimeFilter] = useState('month');
   const [stats, setStats] = useState({ clicks: 0, signups: 0, orders: 0, revenue: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   
@@ -431,7 +470,7 @@ function AffiliateTab({ user }: { user: any }) {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isWithdrawing, setIsWithdrawing] = useState(false);
 
-  const wsId = user?.currentWorkspaceId || user?.wid || localStorage.getItem("workspaceId");
+  const wsId = user?.currentWorkspaceId || user?.wid || user?.workspaceId || (typeof window !== "undefined" ? localStorage.getItem("workspaceId") : "");
   const affiliateId = wsId || "GUEST";
   const dynamicAffiliateLink = `https://kpost.vn/?ref=KPOST_${affiliateId}`;
 
@@ -442,11 +481,9 @@ function AffiliateTab({ user }: { user: any }) {
         return;
       }
       try {
-        // Lấy thống kê cơ bản
         const resStats = await axios.get(`${API_URL}/social/affiliate/stats?workspaceId=${wsId}`);
         setStats(resStats.data);
 
-        // Lấy thông tin ngân hàng và Số dư đã trừ các lệnh rút
         const resBank = await axios.get(`${API_URL}/social/affiliate/bank-info?workspaceId=${wsId}`);
         if (resBank.data) {
             setBankInfo({
@@ -508,7 +545,6 @@ function AffiliateTab({ user }: { user: any }) {
      }
   };
 
-  // Hàm format tiền tệ (hiển thị cho đẹp khi gõ)
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
      const val = e.target.value.replace(/[^0-9]/g, '');
      if (val) {
@@ -546,7 +582,6 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
-       {/* THỐNG KÊ RÚT GỌN */}
        <div>
           <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Tổng quan thống kê</h3></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -569,10 +604,7 @@ function AffiliateTab({ user }: { user: any }) {
           </div>
        </div>
 
-       {/* KHOẢNG RÚT TIỀN VÀ NGÂN HÀNG */}
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-          
-          {/* KHUNG BÊN TRÁI: THÔNG TIN THANH TOÁN */}
           <div className="bg-slate-50 rounded-[24px] p-6 border border-slate-200">
              <div className="flex items-center justify-between mb-6">
                 <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
@@ -628,7 +660,6 @@ function AffiliateTab({ user }: { user: any }) {
              )}
           </div>
 
-          {/* KHUNG BÊN PHẢI: TẠO LỆNH RÚT */}
           <div className="bg-green-50 rounded-[24px] p-6 border border-green-200 shadow-sm relative overflow-hidden">
              <div className="absolute -right-4 -top-4 opacity-5 text-green-600"><DollarSign size={150} /></div>
              <h3 className="text-sm font-black uppercase tracking-widest text-green-800 flex items-center gap-2 mb-6">
@@ -685,7 +716,6 @@ function SecurityTab() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-  // Lấy trạng thái 2FA từ server khi tải trang
   useEffect(() => {
     const fetchSecurityStatus = async () => {
       try {
@@ -702,7 +732,6 @@ function SecurityTab() {
     fetchSecurityStatus();
   }, [API_URL]);
 
-  // Đổi mật khẩu
   const handleChangePassword = async (e: React.FormEvent) => {
       e.preventDefault();
       if (passwords.new !== passwords.confirm) {
@@ -722,7 +751,6 @@ function SecurityTab() {
       }
   };
 
-  // Bật/Tắt 2FA
   const handleToggle2FA = async () => {
     if (is2FAEnabled) {
       if (confirm("Bạn có chắc chắn muốn TẮT lớp bảo vệ OTP? Tài khoản sẽ kém an toàn hơn.")) {
@@ -754,7 +782,6 @@ function SecurityTab() {
     }
   };
 
-  // Xác nhận OTP để Bật
   const handleVerifyOTPToEnable = async () => {
     setLoading(true);
     try {
@@ -771,7 +798,6 @@ function SecurityTab() {
     setLoading(false);
   };
 
-  // Xóa thiết bị
   const handleRemoveDevice = (id: number) => {
     if(confirm("Đăng xuất khỏi thiết bị này?")) {
       setDevices(devices.filter(d => d.id !== id));
@@ -786,8 +812,6 @@ function SecurityTab() {
       </h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        
-        {/* ĐỔI MẬT KHẨU */}
         <div>
           <h3 className="text-sm font-bold text-blue-600 flex items-center gap-2 mb-4 uppercase">
             <KeyRound size={16} /> Đổi mật khẩu
@@ -802,7 +826,6 @@ function SecurityTab() {
           </form>
         </div>
 
-        {/* 2FA & THIẾT BỊ */}
         <div className="space-y-6">
           <h3 className="text-sm font-bold text-blue-600 flex items-center gap-2 mb-4 uppercase">
             <ShieldCheck size={16} /> Nhật ký & 2FA
@@ -918,7 +941,6 @@ function BillingTab({ onUpgrade }: any) {
     const [voucherMessage, setVoucherMessage] = useState("");
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
 
-    // 1. ĐÃ ĐỒNG BỘ HOA HỒNG TẤT CẢ CÁC GÓI LÀ 10%
     const plans = [
         { 
             name: "PRO", color: "blue",
@@ -1001,7 +1023,6 @@ function BillingTab({ onUpgrade }: any) {
                         <div key={p.name} className={`p-6 2xl:p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
                             <p className={`font-black uppercase text-[11px] tracking-widest mb-4 ${p.color === 'blue' ? 'text-blue-600' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-600'}`}>Hạng {p.name}</p>
                             
-                            {/* 2. ĐÃ FIX KÍCH THƯỚC CHỮ SỐ TIỀN RESPONSIVE TRÁNH BỊ TRÀN Ô */}
                             <div className="flex items-end gap-1 mb-8">
                                 <span className="text-3xl md:text-4xl lg:text-4xl xl:text-2xl 2xl:text-4xl font-black italic tracking-tighter">
                                     {price.toLocaleString()}đ
@@ -1150,7 +1171,7 @@ function VoucherTab({ user, refreshProfile }: { user: any, refreshProfile: () =>
         setMessage("Đang kiểm tra...");
         try {
             const token = localStorage.getItem("token");
-            const workspaceId = user?.id || user?.currentWorkspaceId || localStorage.getItem("workspaceId");
+            const workspaceId = user?.currentWorkspaceId || user?.wid || user?.id || localStorage.getItem("workspaceId");
 
             const res = await axios.post(`${API_URL}/social/add-voucher-to-wallet`, 
                 { code: cleanInputCode, workspaceId: workspaceId }, 
@@ -1245,7 +1266,6 @@ function GuideTab() {
   const [prompts, setPrompts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // GỌI ĐÚNG API CỦA NEXT.JS LƯU TRỮ
   useEffect(() => {
     const fetchData = async () => {
       try {

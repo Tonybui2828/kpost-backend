@@ -99,17 +99,58 @@ export class SocialController {
   }
 
   // ===============================================
-  // API LƯU MEDIA TỪ MÁY TÍNH QUA BASE64 (CHỐNG LỖI MULTIPART 100%)
+  // API TẢI VIDEO MP4 CHUẨN DÀNH RIÊNG CHO LIVESTREAM (BƯỚC 2)
+  // ===============================================
+  @Post('upload-video')
+  async uploadVideo(@Body() body: { base64: string; fileName?: string }, @Req() req: any) {
+    if (!body?.base64) {
+      throw new HttpException('Vui lòng chọn file video!', HttpStatus.BAD_REQUEST);
+    }
+
+    const uploadPath = './uploads';
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+
+    let buffer: Buffer;
+    let ext = '.mp4';
+
+    const matches = body.base64.match(/^data:([A-Za-z0-9-+/]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const mimeType = matches[1].toLowerCase();
+      buffer = Buffer.from(matches[2], 'base64');
+      if (mimeType.includes('mp4')) ext = '.mp4';
+      else if (mimeType.includes('webm')) ext = '.webm';
+      else if (mimeType.includes('mkv')) ext = '.mkv';
+      else if (mimeType.includes('mov')) ext = '.mov';
+      else ext = '.mp4';
+    } else {
+      buffer = Buffer.from(body.base64.replace(/^data:.*;base64,/, ''), 'base64');
+    }
+
+    const saveName = `video-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+    const filePath = join(uploadPath, saveName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.get('host');
+    const baseUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
+
+    const finalUrl = `${baseUrl}/uploads/${saveName}`;
+    console.log(`✅ [UPLOAD VIDEO] Đã lưu video chuẩn MP4: ${finalUrl}`);
+
+    return {
+      success: true,
+      url: finalUrl
+    };
+  }
+
+  // ===============================================
+  // API LƯU MEDIA (ẢNH HOẶC VIDEO) TỰ ĐỘNG NHẬN DIỆN MIME TYPE
   // ===============================================
   @Post('upload')
   async uploadMedia(@Body() body: any, @Req() req: any) {
-    console.log("📥 [UPLOAD DEBUG] Body nhận được:", {
-      type: typeof body,
-      isArray: Array.isArray(body),
-      keys: body ? Object.keys(body) : null,
-      filesLength: body?.files?.length || body?.length
-    });
-
     let rawFiles: any[] = [];
 
     if (Array.isArray(body)) {
@@ -130,8 +171,7 @@ export class SocialController {
     }
 
     if (!rawFiles || rawFiles.length === 0) {
-      console.error("🚨 [UPLOAD DEBUG] Không tìm thấy dữ liệu file trong body:", body);
-      throw new HttpException('Vui lòng chọn ít nhất 1 file ảnh', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Vui lòng chọn ít nhất 1 file', HttpStatus.BAD_REQUEST);
     }
 
     const uploadPath = './uploads';
@@ -150,20 +190,22 @@ export class SocialController {
         const base64String = typeof item === 'string' ? item : (item?.base64 || item?.data || '');
         if (!base64String) continue;
 
-        const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const matches = base64String.match(/^data:([A-Za-z0-9-+/]+);base64,(.+)$/);
         let buffer: Buffer;
         let ext = '.jpg';
 
         if (matches && matches.length === 3) {
-          const mimeType = matches[1];
+          const mimeType = matches[1].toLowerCase();
           buffer = Buffer.from(matches[2], 'base64');
-          if (mimeType.includes('png')) ext = '.png';
+          if (mimeType.includes('mp4')) ext = '.mp4';
+          else if (mimeType.includes('webm')) ext = '.webm';
+          else if (mimeType.includes('png')) ext = '.png';
           else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = '.jpg';
           else if (mimeType.includes('webp')) ext = '.webp';
           else if (mimeType.includes('gif')) ext = '.gif';
-          else if (mimeType.includes('mp4')) ext = '.mp4';
+          else if (mimeType.includes('video')) ext = '.mp4';
         } else {
-          buffer = Buffer.from(base64String, 'base64');
+          buffer = Buffer.from(base64String.replace(/^data:.*;base64,/, ''), 'base64');
         }
 
         const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
@@ -172,18 +214,17 @@ export class SocialController {
         fs.writeFileSync(filePath, buffer);
         urls.push(`${baseUrl}/uploads/${fileName}`);
       } catch (err: any) {
-        console.error('🚨 [UPLOAD DEBUG] Lỗi ghi file ảnh:', err);
+        console.error('🚨 [UPLOAD DEBUG] Lỗi ghi file:', err);
       }
     }
 
     if (urls.length === 0) {
-      throw new HttpException('Không thể giải mã và lưu file ảnh', HttpStatus.BAD_REQUEST);
+      throw new HttpException('Không thể giải mã và lưu file', HttpStatus.BAD_REQUEST);
     }
 
-    console.log(`✅ [UPLOAD DEBUG] Lưu thành công ${urls.length} ảnh:`, urls);
     return {
       success: true,
-      message: `Đã tải lên thành công ${urls.length} file ảnh`,
+      message: `Đã tải lên thành công ${urls.length} file`,
       urls
     };
   }
@@ -296,13 +337,11 @@ export class SocialController {
       include: { _count: { select: { socialAccounts: true } } }
     });
 
-    // 1. Chặn nếu là FREE hoặc hết hạn
     const currentPlan = this.validateWorkspaceAccess(workspace, 'kết nối Fanpage');
 
     const planLimits: Record<string, number> = { 'PRO': 50, 'GOLD': 100, 'DIAMOND': 500 };
     const maxLimit = planLimits[currentPlan] || 0;
 
-    // 2. KẾT NỐI QUA USER TOKEN (Quét tất cả Fanpage của User)
     if (data.isUserToken) {
        try {
          const response = await axios.get(`https://graph.facebook.com/v21.0/me/accounts?access_token=${data.accessToken}`);
@@ -317,7 +356,6 @@ export class SocialController {
             const currentCount = await this.prisma.socialAccount.count({ where: { workspaceId: data.workspaceId } });
             if (currentCount >= maxLimit) break;
 
-            // ✅ CHỈ TÌM FANPAGE CỦA ĐÚNG WORKSPACE NÀY (Không tìm chéo sang người khác)
             const existing = await this.prisma.socialAccount.findFirst({
               where: { 
                 platformId: page.id,
@@ -355,8 +393,6 @@ export class SocialController {
        }
     }
 
-    // 3. KẾT NỐI ĐƠN LẺ BẰNG PAGE TOKEN
-    // ✅ CHỈ TÌM FANPAGE CỦA ĐÚNG WORKSPACE NÀY (Chống ghi đè nhầm của khách khác)
     const existingAccount = await this.prisma.socialAccount.findFirst({
       where: { 
         platformId: data.platformId,
@@ -375,7 +411,6 @@ export class SocialController {
       });
     }
 
-    // Kiểm tra giới hạn số lượng Page của gói
     if (workspace._count.socialAccounts >= maxLimit) {
       throw new HttpException(`Hạn mức gói ${currentPlan} đã hết (${maxLimit} Fanpage).`, HttpStatus.FORBIDDEN);
     }
@@ -383,9 +418,6 @@ export class SocialController {
     return this.prisma.socialAccount.create({ data }); 
   }
 
-  // ===============================================
-  // LẤY DANH SÁCH FANPAGE (BẢO VỆ CHỐNG RÒ RỈ DỮ LIỆU)
-  // ===============================================
   @Get('accounts') 
   async getAccounts(@Query('workspaceId') workspaceId: string) { 
     if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null' || workspaceId.trim() === '') {
@@ -440,9 +472,6 @@ export class SocialController {
     });
   }
 
-  // ===============================================
-  // ĐĂNG BÀI LÊN NHÓM (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
-  // ===============================================
   @Post('facebook/post-groups')
   async postToGroups(@Body() body: any) {
     const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
@@ -464,9 +493,6 @@ export class SocialController {
     return results;
   }
 
-  // ===============================================
-  // ĐĂNG BÀI LÊN FANPAGE (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
-  // ===============================================
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
     const account = await this.prisma.socialAccount.findFirst({
@@ -487,9 +513,6 @@ export class SocialController {
     return res;
   }
 
-  // ===============================================
-  // LÊN LỊCH ĐĂNG BÀI (CHẶN HOÀN TOÀN GÓI FREE & HẾT HẠN)
-  // ===============================================
   @Post('schedule')
   async schedulePost(@Body() body: any) {
     const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
@@ -737,31 +760,23 @@ export class SocialController {
   @Post('casso-webhook')
   async handleCassoWebhook(@Body() body: any, @Res() res: Response) {
     try {
-      console.log("🔔 [Casso Webhook] Nhận dữ liệu:", JSON.stringify(body));
       const transactions = body.data;
-      
       if (!transactions || transactions.length === 0) {
         return res.status(200).send();
       }
 
       for (const trans of transactions) {
         const description = String(trans.description).toUpperCase();
-        console.log("🔍 [Casso Webhook] Nội dung CK:", description);
-
         const match = description.match(/SAASAI\s*(\d+)/i);
         
         if (match) {
           const billCode = `SAASAI${match[1]}`;
-          console.log(`✅ [Casso Webhook] Phát hiện mã: ${billCode}`);
-          
           const dbTrans = await this.prisma.transaction.findFirst({ 
             where: { description: { contains: billCode, mode: 'insensitive' }, status: 'pending' } 
           });
 
           if (dbTrans) {
-            console.log(`⏳ [Casso Webhook] Cập nhật Workspace: ${dbTrans.workspaceId}`);
             await this.prisma.transaction.update({ where: { id: dbTrans.id }, data: { status: 'success' } });
-            
             const exp = new Date(); exp.setDate(exp.getDate() + 30);
             
             const workspaceInfo = await this.prisma.workspace.update({ 
@@ -783,14 +798,11 @@ export class SocialController {
                }
             }
             this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
-          } else {
-             console.log(`⚠️ [Casso Webhook] Không tìm thấy đơn Pending mã ${billCode}`);
           }
         }
       }
       return res.status(200).json({ error: 0, message: "Done" });
     } catch (error) {
-      console.error("🚨 [Casso Webhook] Lỗi:", error);
       return res.status(200).json({ error: 0, message: "Error handled" });
     }
   }
@@ -798,9 +810,7 @@ export class SocialController {
   @Post('payos-webhook')
   async handlePayosWebhook(@Body() body: any, @Res() res: Response) {
     try {
-      console.log("🔔 [PayOS Webhook] Bắt đầu nhận dữ liệu");
       const payloadData = body.data;
-
       if (!payloadData) {
          return res.status(200).json({ success: true, message: "Webhook received but no data" });
       }
@@ -811,22 +821,16 @@ export class SocialController {
       } else if (payloadData.transactions && payloadData.transactions.length > 0) {
          description = String(payloadData.transactions[0].description).toUpperCase();
       }
-
-      console.log("🔍 [PayOS Webhook] Nội dung chuyển khoản thô nhận được:", description);
       
       const match = description.match(/SAASAI\s*(\d+)/i);
       if (match) {
         const billCode = `SAASAI${match[1]}`;
-        console.log(`✅ [PayOS Webhook] Phát hiện mã đơn hàng: ${billCode}`);
-        
         const dbTrans = await this.prisma.transaction.findFirst({ 
           where: { description: billCode, status: 'pending' } 
         });
 
         if (dbTrans) {
-          console.log(`⏳ [PayOS Webhook] Tiến hành nâng cấp cho Workspace: ${dbTrans.workspaceId}`);
           await this.prisma.transaction.update({ where: { id: dbTrans.id }, data: { status: 'success' } });
-          
           const exp = new Date(); exp.setDate(exp.getDate() + 30);
           
           const workspaceInfo = await this.prisma.workspace.update({ 
@@ -847,19 +851,11 @@ export class SocialController {
                });
             }
           }
-          
-          console.log(`🎉 [PayOS Webhook] Hoàn thành nâng cấp! Kích hoạt Socket.io`);
           this.chatGateway.server.emit('paymentSuccess', { billCode: dbTrans.description });
-        } else {
-           console.log(`⚠️ [PayOS Webhook] Không tìm thấy đơn hàng Pending nào mang mã ${billCode}`);
         }
-      } else {
-         console.log("❌ [PayOS Webhook] Nội dung chuyển khoản KHÔNG chứa mã SAASAI hợp lệ!");
       }
-      
       return res.status(200).json({ success: true, message: "Processed successfully" });
     } catch (error) {
-      console.error("🚨 Lỗi khi xử lý Webhook PayOS:", error);
       return res.status(200).json({ success: true, message: "Error handled gracefully" });
     }
   }
@@ -869,15 +865,12 @@ export class SocialController {
     const mode = query['hub.mode'];
     const token = query['hub.verify_token'];
     const challenge = query['hub.challenge'];
-
     const verifyToken = process.env.FB_VERIFY_TOKEN || 'saas_ai_token_123';
 
     if (mode && token) {
       if (mode === 'subscribe' && token === verifyToken) {
-        console.log('✅ Xác minh Webhook Facebook thành công!');
         return res.status(200).send(challenge);
       } else {
-        console.log('❌ Xác minh Webhook thất bại: Sai Token!');
         return res.status(403).send('Forbidden');
       }
     }
@@ -991,7 +984,6 @@ export class SocialController {
       if (!account) throw new Error("Không tìm thấy Fanpage");
       
       const fbRes = await this.facebookService.replyToComment(body.commentId, account.accessToken, body.text);
-      
       return fbRes;
     } catch (e) { 
       throw new HttpException(e.message, HttpStatus.BAD_REQUEST); 
@@ -1053,7 +1045,6 @@ export class SocialController {
   async facebookCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     try {
       if (!code) throw new Error("Khách hàng từ chối cấp quyền.");
-      
       const { workspaceId } = JSON.parse(state);
 
       const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
@@ -1100,7 +1091,6 @@ export class SocialController {
       }
       return res.redirect(`${process.env.FRONTEND_URL}/social?success=true`);
     } catch (error) {
-      console.error("Lỗi đăng nhập FB:", error.response?.data || error.message);
       return res.redirect(`${process.env.FRONTEND_URL}/social?error=true`);
     }
   }

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { 
   LayoutDashboard, PenTool, Package, MessageSquare, 
   Settings, Share2, LogOut, LogIn, Clock, MessageCircle, 
-  ShoppingBag, Truck, Sparkles, Menu, X, Target 
+  ShoppingBag, Truck, Sparkles, Menu, X, Target, Radio 
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -12,16 +12,16 @@ import { io } from "socket.io-client";
 
 // --- 1. KẾT NỐI SOCKET ĐỘNG ---
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-// Lưu ý: Nếu có lỗi kết nối Socket ở phía frontend, bạn cân nhắc comment dòng io() lại nếu chưa cần thiết.
 const socket = io(API_URL);
 
 const menuItems = [
   { name: "Tổng quan", icon: <LayoutDashboard size={20} />, href: "/dashboard" },
   { name: "AI Marketing", icon: <PenTool size={20} />, href: "/" },
+  // 🔴 THÊM MỤC AI LIVESTREAM VÀO ĐÂY:
+  { name: "AI Livestream", icon: <Radio size={20} className="text-red-500 animate-pulse" />, href: "/livestream", badge: "LIVE" },
   { name: "Quản lý sản phẩm", icon: <Package size={20} />, href: "/products" },
   { name: "Lịch đăng bài", icon: <Clock size={20} />, href: "/schedule" }, 
   { name: "Hộp thư Inbox", icon: <MessageSquare size={20} />, href: "/inbox" },
-  // 🚀 ĐÃ THÊM AI REMARKETING VÀO ĐÂY:
   { name: "AI Remarketing", icon: <Target size={20} />, href: "/remarketing" }, 
   { name: "Quản lý Bình luận", icon: <MessageCircle size={20} />, href: "/comments" }, 
   { name: "Quản lý Đơn hàng", icon: <ShoppingBag size={20} />, href: "/orders" },
@@ -89,7 +89,6 @@ export default function Sidebar() {
   return (
     <>
       {/* HEADER CHO MOBILE (Hiển thị thanh trên cùng có nút Menu) */}
-      {/* Chỉ hiện trên Mobile (md:hidden) */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2 text-xl font-black text-blue-600 italic uppercase tracking-tighter">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg">
@@ -106,7 +105,6 @@ export default function Sidebar() {
       </div>
 
       {/* OVERLAY NỀN ĐEN MỜ CHO MOBILE */}
-      {/* Khi mở menu sẽ có lớp đen mờ phủ lên nội dung chính */}
       {isOpen && (
         <div 
           className="md:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] transition-opacity"
@@ -115,8 +113,6 @@ export default function Sidebar() {
       )}
 
       {/* THANH MENU (SIDEBAR) CHÍNH */}
-      {/* Desktop: Luôn hiện bên trái (md:translate-x-0) */}
-      {/* Mobile: Ẩn/Hiện dựa vào state isOpen, có viền trên cùng (h-full) */}
       <div className={`
         fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-200 
         flex flex-col z-[100] font-sans transition-transform duration-300 ease-in-out
@@ -131,7 +127,6 @@ export default function Sidebar() {
             </div>
             KPOST AI
           </div>
-          {/* Nút đóng X chỉ hiện trên Mobile */}
           <button 
             className="md:hidden p-2 text-slate-400 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded-xl"
             onClick={() => setIsOpen(false)}
@@ -163,14 +158,21 @@ export default function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${
+              className={`flex items-center justify-between px-4 py-3 rounded-xl font-bold transition-all ${
                 pathname === item.href 
                 ? "bg-blue-600 text-white shadow-lg shadow-blue-100 scale-[1.02]" 
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
-              {item.icon}
-              <span className="text-sm font-black uppercase tracking-tight">{item.name}</span>
+              <div className="flex items-center gap-3">
+                {item.icon}
+                <span className="text-sm font-black uppercase tracking-tight">{item.name}</span>
+              </div>
+              {item.badge && pathname !== item.href && (
+                <span className="bg-red-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider animate-pulse">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
