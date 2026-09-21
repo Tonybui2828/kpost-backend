@@ -13,6 +13,7 @@ import { AutomatorService } from './automator.service';
 import { SocialScheduleService } from './social-schedule.service';
 import { GroupBotService } from './group-bot.service'; 
 import { EmailService } from '../email/email.service';
+import { LiveStreamService } from './livestream.service';
 
 @Controller('social')
 export class SocialController {
@@ -25,7 +26,8 @@ export class SocialController {
     private readonly automatorService: AutomatorService,
     private readonly socialScheduleService: SocialScheduleService,
     private readonly groupBotService: GroupBotService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly liveStreamService: LiveStreamService
   ) {}
 
   // ===============================================
@@ -56,6 +58,44 @@ export class SocialController {
     }
 
     return currentPlan;
+  }
+
+  // ===============================================
+  // CỤM API LIVESTREAM ĐA FANPAGE (AI / VIDEO MULTI-STREAM)
+  // ===============================================
+  @Post('livestream/start')
+  async startLiveStream(@Body() body: {
+    workspaceId: string;
+    videoUrl: string;
+    title: string;
+    description: string;
+    pageIds: string[];
+    loop?: boolean;
+  }) {
+    if (!body.workspaceId) {
+      throw new HttpException("Thiếu mã không gian (workspaceId)", HttpStatus.BAD_REQUEST);
+    }
+
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: body.workspaceId } });
+    this.validateWorkspaceAccess(workspace, 'phát Livestream đa Fanpage');
+
+    return this.liveStreamService.startMultiLive(body);
+  }
+
+  @Post('livestream/stop')
+  async stopLiveStream(@Body() body: { workspaceId: string; pageId?: string }) {
+    if (!body.workspaceId) {
+      throw new HttpException("Thiếu mã không gian (workspaceId)", HttpStatus.BAD_REQUEST);
+    }
+    return this.liveStreamService.stopLive(body.workspaceId, body.pageId);
+  }
+
+  @Get('livestream/active')
+  async getActiveLiveStreams(@Query('workspaceId') workspaceId: string) {
+    if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null') {
+      return [];
+    }
+    return this.liveStreamService.getActiveStreams(workspaceId.trim());
   }
 
   // ===============================================
@@ -348,7 +388,6 @@ export class SocialController {
   // ===============================================
   @Get('accounts') 
   async getAccounts(@Query('workspaceId') workspaceId: string) { 
-    // ✅ BẮT BUỘC có workspaceId hợp lệ, nếu không có tuyệt đối không query DB (trả về rỗng)
     if (!workspaceId || workspaceId === 'undefined' || workspaceId === 'null' || workspaceId.trim() === '') {
       return [];
     }
@@ -430,7 +469,6 @@ export class SocialController {
   // ===============================================
   @Post('facebook/post') 
   async postFacebook(@Body() body: any) { 
-    // Tìm tài khoản Fanpage để xác định Workspace
     const account = await this.prisma.socialAccount.findFirst({
       where: { platformId: body.pageId }
     });
@@ -440,7 +478,6 @@ export class SocialController {
       const workspace = await this.prisma.workspace.findUnique({
         where: { id: workspaceId }
       });
-      // Kiểm tra chặn gói FREE và hết hạn
       this.validateWorkspaceAccess(workspace, 'xuất bản bài viết');
     }
 
@@ -1019,7 +1056,6 @@ export class SocialController {
       
       const { workspaceId } = JSON.parse(state);
 
-      // Chặn nếu tài khoản FREE hoặc hết hạn kết nối qua OAuth
       const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
       this.validateWorkspaceAccess(workspace, 'kết nối Facebook OAuth');
 
@@ -1037,7 +1073,6 @@ export class SocialController {
       const pages = pagesRes.data.data;
 
       for (const page of pages) {
-        // ✅ CÔ LẬP THEO ĐÚNG WORKSPACE ID CỦA KHÁCH KHI KẾT NỐI QUA OAUTH
         const existingPage = await this.prisma.socialAccount.findFirst({
           where: { 
             platformId: page.id, 

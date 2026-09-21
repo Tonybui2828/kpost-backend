@@ -31,6 +31,7 @@ import { PaymentService } from './products/payment.service';
 import { GoogleStrategy } from './auth/google.strategy';
 import { GroupBotService } from './social/group-bot.service';
 import { InboxService } from './inbox/inbox.service';
+import { LiveStreamService } from './social/livestream.service'; // 🚀 THÊM SERVICE LIVESTREAM VÀO ĐÂY
 
 @Module({
   imports: [
@@ -68,7 +69,8 @@ import { InboxService } from './inbox/inbox.service';
     PaymentService,
     GoogleStrategy,
     GroupBotService,
-    InboxService 
+    InboxService,
+    LiveStreamService // 🚀 ĐĂNG KÝ LIVESTREAM SERVICE VÀO PROVIDERS
   ],
 })
 export class AppModule {}
