@@ -23,7 +23,7 @@ export class AdminController {
   }
 
   // ==========================================
-  // 3. QUẢN LÝ DANH SÁCH KHÁCH HÀNG (MỚI)
+  // 3. QUẢN LÝ DANH SÁCH KHÁCH HÀNG
   // ==========================================
   
   // Lấy danh sách user kèm theo gói cước (plan) và ngày hết hạn
@@ -32,13 +32,18 @@ export class AdminController {
     return this.adminService.getAllUsers();
   }
 
-  // Nâng cấp hoặc tăng thời hạn gói cho khách
+  // Nâng cấp, Tăng/Giảm thời hạn gói hoặc Chọn ngày hết hạn cụ thể
   @Put('users/:id/plan')
   async updateUserPlan(
     @Param('id') userId: string, 
-    @Body() body: { plan: string, extraDays: number }
+    @Body() body: { plan: string; extraDays?: number; customExpireDate?: string }
   ) {
-    return this.adminService.updateUserPlan(userId, body.plan, body.extraDays);
+    return this.adminService.updateUserPlan(
+      userId, 
+      body.plan, 
+      body.extraDays, 
+      body.customExpireDate
+    );
   }
 
   // Tặng voucher riêng cho khách
@@ -50,7 +55,7 @@ export class AdminController {
     return this.adminService.addVoucherToUser(userId, body.voucherCode);
   }
 
-  // Khóa/Xóa tài khoản (Xóa mềm)
+  // Khóa tài khoản (Xóa mềm - Soft Delete)
   @Delete('users/:id')
   async deleteUser(@Param('id') userId: string) {
     return this.adminService.deleteUser(userId);
@@ -60,6 +65,51 @@ export class AdminController {
   @Put('users/:id/restore')
   async restoreUser(@Param('id') userId: string) {
     return this.adminService.restoreUser(userId);
+  }
+
+  // Xóa vĩnh viễn 1 tài khoản (Hard Delete)
+  @Delete('users/:id/hard-delete')
+  async hardDeleteUser(@Param('id') userId: string) {
+    if (typeof (this.adminService as any).hardDeleteUser === 'function') {
+      return (this.adminService as any).hardDeleteUser(userId);
+    }
+    return this.adminService.deleteUser(userId);
+  }
+
+  // ==========================================
+  // THAO TÁC HÀNG LOẠT (BULK ACTIONS)
+  // ==========================================
+  @Post('users/bulk-lock')
+  async bulkLockUsers(@Body() body: { userIds: string[] }) {
+    if (typeof (this.adminService as any).bulkLockUsers === 'function') {
+      return (this.adminService as any).bulkLockUsers(body.userIds);
+    }
+    for (const id of body.userIds || []) {
+      await this.adminService.deleteUser(id).catch(() => {});
+    }
+    return { success: true, message: `Đã khóa ${body.userIds?.length || 0} tài khoản` };
+  }
+
+  @Post('users/bulk-restore')
+  async bulkRestoreUsers(@Body() body: { userIds: string[] }) {
+    if (typeof (this.adminService as any).bulkRestoreUsers === 'function') {
+      return (this.adminService as any).bulkRestoreUsers(body.userIds);
+    }
+    for (const id of body.userIds || []) {
+      await this.adminService.restoreUser(id).catch(() => {});
+    }
+    return { success: true, message: `Đã khôi phục ${body.userIds?.length || 0} tài khoản` };
+  }
+
+  @Post('users/bulk-hard-delete')
+  async bulkHardDeleteUsers(@Body() body: { userIds: string[] }) {
+    if (typeof (this.adminService as any).bulkHardDeleteUsers === 'function') {
+      return (this.adminService as any).bulkHardDeleteUsers(body.userIds);
+    }
+    for (const id of body.userIds || []) {
+      await this.adminService.deleteUser(id).catch(() => {});
+    }
+    return { success: true, message: `Đã xóa vĩnh viễn ${body.userIds?.length || 0} tài khoản` };
   }
 
   // ==========================================

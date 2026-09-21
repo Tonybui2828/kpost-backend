@@ -11,13 +11,21 @@ export default function AdminUsersPage() {
   // State cho thanh tìm kiếm
   const [searchTerm, setSearchTerm] = useState('');
 
-  // STATE MỚI: Quản lý các user đang được tick chọn
+  // STATE: Quản lý các user đang được tick chọn
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  // State cho Modal Nâng cấp
+  // State cho Modal Nâng cấp & Chỉnh hạn dùng
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [planForm, setPlanForm] = useState({ plan: 'PRO', extraDays: 30 });
+  const [planForm, setPlanForm] = useState<{
+    plan: string;
+    extraDays: number;
+    customExpireDate: string;
+  }>({
+    plan: 'PRO',
+    extraDays: 5,
+    customExpireDate: ''
+  });
 
   // State cho Modal Voucher
   const [showVoucherModal, setShowVoucherModal] = useState(false);
@@ -29,7 +37,6 @@ export default function AdminUsersPage() {
       const res = await fetch(`${API_URL}/admin/users-list`);
       const data = await res.json();
       setUsers(data);
-      // Khi reload lại danh sách, reset lựa chọn
       setSelectedUserIds([]);
     } catch (err) {
       toast.error('Lỗi tải danh sách khách hàng');
@@ -44,12 +51,10 @@ export default function AdminUsersPage() {
 
   // Lọc user theo Tab VÀ Từ khóa tìm kiếm
   const filteredUsers = users.filter(user => {
-    // 1. Lọc theo tìm kiếm (name hoặc email)
     const matchSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                         user.email?.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchSearch) return false;
 
-    // 2. Lọc theo tab trạng thái/gói cước
     if (activeTab === 'DELETED') return user.status === 'deleted';
     if (activeTab === 'ALL') return user.status === 'active';
     return user.status === 'active' && user.plan?.toUpperCase() === activeTab;
@@ -60,7 +65,6 @@ export default function AdminUsersPage() {
   // ----------------------------------------------------
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      // Chọn tất cả user ĐANG HIỂN THỊ (đã lọc)
       setSelectedUserIds(filteredUsers.map(u => u.id));
     } else {
       setSelectedUserIds([]);
@@ -77,7 +81,28 @@ export default function AdminUsersPage() {
     });
   };
 
-  // 2. Hàm Nâng cấp gói
+  // Mở Modal Nâng cấp và nạp dữ liệu hiện tại
+  const openUpgradeModal = (user: any) => {
+    setSelectedUser(user);
+    
+    // Chuyển đổi ngày hết hạn hiện tại sang định dạng YYYY-MM-DD cho input date
+    let formattedDate = '';
+    if (user.planExpire) {
+      const d = new Date(user.planExpire);
+      if (!isNaN(d.getTime())) {
+        formattedDate = d.toISOString().split('T')[0];
+      }
+    }
+
+    setPlanForm({
+      plan: user.plan || 'PRO',
+      extraDays: 5,
+      customExpireDate: formattedDate
+    });
+    setShowPlanModal(true);
+  };
+
+  // 2. Hàm Nâng cấp / Điều chỉnh ngày gói
   const handleUpgradePlan = async (e: any) => {
     e.preventDefault();
     try {
@@ -87,12 +112,15 @@ export default function AdminUsersPage() {
         body: JSON.stringify(planForm)
       });
       if (res.ok) {
-        toast.success('Nâng cấp thành công!');
+        toast.success('Cập nhật gói và hạn dùng thành công!');
         setShowPlanModal(false);
         fetchUsers();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        toast.error(errorData.message || 'Lỗi cập nhật');
       }
     } catch (err) {
-      toast.error('Lỗi nâng cấp');
+      toast.error('Lỗi kết nối máy chủ');
     }
   };
 
@@ -116,7 +144,7 @@ export default function AdminUsersPage() {
     }
   };
 
-  // 4. Hàm Xóa / Khôi phục (Mềm - Soft Delete) dành cho 1 user (nút cũ)
+  // 4. Hàm Xóa / Khôi phục (Mềm - Soft Delete)
   const toggleUserStatus = async (user: any) => {
     const isDeleting = user.status === 'active';
     const method = isDeleting ? 'DELETE' : 'PUT';
@@ -148,7 +176,7 @@ export default function AdminUsersPage() {
         toast.success('Đã xóa vĩnh viễn tài khoản');
         fetchUsers();
       } else {
-         toast.error('Lỗi xóa tài khoản (Backend chưa cập nhật)');
+         toast.error('Lỗi xóa tài khoản');
       }
     } catch (err) {
       toast.error('Lỗi hệ thống');
@@ -221,7 +249,7 @@ export default function AdminUsersPage() {
         {['ALL', 'FREE', 'PRO', 'GOLD', 'DIAMOND', 'DELETED'].map(tab => (
           <button
             key={tab}
-            onClick={() => { setActiveTab(tab); setSelectedUserIds([]); }} // Đổi tab thì reset mảng chọn
+            onClick={() => { setActiveTab(tab); setSelectedUserIds([]); }}
             className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === tab 
                 ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' 
@@ -258,7 +286,6 @@ export default function AdminUsersPage() {
         <table className="w-full text-left">
           <thead className="bg-gray-50 text-gray-500 text-sm">
             <tr>
-              {/* CỘT CHECKBOX CHỌN TẤT CẢ */}
               <th className="p-4 w-12 text-center">
                   <input 
                     type="checkbox" 
@@ -281,7 +308,6 @@ export default function AdminUsersPage() {
             ) : (
               filteredUsers.map(user => (
                 <tr key={user.id} className={`hover:bg-gray-50 transition-colors ${selectedUserIds.includes(user.id) ? 'bg-blue-50/50 hover:bg-blue-50/80' : ''}`}>
-                  {/* CHECKBOX TỪNG DÒNG */}
                   <td className="p-4 text-center">
                       <input 
                         type="checkbox" 
@@ -316,7 +342,7 @@ export default function AdminUsersPage() {
                   <td className="p-4 text-right">
                     {user.status === 'active' ? (
                       <div className="flex gap-2 justify-end">
-                        <button onClick={() => { setSelectedUser(user); setShowPlanModal(true); }} className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 font-medium transition">
+                        <button onClick={() => openUpgradeModal(user)} className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 font-medium transition">
                           Nâng cấp
                         </button>
                         <button onClick={() => { setSelectedUser(user); setShowVoucherModal(true); }} className="text-xs px-3 py-1.5 bg-yellow-50 text-yellow-600 rounded-md hover:bg-yellow-100 font-medium transition">
@@ -325,7 +351,6 @@ export default function AdminUsersPage() {
                         <button onClick={() => toggleUserStatus(user)} className="text-xs px-3 py-1.5 bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 font-medium transition">
                           Khóa
                         </button>
-                        {/* NÚT XÓA HẲN */}
                         <button onClick={() => hardDeleteUser(user.id)} className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 font-medium transition">
                           Xóa hẳn
                         </button>
@@ -348,39 +373,148 @@ export default function AdminUsersPage() {
         </table>
       </div>
 
-      {/* --- MODAL NÂNG CẤP GÓI --- */}
+      {/* --- MODAL NÂNG CẤP & ĐIỀU CHỈNH HẠN DÙNG (CÓ TĂNG / GIẢM NGÀY) --- */}
       {showPlanModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleUpgradePlan} className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
-            <h3 className="font-bold text-xl mb-1 text-gray-900">Nâng cấp gói</h3>
-            <p className="text-sm text-gray-500 mb-5">Khách hàng: <span className="font-semibold text-gray-700">{selectedUser?.name}</span></p>
-            <div className="space-y-4 mb-6">
+          <form onSubmit={handleUpgradePlan} className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex justify-between items-start border-b border-gray-100 pb-3">
               <div>
-                <label className="block text-sm font-medium mb-1.5 text-gray-700">Chọn gói</label>
-                <select 
-                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={planForm.plan} 
-                  onChange={e => setPlanForm({...planForm, plan: e.target.value})}
-                >
-                  <option value="PRO">Gói PRO</option>
-                  <option value="GOLD">Gói GOLD</option>
-                  <option value="DIAMOND">Gói DIAMOND</option>
-                  <option value="FREE">Hạ về FREE</option>
-                </select>
+                <h3 className="font-bold text-xl text-gray-900">Chỉnh Gói & Hạn Dùng</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Khách hàng: <span className="font-semibold text-gray-700">{selectedUser?.name || selectedUser?.email}</span></p>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5 text-gray-700">Số ngày thêm</label>
-                <input 
-                  type="number" 
-                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={planForm.extraDays} 
-                  onChange={e => setPlanForm({...planForm, extraDays: Number(e.target.value)})}
-                />
+              <button 
+                type="button" 
+                onClick={() => setShowPlanModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Hạn hiện tại */}
+            <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center justify-between text-xs">
+              <span className="font-medium text-blue-800">Hạn dùng hiện tại:</span>
+              <span className="font-bold text-blue-900">
+                {selectedUser?.planExpire ? new Date(selectedUser.planExpire).toLocaleDateString('vi-VN') : 'Không giới hạn (FREE)'}
+              </span>
+            </div>
+
+            {/* Chọn gói */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Gói cước</label>
+              <div className="grid grid-cols-4 gap-2">
+                {['PRO', 'GOLD', 'DIAMOND', 'FREE'].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPlanForm({ ...planForm, plan: p })}
+                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                      planForm.plan === p 
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                        : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setShowPlanModal(false)} className="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Hủy</button>
-              <button type="submit" className="flex-1 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-md shadow-blue-200">Xác nhận</button>
+
+            {/* TĂNG / GIẢM NGÀY NHANH */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5">
+                Cộng thêm / Trừ bớt số ngày
+              </label>
+              
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setPlanForm({ ...planForm, extraDays: -5 })}
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                    planForm.extraDays === -5 
+                      ? 'bg-red-600 text-white border-red-600 shadow-sm' 
+                      : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+                  }`}
+                >
+                  -5 Ngày
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanForm({ ...planForm, extraDays: -1 })}
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                    planForm.extraDays === -1 
+                      ? 'bg-orange-600 text-white border-orange-600 shadow-sm' 
+                      : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'
+                  }`}
+                >
+                  -1 Ngày
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanForm({ ...planForm, extraDays: 5 })}
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                    planForm.extraDays === 5 
+                      ? 'bg-green-600 text-white border-green-600 shadow-sm' 
+                      : 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'
+                  }`}
+                >
+                  +5 Ngày
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanForm({ ...planForm, extraDays: 30 })}
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                    planForm.extraDays === 30 
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                      : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'
+                  }`}
+                >
+                  +30 Ngày
+                </button>
+              </div>
+
+              {/* Ô tự gõ số ngày (Hỗ trợ cả số âm như -5, -10) */}
+              <div className="relative">
+                <input 
+                  type="number" 
+                  placeholder="Gõ số ngày (VD: 5 hoặc -5)"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-800"
+                  value={planForm.extraDays} 
+                  onChange={e => setPlanForm({ ...planForm, extraDays: Number(e.target.value) })}
+                />
+                <span className="absolute right-3 top-2.5 text-xs text-gray-400 font-medium">
+                  {planForm.extraDays < 0 ? 'Giảm' : 'Tăng'} {Math.abs(planForm.extraDays)} ngày
+                </span>
+              </div>
+            </div>
+
+            {/* CHỌN TRỰC TIẾP TRÊN LỊCH DATE PICKER */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5">
+                Hoặc chọn trực tiếp ngày hết hạn trên lịch
+              </label>
+              <input 
+                type="date" 
+                className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 font-medium"
+                value={planForm.customExpireDate} 
+                onChange={e => setPlanForm({ ...planForm, customExpireDate: e.target.value })}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button 
+                type="button" 
+                onClick={() => setShowPlanModal(false)} 
+                className="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition"
+              >
+                Hủy
+              </button>
+              <button 
+                type="submit" 
+                className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-md shadow-blue-200 active:scale-95"
+              >
+                Xác nhận
+              </button>
             </div>
           </form>
         </div>
