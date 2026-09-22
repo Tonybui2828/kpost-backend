@@ -38,7 +38,6 @@ model User {
 
   workspaces    WorkspaceMember[] 
   createdAt     DateTime        @default(now())
-  // Sửa lỗi: Thêm @default(now()) để Prisma không bắt reset database
   updatedAt     DateTime        @default(now()) @updatedAt 
 }
 
@@ -266,17 +265,32 @@ model OrderItem {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
-// 13. Cấu hình Website
+// 13. Cấu hình Website, Chiến dịch Flash Sale & Popup Thông báo
 model SystemSetting {
-  id            String   @id @default("global")
-  websiteName   String?  @default("Dropbuy SaaS")
-  logoUrl       String?
-  faviconUrl    String?
-  hotline       String?
-  emailSupport  String?
-  announcement  String?  @db.Text 
-  maintenance   Boolean  @default(false) 
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default("global")
+  websiteName     String?   @default("KPost SaaS")
+  logoUrl         String?
+  faviconUrl      String?
+  hotline         String?
+  emailSupport    String?
+  announcement    String?   @db.Text 
+  maintenance     Boolean   @default(false) 
+
+  // --- 🔥 CẤU HÌNH CHIẾN DỊCH FLASHSALE ---
+  flashSaleActive Boolean   @default(false)
+  flashSaleTitle  String?   @default("🔥 SIÊU SALE GIỚI HẠN - GIẢM ĐẾN 50% TẤT CẢ GÓI")
+  flashSaleEnd    DateTime? // Thời gian kết thúc đếm ngược
+  flashSalePlans  Json?     // Lưu cấu hình giá sale và % giảm: { PRO: { discount: 30, salePrice: 199000 }, ... }
+
+  // --- 🔔 CẤU HÌNH POPUP BẢNG THÔNG BÁO TRANG CHỦ ---
+  popupActive     Boolean   @default(false)
+  popupTitle      String?   @default("🎉 ĐẶC QUYỀN TRẢI NGHIỆM AI ALL-IN-ONE")
+  popupContent    String?   @db.Text
+  popupImage      String?   // Link ảnh banner popup
+  popupButtonText String?   @default("Khám Phá & Nhận Ưu Đãi")
+  popupButtonLink String?   @default("/pricing")
+
+  updatedAt       DateTime  @updatedAt
 }
 
 // 14. Thông báo hệ thống

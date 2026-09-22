@@ -294,4 +294,59 @@ export class AdminService {
     }
     return { count: expiringWorkspaces.length };
   }
+
+  // ==========================================
+  // 6. QUẢN LÝ CHIẾN DỊCH FLASHSALE VÀ POPUP TRANG CHỦ (MỚI)
+  // ==========================================
+  async getMarketingCampaigns() {
+    let setting = await this.prisma.systemSetting.findUnique({
+      where: { id: 'global' }
+    });
+
+    if (!setting) {
+      setting = await this.prisma.systemSetting.create({
+        data: {
+          id: 'global',
+          websiteName: 'KPost SaaS',
+          flashSaleActive: false,
+          popupActive: false
+        }
+      });
+    }
+
+    return setting;
+  }
+
+  async updateMarketingCampaigns(data: {
+    flashSaleActive?: boolean;
+    flashSaleEnd?: string | Date;
+    flashSaleTitle?: string;
+    flashSalePlans?: any;
+    popupActive?: boolean;
+    popupTitle?: string;
+    popupContent?: string;
+    popupImage?: string;
+    popupButtonText?: string;
+    popupButtonLink?: string;
+  }) {
+    const updateData: any = { ...data };
+    if (data.flashSaleEnd) {
+      updateData.flashSaleEnd = new Date(data.flashSaleEnd);
+    }
+
+    const updated = await this.prisma.systemSetting.upsert({
+      where: { id: 'global' },
+      update: updateData,
+      create: {
+        id: 'global',
+        ...updateData
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Đã lưu chiến dịch Marketing thành công!',
+      data: updated
+    };
+  }
 }

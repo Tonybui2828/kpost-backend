@@ -1,17 +1,17 @@
-import { Controller, Get, Post, Patch, Delete, Put, Body, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Put, Body, Param } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
-  // 1. Lấy dữ liệu thống kê Dashboard Admin (Doanh thu, Tăng trưởng...)
+  // 1. Thống kê Dashboard
   @Get('stats')
   async getStats() {
     return this.adminService.getDashboardStats();
   }
 
-  // 2. Cấu hình Logo, Tên website, Thông báo chạy chữ
+  // 2. Cấu hình hệ thống
   @Get('settings')
   async getSettings() {
     return this.adminService.getSystemSettings();
@@ -25,20 +25,18 @@ export class AdminController {
   // ==========================================
   // 3. QUẢN LÝ DANH SÁCH KHÁCH HÀNG
   // ==========================================
-  
-  // Lấy danh sách user kèm theo gói cước (plan) và ngày hết hạn
   @Get('users-list')
   async getUsers() {
     return this.adminService.getAllUsers();
   }
 
-  // Nâng cấp, Tăng/Giảm thời hạn gói hoặc Chọn ngày hết hạn cụ thể
+  // Nâng cấp / Chỉnh hạn dùng (Hỗ trợ cả +days, -days và custom date)
   @Put('users/:id/plan')
   async updateUserPlan(
     @Param('id') userId: string, 
     @Body() body: { plan: string; extraDays?: number; customExpireDate?: string }
   ) {
-    return this.adminService.updateUserPlan(
+    return (this.adminService as any).updateUserPlan(
       userId, 
       body.plan, 
       body.extraDays, 
@@ -46,7 +44,7 @@ export class AdminController {
     );
   }
 
-  // Tặng voucher riêng cho khách
+  // Tặng voucher
   @Post('users/:id/voucher')
   async addVoucherToUser(
     @Param('id') userId: string,
@@ -55,7 +53,7 @@ export class AdminController {
     return this.adminService.addVoucherToUser(userId, body.voucherCode);
   }
 
-  // Khóa tài khoản (Xóa mềm - Soft Delete)
+  // Khóa tài khoản (Xóa mềm)
   @Delete('users/:id')
   async deleteUser(@Param('id') userId: string) {
     return this.adminService.deleteUser(userId);
@@ -67,7 +65,7 @@ export class AdminController {
     return this.adminService.restoreUser(userId);
   }
 
-  // Xóa vĩnh viễn 1 tài khoản (Hard Delete)
+  // Xóa vĩnh viễn 1 tài khoản
   @Delete('users/:id/hard-delete')
   async hardDeleteUser(@Param('id') userId: string) {
     if (typeof (this.adminService as any).hardDeleteUser === 'function') {
@@ -81,9 +79,6 @@ export class AdminController {
   // ==========================================
   @Post('users/bulk-lock')
   async bulkLockUsers(@Body() body: { userIds: string[] }) {
-    if (typeof (this.adminService as any).bulkLockUsers === 'function') {
-      return (this.adminService as any).bulkLockUsers(body.userIds);
-    }
     for (const id of body.userIds || []) {
       await this.adminService.deleteUser(id).catch(() => {});
     }
@@ -92,9 +87,6 @@ export class AdminController {
 
   @Post('users/bulk-restore')
   async bulkRestoreUsers(@Body() body: { userIds: string[] }) {
-    if (typeof (this.adminService as any).bulkRestoreUsers === 'function') {
-      return (this.adminService as any).bulkRestoreUsers(body.userIds);
-    }
     for (const id of body.userIds || []) {
       await this.adminService.restoreUser(id).catch(() => {});
     }
@@ -103,11 +95,12 @@ export class AdminController {
 
   @Post('users/bulk-hard-delete')
   async bulkHardDeleteUsers(@Body() body: { userIds: string[] }) {
-    if (typeof (this.adminService as any).bulkHardDeleteUsers === 'function') {
-      return (this.adminService as any).bulkHardDeleteUsers(body.userIds);
-    }
     for (const id of body.userIds || []) {
-      await this.adminService.deleteUser(id).catch(() => {});
+      if (typeof (this.adminService as any).hardDeleteUser === 'function') {
+        await (this.adminService as any).hardDeleteUser(id).catch(() => {});
+      } else {
+        await this.adminService.deleteUser(id).catch(() => {});
+      }
     }
     return { success: true, message: `Đã xóa vĩnh viễn ${body.userIds?.length || 0} tài khoản` };
   }
@@ -131,10 +124,23 @@ export class AdminController {
   }
 
   // ==========================================
-  // 5. KÍCH HOẠT QUÉT THÔNG BÁO GIA HẠN
+  // 5. THÔNG BÁO GIA HẠN
   // ==========================================
   @Post('check-renewal')
   async checkRenewal() {
     return this.adminService.checkExpiringWorkspaces();
+  }
+
+  // ==========================================
+  // 6. QUẢN LÝ CHIẾN DỊCH FLASHSALE & POPUP TRANG CHỦ
+  // ==========================================
+  @Get('marketing-campaigns')
+  async getMarketingCampaigns() {
+    return (this.adminService as any).getMarketingCampaigns();
+  }
+
+  @Post('marketing-campaigns')
+  async updateMarketingCampaigns(@Body() body: any) {
+    return (this.adminService as any).updateMarketingCampaigns(body);
   }
 }
