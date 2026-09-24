@@ -1,19 +1,29 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import * as ffmpeg from 'fluent-ffmpeg';
-import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
-import * as ffprobeInstaller from '@ffprobe-installer/ffprobe';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as archiver from 'archiver';
 import { v4 as uuidv4 } from 'uuid';
 import { SpinVideoDto } from './video-spinner.dto';
 
-// Tự động gán đường dẫn binary ffmpeg
+// Sử dụng require chuẩn CommonJS để tránh lỗi TS2349 trong TypeScript/NestJS
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ffmpeg = require('fluent-ffmpeg');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const archiver = require('archiver');
+
+// Gán đường dẫn binary ffmpeg nếu có gói installer
 try {
-  ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-  ffmpeg.setFfprobePath(ffprobeInstaller.path);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+  if (ffmpegInstaller && ffmpegInstaller.path) {
+    ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+  }
+  if (ffprobeInstaller && ffprobeInstaller.path) {
+    ffmpeg.setFfprobePath(ffprobeInstaller.path);
+  }
 } catch (err) {
-  Logger.warn('Sử dụng FFmpeg mặc định từ môi trường hệ điều hành.');
+  Logger.warn('Sử dụng FFmpeg mặc định từ container hệ điều hành Debian/Linux.');
 }
 
 export interface SpunVideoResult {
@@ -60,7 +70,7 @@ export class VideoSpinnerService {
       throw new BadRequestException('Vui lòng tải lên 1 file video hợp lệ!');
     }
 
-    const count = Math.min(Math.max(Number(dto.count) || 5, 1), 20); // Giới hạn 1 - 20 video mỗi đợt
+    const count = Math.min(Math.max(Number(dto.count) || 5, 1), 20); // Giới hạn 1 - 20 video
     const isFlip = String(dto.flip) === 'true';
     const isChangeSpeed = String(dto.changeSpeed) !== 'false';
     const isChangeColor = String(dto.changeColor) !== 'false';
@@ -82,13 +92,8 @@ export class VideoSpinnerService {
       const outputPath = path.join(batchDir, outputFileName);
 
       // 1. Tính toán thông số biến thể ngẫu nhiên cho từng video
-      // Tốc độ thay đổi từ 0.98x -> 1.02x (người xem không nhận ra nhưng thay đổi toàn bộ timecode)
       const speed = isChangeSpeed ? Number((0.985 + Math.random() * 0.03).toFixed(4)) : 1.0;
-      
-      // Zoom nhẹ từ 1.01x -> 1.03x
       const zoom = isMicroZoom ? Number((1.01 + Math.random() * 0.02).toFixed(4)) : 1.0;
-      
-      // Độ sáng (-0.02 -> +0.02), Độ tương phản (0.98 -> 1.02), Độ bão hòa (0.97 -> 1.03)
       const brightness = isChangeColor ? Number((-0.02 + Math.random() * 0.04).toFixed(3)) : 0;
       const contrast = isChangeColor ? Number((0.98 + Math.random() * 0.04).toFixed(3)) : 1.0;
       const saturation = isChangeColor ? Number((0.97 + Math.random() * 0.06).toFixed(3)) : 1.0;
@@ -96,7 +101,7 @@ export class VideoSpinnerService {
       // Xây dựng bộ lọc Video Filters
       const videoFilters: string[] = [];
 
-      // A. Lật gương (nếu người dùng bật hoặc ngẫu nhiên biến thể)
+      // A. Lật gương
       if (isFlip) {
         videoFilters.push('hflip');
       }
@@ -119,7 +124,7 @@ export class VideoSpinnerService {
         );
       }
 
-      // E. Thêm Noise vi mô (nếu bật)
+      // E. Thêm Noise vi mô
       if (isAddNoise) {
         videoFilters.push('noise=alls=1:allf=t');
       }
@@ -130,7 +135,6 @@ export class VideoSpinnerService {
         audioFilters.push(`atempo=${speed}`);
       }
       if (isChangeAudio) {
-        // Tinh chỉnh tần số nhẹ
         audioFilters.push('equalizer=f=1000:t=q:w=1:g=0.5');
       }
 
@@ -154,7 +158,7 @@ export class VideoSpinnerService {
       });
     }
 
-    // 3. Đóng gói toàn bộ video thành 1 file ZIP để tải về nhanh
+    // 3. Đóng gói toàn bộ video thành 1 file ZIP
     const zipFileName = `batch_${batchId}_all_${count}_videos.zip`;
     const zipFilePath = path.join(batchDir, zipFileName);
     await this.createZipFile(spunVideos.map((v) => path.join(batchDir, v.fileName)), zipFilePath);
@@ -198,22 +202,22 @@ export class VideoSpinnerService {
         command = command.audioFilters(audioFilters);
       }
 
-      // Xoá sạch Metadata cũ và gắn ngẫu nhiên Metadata mới để chống quét
+      // Xoá metadata cũ và ghi đè metadata mới
       command
         .outputOptions([
-          '-map_metadata -1', // Xoá sạch metadata gốc
+          '-map_metadata -1',
           `-metadata title="Video ${uuidv4()}"`,
           `-metadata date="${new Date().toISOString()}"`,
           '-c:v libx264',
-          '-preset veryfast', // Tối ưu tốc độ render nhanh nhất
-          '-crf 22',         // Đảm bảo chất lượng video sắc nét
+          '-preset veryfast',
+          '-crf 22',
           '-c:a aac',
           '-b:a 128k',
         ])
         .output(output)
         .on('end', () => resolve())
-        .on('error', (err) => {
-          this.logger.error(`FFmpeg lỗi khi tạo biến thể: ${err.message}`);
+        .on('error', (err: any) => {
+          this.logger.error(`FFmpeg lỗi khi tạo biến thể: ${err?.message || err}`);
           reject(err);
         })
         .run();
@@ -229,7 +233,7 @@ export class VideoSpinnerService {
       const archive = archiver('zip', { zlib: { level: 6 } });
 
       output.on('close', () => resolve());
-      archive.on('error', (err) => reject(err));
+      archive.on('error', (err: any) => reject(err));
 
       archive.pipe(output);
 
