@@ -2,12 +2,192 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import axios from "axios";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { 
   Loader2, Sparkles, Globe, Edit3, 
   Clock, ShoppingCart, FolderCheck, Trash2, Shuffle, Square, CheckCircle2,
-  Image as ImageIcon, Plus, X
+  Image as ImageIcon, Plus, X, Flame, Bell, ArrowRight
 } from "lucide-react";
 
+// =========================================================================
+// 1. COMPONENT POPUP THÔNG BÁO TỰ ĐỘNG HIỆN KHI KHÁCH TRUY CẬP TRANG CHỦ
+// =========================================================================
+function HomePopupModal({ campaign }: { campaign: any }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!campaign || !campaign.popupActive) return;
+
+    // Kiểm tra nếu khách đã từng tắt popup trong phiên duyệt này thì không hiện lại
+    const isClosed = sessionStorage.getItem("kpost_popup_closed");
+    if (isClosed) return;
+
+    // Tự động bật Popup sau 1.2 giây khi vào trang
+    const timer = setTimeout(() => {
+      setIsOpen(true);
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [campaign]);
+
+  const handleClose = () => {
+    setIsOpen(false);
+    sessionStorage.setItem("kpost_popup_closed", "true");
+  };
+
+  if (!isOpen || !campaign?.popupActive) return null;
+
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="bg-white rounded-[36px] max-w-lg w-full overflow-hidden shadow-2xl relative border border-slate-100 animate-in zoom-in-95 duration-200">
+        {/* Nút Đóng */}
+        <button
+          onClick={handleClose}
+          className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center transition-all shadow-md active:scale-95"
+          title="Đóng"
+        >
+          <X size={18} />
+        </button>
+
+        {/* Banner Ảnh nếu có */}
+        {campaign.popupImage && (
+          <div className="h-48 md:h-52 w-full overflow-hidden relative bg-slate-100">
+            <img 
+              src={campaign.popupImage} 
+              alt="Promotion" 
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent opacity-80" />
+          </div>
+        )}
+
+        {/* Nội dung thông báo */}
+        <div className="p-6 md:p-8 text-center space-y-4">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orange-100 text-orange-600 text-[11px] font-black uppercase tracking-wider">
+            <Flame size={14} className="animate-pulse" />
+            Thông Báo Đặc Quyền
+          </div>
+
+          <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+            {campaign.popupTitle || "🎉 Chào Mừng Bạn Đến Với KPost AI"}
+          </h3>
+
+          <p className="text-sm text-slate-600 leading-relaxed font-medium">
+            {campaign.popupContent}
+          </p>
+
+          <div className="pt-2 flex flex-col gap-2">
+            <Link
+              href={campaign.popupButtonLink || "/settings"}
+              onClick={handleClose}
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-black rounded-2xl shadow-lg shadow-blue-500/25 text-sm uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>{campaign.popupButtonText || "Nhận Ưu Đãi Ngay"}</span>
+              <ArrowRight size={16} />
+            </Link>
+
+            <button
+              onClick={handleClose}
+              className="text-xs font-bold text-slate-400 hover:text-slate-600 py-1 transition-colors"
+            >
+              Để lại sau
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// 2. BANNER ĐẾM NGƯỢC FLASHSALE TRÊN ĐẦU TRANG CHỦ
+// =========================================================================
+function FlashSaleBanner({ campaign }: { campaign: any }) {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+
+  useEffect(() => {
+    if (!campaign?.flashSaleActive || !campaign?.flashSaleEnd) return;
+
+    const target = new Date(campaign.flashSaleEnd).getTime();
+
+    const updateTimer = () => {
+      const now = new Date().getTime();
+      const diff = target - now;
+
+      if (diff <= 0) {
+        setTimeLeft(null);
+        return;
+      }
+
+      setTimeLeft({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+        seconds: Math.floor((diff % (1000 * 60)) / 1000),
+      });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [campaign]);
+
+  if (!campaign?.flashSaleActive || !timeLeft) return null;
+
+  return (
+    <div className="mb-8 p-4 md:p-5 rounded-3xl bg-gradient-to-r from-red-600 via-orange-600 to-amber-600 text-white shadow-xl shadow-orange-500/20 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500">
+      <div className="flex items-center gap-3 text-center md:text-left">
+        <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
+          <Flame className="w-7 h-7 text-yellow-300 animate-bounce" />
+        </div>
+        <div>
+          <h2 className="text-base md:text-lg font-black uppercase tracking-tight text-white flex items-center justify-center md:justify-start gap-2">
+            {campaign.flashSaleTitle || "🔥 CHIẾN DỊCH FLASHSALE GIỚI HẠN"}
+          </h2>
+          <p className="text-xs text-orange-100 font-medium mt-0.5">
+            Ưu đãi đặc biệt giảm sâu cho tất cả các gói dịch vụ AI All-In-One!
+          </p>
+        </div>
+      </div>
+
+      {/* ĐỒNG HỒ ĐẾM NGƯỢC */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 font-black text-xs">
+          <div className="bg-black/40 backdrop-blur-md px-3 py-2 rounded-xl text-center min-w-[42px]">
+            <span className="text-base font-black text-yellow-300 block leading-tight">{timeLeft.days}</span>
+            <span className="text-[9px] text-white/70 uppercase">Ngày</span>
+          </div>
+          <span className="text-yellow-300 text-sm font-black">:</span>
+          <div className="bg-black/40 backdrop-blur-md px-3 py-2 rounded-xl text-center min-w-[42px]">
+            <span className="text-base font-black text-yellow-300 block leading-tight">{timeLeft.hours}</span>
+            <span className="text-[9px] text-white/70 uppercase">Giờ</span>
+          </div>
+          <span className="text-yellow-300 text-sm font-black">:</span>
+          <div className="bg-black/40 backdrop-blur-md px-3 py-2 rounded-xl text-center min-w-[42px]">
+            <span className="text-base font-black text-yellow-300 block leading-tight">{timeLeft.minutes}</span>
+            <span className="text-[9px] text-white/70 uppercase">Phút</span>
+          </div>
+          <span className="text-yellow-300 text-sm font-black">:</span>
+          <div className="bg-black/40 backdrop-blur-md px-3 py-2 rounded-xl text-center min-w-[42px]">
+            <span className="text-base font-black text-yellow-300 block leading-tight">{timeLeft.seconds}</span>
+            <span className="text-[9px] text-white/70 uppercase">Giây</span>
+          </div>
+        </div>
+
+        <Link
+          href="/settings"
+          className="ml-2 px-4 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-black text-xs rounded-xl uppercase tracking-wider transition-all shadow-md active:scale-95 shrink-0"
+        >
+          Nâng Cấp
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// 3. NỘI DUNG CHÍNH TRANG AI MARKETING CREATOR
+// =========================================================================
 function AiMarketingContent() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   const searchParams = useSearchParams();
@@ -18,8 +198,11 @@ function AiMarketingContent() {
   const [editableContent, setEditableContent] = useState(""); 
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false); 
-  const [uploading, setUploading] = useState(false); // Trạng thái upload media
+  const [uploading, setUploading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  // --- CHIẾN DỊCH MARKETING FLASHSALE & POPUP TỪ BACKEND ---
+  const [campaign, setCampaign] = useState<any>(null);
 
   // --- QUẢN LÝ ẢNH ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +222,7 @@ function AiMarketingContent() {
   const [productUrl, setProductUrl] = useState(""); 
   const [workspaceId, setWorkspaceId] = useState<string>("");
 
-  // 👉 1. BẮT LINK AFFILIATE
+  // 👉 1. BẮT LINK AFFILIATE & LOAD CHIẾN DỊCH MARKETING
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
@@ -49,10 +232,15 @@ function AiMarketingContent() {
       }
       const ws = localStorage.getItem("workspaceId");
       if (ws) setWorkspaceId(ws);
+
+      // LẤY CẤU HÌNH CHIẾN DỊCH FLASHSALE VÀ POPUP TỪ BACKEND
+      axios.get(`${API_URL}/admin/marketing-campaigns`)
+        .then(res => setCampaign(res.data))
+        .catch(() => {});
     } catch (error) {
-      console.error("Lỗi bắt mã Affiliate:", error);
+      console.error("Lỗi khởi tạo trang chủ:", error);
     }
-  }, []);
+  }, [API_URL]);
 
   // KIỂM TRA LOCAL STORAGE KHI LOAD TRANG
   useEffect(() => {
@@ -105,14 +293,13 @@ function AiMarketingContent() {
     }
   }, [searchParams, API_URL, workspaceId]);
 
-  // 🔥 HÀM UPLOAD MEDIA QUA BASE64 (ĐÃ ĐƯỢC TỐI ƯU GỬI ĐÚNG CHUẨN JSON VÀ HEADERS)
+  // 🔥 HÀM UPLOAD MEDIA TỪ MÁY TÍNH
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setUploading(true);
     try {
-      // Đọc từng file được chọn từ máy tính sang Base64
       const filePromises = Array.from(files).map((file) => {
         return new Promise<{ name: string; base64: string }>((resolve, reject) => {
           const reader = new FileReader();
@@ -125,7 +312,6 @@ function AiMarketingContent() {
       const base64Files = await Promise.all(filePromises);
       const token = localStorage.getItem("token");
 
-      // Gửi dạng JSON chuẩn có định danh Content-Type rõ ràng
       const res = await axios.post(
         `${API_URL}/social/upload`,
         { files: base64Files },
@@ -141,7 +327,6 @@ function AiMarketingContent() {
 
       if (uploadedUrls.length > 0) {
         setAvailableImages((prev) => [...new Set([...uploadedUrls, ...prev])]);
-        // Tự động chọn luôn các ảnh vừa tải
         setSelectedImages((prev) => [...new Set([...prev, ...uploadedUrls])].slice(0, 10));
       } else {
         alert("Không nhận được đường dẫn ảnh từ server!");
@@ -221,10 +406,18 @@ function AiMarketingContent() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 text-black font-sans min-h-screen">
-      <div className="max-w-5xl mx-auto pb-20">
-        <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">AI CONTENT CREATOR</h1>
+      {/* POPUP THÔNG BÁO TỰ ĐỘNG BẬT KHI CÓ CHIẾN DỊCH */}
+      <HomePopupModal campaign={campaign} />
 
-        {/* 1. CHỌN ẢNH BÀI ĐĂNG (ĐÃ HỖ TRỢ UPLOAD TỪ MÁY TÍNH THẬT) */}
+      <div className="max-w-5xl mx-auto pb-20">
+        {/* BANNER FLASHSALE ĐẾM NGƯỢC NẾU ĐANG BẬT */}
+        <FlashSaleBanner campaign={campaign} />
+
+        <h1 className="text-4xl font-black text-center mb-10 italic uppercase text-slate-900 tracking-tighter">
+          AI CONTENT CREATOR
+        </h1>
+
+        {/* 1. CHỌN ẢNH BÀI ĐĂNG */}
         <div className="mb-10 bg-white p-6 rounded-[32px] border shadow-sm text-black">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
@@ -398,5 +591,9 @@ function AiMarketingContent() {
 }
 
 export default function AiMarketingPage() {
-  return (<Suspense fallback={<div className="p-20 text-center font-black animate-pulse text-slate-300">LOADING AI SYSTEM...</div>}><AiMarketingContent /></Suspense>);
+  return (
+    <Suspense fallback={<div className="p-20 text-center font-black animate-pulse text-slate-300">LOADING AI SYSTEM...</div>}>
+      <AiMarketingContent />
+    </Suspense>
+  );
 }

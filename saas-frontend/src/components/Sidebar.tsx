@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { 
   LayoutDashboard, PenTool, Package, MessageSquare, 
   Settings, Share2, LogOut, LogIn, Clock, MessageCircle, 
-  ShoppingBag, Truck, Sparkles, Menu, X, Target, Radio 
+  ShoppingBag, Truck, Sparkles, Menu, X, Target, Radio,
+  Flame, Users, ShieldCheck, Film // 👈 1. Thêm icon Film vào đây
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -14,11 +15,13 @@ import { io } from "socket.io-client";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const socket = io(API_URL);
 
+// MENU CHỨC NĂNG CHÍNH CỦA NGƯỜI DÙNG
 const menuItems = [
   { name: "Tổng quan", icon: <LayoutDashboard size={20} />, href: "/dashboard" },
   { name: "AI Marketing", icon: <PenTool size={20} />, href: "/" },
-  // 🔴 THÊM MỤC AI LIVESTREAM VÀO ĐÂY:
   { name: "AI Livestream", icon: <Radio size={20} className="text-red-500 animate-pulse" />, href: "/livestream", badge: "LIVE" },
+  // 🎬 2. THÊM TÍNH NĂNG NHÂN BẢN & LÁCH BẢN QUYỀN VIDEO VÀO ĐÂY:
+  { name: "AI Video Spinner", icon: <Film size={20} className="text-purple-500 animate-pulse" />, href: "/video-spinner", badge: "HOT" },
   { name: "Quản lý sản phẩm", icon: <Package size={20} />, href: "/products" },
   { name: "Lịch đăng bài", icon: <Clock size={20} />, href: "/schedule" }, 
   { name: "Hộp thư Inbox", icon: <MessageSquare size={20} />, href: "/inbox" },
@@ -28,6 +31,26 @@ const menuItems = [
   { name: "Cấu hình vận chuyển", icon: <Truck size={20} />, href: "/shipping" },
   { name: "Kết nối MXH", icon: <Share2 size={20} />, href: "/social" },
   { name: "Cài đặt", icon: <Settings size={20} />, href: "/settings" },
+];
+
+// MENU QUẢN TRỊ VIÊN ADMIN (Dành cho Quản trị viên)
+const adminMenuItems = [
+  { 
+    name: "Flash Sale & Popup", 
+    icon: <Flame size={20} className="text-orange-500 animate-bounce" />, 
+    href: "/admin/marketing",
+    badge: "HOT"
+  },
+  { 
+    name: "Quản lý Khách hàng", 
+    icon: <Users size={20} className="text-blue-500" />, 
+    href: "/admin/users" 
+  },
+  { 
+    name: "Admin Dashboard", 
+    icon: <ShieldCheck size={20} className="text-purple-500" />, 
+    href: "/admin" 
+  },
 ];
 
 export default function Sidebar() {
@@ -86,9 +109,12 @@ export default function Sidebar() {
     }
   };
 
+  // Kiểm tra tài khoản có phải Admin không
+  const isAdmin = user?.role === "super_admin" || user?.role === "admin" || user?.email === "tech28.vn@gmail.com";
+
   return (
     <>
-      {/* HEADER CHO MOBILE (Hiển thị thanh trên cùng có nút Menu) */}
+      {/* HEADER CHO MOBILE */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2 text-xl font-black text-blue-600 italic uppercase tracking-tighter">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg">
@@ -136,7 +162,7 @@ export default function Sidebar() {
         </div>
 
         {/* HUY HIỆU GÓI CƯỚC THẬT */}
-        <div className="px-6 mb-6 mt-2">
+        <div className="px-6 mb-4 mt-2">
           <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 font-black text-[10px] uppercase italic tracking-widest transition-all duration-700 shadow-sm ${
               plan === 'DIAMOND' ? 'bg-purple-600 text-white border-purple-400 shadow-purple-200' :
               plan === 'GOLD' ? 'bg-amber-500 text-white border-amber-300 shadow-amber-200' :
@@ -152,8 +178,9 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Danh sách Menu */}
+        {/* DANH SÁCH MENU */}
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto text-slate-700 custom-scrollbar pb-6">
+          {/* 1. MỤC MENU DỊCH VỤ NGƯỜI DÙNG */}
           {menuItems.map((item) => (
             <Link
               key={item.name}
@@ -175,9 +202,39 @@ export default function Sidebar() {
               )}
             </Link>
           ))}
+
+          {/* 2. CỤM MENU DÀNH CHO ADMIN (HIỂN THỊ KHI LÀ QUẢN TRỊ VIÊN HOẶC ĐANG TRUY CẬP TRANG ADMIN) */}
+          {(isAdmin || pathname.startsWith("/admin")) && (
+            <div className="pt-4 mt-4 border-t border-slate-100">
+              <div className="px-4 mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                Quản trị Admin
+              </div>
+              {adminMenuItems.map((item) => (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={`flex items-center justify-between px-4 py-2.5 rounded-xl font-bold transition-all ${
+                    pathname === item.href 
+                    ? "bg-orange-500 text-white shadow-lg shadow-orange-100 scale-[1.02]" 
+                    : "text-slate-600 hover:bg-orange-50 hover:text-orange-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {item.icon}
+                    <span className="text-xs font-black uppercase tracking-tight">{item.name}</span>
+                  </div>
+                  {item.badge && pathname !== item.href && (
+                    <span className="bg-orange-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
         </nav>
 
-        {/* Nút Đăng xuất / Đăng nhập */}
+        {/* NÚT ĐĂNG XUẤT / ĐĂNG NHẬP */}
         <div className="p-4 border-t border-slate-100">
           {user ? (
             <button 

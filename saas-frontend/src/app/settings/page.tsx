@@ -10,7 +10,7 @@ import {
   Mail, KeyRound, UserPlus, LogIn, LogOut, ShieldCheck, Fingerprint,
   ShieldAlert, AlertCircle, FileText, Check, MessageCircle, XCircle, Share2,
   MousePointerClick, Users, ShoppingCart, DollarSign, TrendingUp, CheckCircle, Clock, Ticket,
-  AlertTriangle 
+  AlertTriangle, Flame
 } from "lucide-react";
 
 // --- 1. KẾT NỐI SOCKET ĐỘNG ---
@@ -70,13 +70,11 @@ export default function SettingsPage() {
         const resolvedWid = res.data.currentWorkspaceId || res.data.wid || res.data.workspaceId || "";
         setWorkspaceId(resolvedWid);
         
-        // Đồng bộ chuẩn lại localStorage theo đúng dữ liệu server xác nhận
         if (resolvedWid) {
           localStorage.setItem("workspaceId", resolvedWid);
         }
     } catch (e: any) { 
         console.log("Guest mode active hoặc token hết hạn:", e?.response?.status);
-        // Nếu token không hợp lệ hoặc hết hạn, dọn sạch dữ liệu cũ tránh rò rỉ
         if (e?.response?.status === 401 || e?.response?.status === 403) {
           localStorage.removeItem("token");
           localStorage.removeItem("workspaceId");
@@ -142,7 +140,6 @@ export default function SettingsPage() {
     } catch (e) { alert("Lỗi hệ thống thanh toán!"); }
   };
 
-  // ✅ ĐĂNG XUẤT AN TOÀN TUYỆT ĐỐI (Xóa sạch toàn bộ dữ liệu máy khách)
   const handleLogout = () => {
       try {
         localStorage.removeItem("token");
@@ -302,7 +299,6 @@ function AccountTab({ user, loading, onLoginSuccess }: { user: any, loading: boo
             const res = await axios.post(`${API_URL}${endpoint}`, payload);
             
             if (authMode === "login") {
-                // ✅ Lưu chính xác Token và WorkspaceId của khách đăng nhập
                 const token = res.data.token;
                 const wid = res.data.wid || res.data.currentWorkspaceId || res.data.workspaceId;
 
@@ -463,7 +459,6 @@ function AffiliateTab({ user }: { user: any }) {
   const [stats, setStats] = useState({ clicks: 0, signups: 0, orders: 0, revenue: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   
-  // -- STATE RÚT TIỀN & NGÂN HÀNG --
   const [bankInfo, setBankInfo] = useState({ bankName: '', bankAccount: '', bankOwnerName: '' });
   const [isEditingBank, setIsEditingBank] = useState(false);
   const [availableBalance, setAvailableBalance] = useState(0);
@@ -931,6 +926,9 @@ function SecurityTab() {
   );
 }
 
+// =========================================================================
+// 4. TAB BẢNG GIÁ & GÓI CƯỚC (TÍCH HỢP FLASHSALE TỰ ĐỘNG GIẢM GIÁ VÀ GẠCH NGANG)
+// =========================================================================
 function BillingTab({ onUpgrade }: any) {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
     const [duration, setDuration] = useState('1m');
@@ -940,6 +938,19 @@ function BillingTab({ onUpgrade }: any) {
     const [isPercentage, setIsPercentage] = useState(true);
     const [voucherMessage, setVoucherMessage] = useState("");
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
+
+    // --- STATE FLASHSALE TỪ BACKEND ---
+    const [campaign, setCampaign] = useState<any>(null);
+
+    useEffect(() => {
+        axios.get(`${API_URL}/admin/marketing-campaigns`)
+            .then(res => {
+                if (res.data && res.data.flashSaleActive) {
+                    setCampaign(res.data);
+                }
+            })
+            .catch(() => {});
+    }, [API_URL]);
 
     const plans = [
         { 
@@ -958,6 +969,38 @@ function BillingTab({ onUpgrade }: any) {
             features: ["Tất cả tính năng Gói GOLD & PRO", "Add 500 Fanpage", "Thêm 500 sản phẩm", "Mở tính năng Affiliate hoa hồng 10%"] 
         },
     ];
+
+    // --- HÀM TÍNH TOÁN GIÁ FLASHSALE CHUẨN XÁC THEO % ---
+    const getPlanPricing = (planKey: string, basePrice: number) => {
+        const isFlashSaleActive = campaign?.flashSaleActive && campaign?.flashSalePlans?.[planKey];
+        const planSetting = campaign?.flashSalePlans?.[planKey];
+
+        if (isFlashSaleActive) {
+            // Lấy đúng số % Admin cài đặt (ví dụ: 30)
+            const discountPercent = Number(planSetting?.discount) || 0;
+
+            if (discountPercent > 0) {
+                // Tính tiền giảm: Ví dụ 590.000 x 30% = 177.000đ
+                const discountAmount = Math.round((basePrice * discountPercent) / 100);
+                // Giá sau khi giảm: 590.000 - 177.000 = 413.000đ
+                const finalPrice = basePrice - discountAmount;
+
+                return {
+                    isSale: true,
+                    discountPercent: discountPercent,
+                    originalPrice: basePrice,
+                    finalPrice: finalPrice
+                };
+            }
+        }
+
+        return {
+            isSale: false,
+            discountPercent: 0,
+            originalPrice: basePrice,
+            finalPrice: basePrice
+        };
+    };
 
     const handleApplyVoucher = async () => {
         if (!voucher.trim()) { setDiscount(0); setVoucherMessage(""); return; }
@@ -1004,6 +1047,25 @@ function BillingTab({ onUpgrade }: any) {
 
     return (
         <div className="space-y-10 text-black animate-in fade-in">
+            {campaign?.flashSaleActive && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-red-600 via-orange-600 to-amber-600 text-white shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2.5">
+                        <Flame className="w-6 h-6 text-yellow-300 animate-bounce" />
+                        <div>
+                            <p className="text-xs font-black uppercase tracking-wider text-yellow-300">
+                                {campaign.flashSaleTitle || "🔥 ĐANG DIỄN RA FLASHSALE GIẢM GIÁ ĐẶC BIỆT"}
+                            </p>
+                            <p className="text-[11px] text-orange-100 font-medium">
+                                Nhanh tay nâng cấp để nhận mức giá ưu đãi tốt nhất trong năm!
+                            </p>
+                        </div>
+                    </div>
+                    <span className="hidden sm:inline-block px-3 py-1 bg-black/30 rounded-xl text-[10px] font-black uppercase tracking-widest text-yellow-200">
+                        Giá đã tự động giảm
+                    </span>
+                </div>
+            )}
+
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <h2 className="text-2xl font-black italic uppercase">Nâng cấp thành viên</h2>
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex-wrap justify-center">
@@ -1018,15 +1080,43 @@ function BillingTab({ onUpgrade }: any) {
             
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
                 {plans.map((p) => {
-                    const price = p.prices[duration as keyof typeof p.prices];
+                    const rawBasePrice = p.prices[duration as keyof typeof p.prices];
+                    const priceData = getPlanPricing(p.name, rawBasePrice);
+
                     return (
-                        <div key={p.name} className={`p-6 2xl:p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
-                            <p className={`font-black uppercase text-[11px] tracking-widest mb-4 ${p.color === 'blue' ? 'text-blue-600' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-600'}`}>Hạng {p.name}</p>
+                        <div key={p.name} className={`relative p-6 2xl:p-8 rounded-[40px] border-4 bg-white hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col ${p.color === 'blue' ? 'border-blue-100 hover:border-blue-600' : p.color === 'amber' ? 'border-amber-100 hover:border-amber-500' : 'border-purple-100 hover:border-purple-600'}`}>
                             
-                            <div className="flex items-end gap-1 mb-8">
-                                <span className="text-3xl md:text-4xl lg:text-4xl xl:text-2xl 2xl:text-4xl font-black italic tracking-tighter">
-                                    {price.toLocaleString()}đ
-                                </span>
+                            {priceData.isSale && (
+                                <div className="absolute -top-3.5 right-6 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-black px-3.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-md shadow-orange-500/30 animate-pulse">
+                                    <Flame size={12} className="text-yellow-300" />
+                                    Flash Sale -{priceData.discountPercent}%
+                                </div>
+                            )}
+
+                            <p className={`font-black uppercase text-[11px] tracking-widest mb-3 ${p.color === 'blue' ? 'text-blue-600' : p.color === 'amber' ? 'text-amber-500' : 'text-purple-600'}`}>Hạng {p.name}</p>
+                            
+                            <div className="mb-8">
+                                {priceData.isSale ? (
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-sm font-bold text-slate-400 line-through">
+                                                {priceData.originalPrice.toLocaleString()}đ
+                                            </span>
+                                            <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-md uppercase">
+                                                Tiết kiệm { (priceData.originalPrice - priceData.finalPrice).toLocaleString() }đ
+                                            </span>
+                                        </div>
+                                        <div className="text-3xl md:text-4xl lg:text-4xl xl:text-2xl 2xl:text-4xl font-black italic tracking-tighter text-red-600 flex items-end gap-1">
+                                            {priceData.finalPrice.toLocaleString()}đ
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-end gap-1">
+                                        <span className="text-3xl md:text-4xl lg:text-4xl xl:text-2xl 2xl:text-4xl font-black italic tracking-tighter text-slate-900">
+                                            {priceData.originalPrice.toLocaleString()}đ
+                                        </span>
+                                    </div>
+                                )}
                             </div>
 
                             <ul className="space-y-4 mb-8 flex-1">
@@ -1036,7 +1126,16 @@ function BillingTab({ onUpgrade }: any) {
                                     </li>
                                 ))}
                             </ul>
-                            <button onClick={() => setSelectedPlan({ name: p.name, price: price })} className={`w-full py-4 rounded-3xl font-black text-white uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-auto ${p.color === 'blue' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : p.color === 'amber' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20'}`}>
+
+                            <button 
+                                onClick={() => setSelectedPlan({ 
+                                    name: p.name, 
+                                    price: priceData.finalPrice, 
+                                    originalPrice: priceData.originalPrice,
+                                    isSale: priceData.isSale 
+                                })} 
+                                className={`w-full py-4 rounded-3xl font-black text-white uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all mt-auto ${p.color === 'blue' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : p.color === 'amber' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20'}`}
+                            >
                                 Chọn gói này ✨
                             </button>
                         </div>
@@ -1052,8 +1151,26 @@ function BillingTab({ onUpgrade }: any) {
                         <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-100 mb-6 space-y-4">
                             <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Gói cước:</span><span className="text-slate-900 uppercase font-black">Hạng {selectedPlan.name}</span></div>
                             <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Chu kỳ:</span><span className="text-slate-900 font-black">{duration === '1m' ? '1 Tháng' : duration === '3m' ? '3 Tháng' : duration === '6m' ? '6 Tháng' : '1 Năm'}</span></div>
-                            <div className="flex justify-between items-center text-sm font-bold text-slate-600"><span>Giá gốc:</span><span className="text-slate-900 font-black">{selectedPlan.price.toLocaleString()}đ</span></div>
-                            {discount > 0 && (<div className="flex justify-between items-center text-sm font-black text-green-600"><span>Giảm giá ({isPercentage ? discount + '%' : discount.toLocaleString() + 'đ'}):</span><span>-{getDiscountAmount().toLocaleString()}đ</span></div>)}
+                            
+                            {selectedPlan.isSale ? (
+                                <>
+                                    <div className="flex justify-between items-center text-sm font-bold text-slate-600">
+                                        <span>Giá niêm yết:</span>
+                                        <span className="text-slate-400 line-through font-bold">{selectedPlan.originalPrice?.toLocaleString()}đ</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm font-black text-orange-600">
+                                        <span>Giá Flash Sale:</span>
+                                        <span>{selectedPlan.price.toLocaleString()}đ</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex justify-between items-center text-sm font-bold text-slate-600">
+                                    <span>Giá gốc:</span>
+                                    <span className="text-slate-900 font-black">{selectedPlan.price.toLocaleString()}đ</span>
+                                </div>
+                            )}
+
+                            {discount > 0 && (<div className="flex justify-between items-center text-sm font-black text-green-600"><span>Voucher ({isPercentage ? discount + '%' : discount.toLocaleString() + 'đ'}):</span><span>-{getDiscountAmount().toLocaleString()}đ</span></div>)}
                             <div className="pt-4 border-t border-slate-200 flex flex-col mt-2"><span className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Tổng thanh toán:</span><span className="text-3xl font-black italic text-blue-600">{getFinalPrice().toLocaleString()}đ</span></div>
                         </div>
 

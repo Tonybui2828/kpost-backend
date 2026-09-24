@@ -6,8 +6,9 @@ import { JwtModule } from '@nestjs/jwt';
 // Modules
 import { AiContentModule } from './ai-content/ai-content.module';
 import { AdminModule } from './admin/admin.module';
-import { EmailModule } from './email/email.module'; // 🚀 Thêm EmailModule vào đây
-import { RemarketingModule } from './remarketing/remarketing.module'; // 🚀 1. THÊM IMPORT NÀY
+import { EmailModule } from './email/email.module'; // 🚀 Khai báo EmailModule
+import { RemarketingModule } from './remarketing/remarketing.module'; // 🚀 Khai báo RemarketingModule
+import { VideoSpinnerModule } from './video-spinner/video-spinner.module'; // 🎬 1. IMPORT VIDEO SPINNER MODULE
 
 // Controllers
 import { ProductsController } from './products/products.controller';
@@ -31,7 +32,7 @@ import { PaymentService } from './products/payment.service';
 import { GoogleStrategy } from './auth/google.strategy';
 import { GroupBotService } from './social/group-bot.service';
 import { InboxService } from './inbox/inbox.service';
-import { LiveStreamService } from './social/livestream.service'; // 🚀 THÊM SERVICE LIVESTREAM VÀO ĐÂY
+import { LiveStreamService } from './social/livestream.service'; // 🚀 Khai báo LiveStreamService
 
 @Module({
   imports: [
@@ -45,8 +46,9 @@ import { LiveStreamService } from './social/livestream.service'; // 🚀 THÊM S
     }),
     AiContentModule,
     AdminModule,
-    EmailModule, // 🚀 Khai báo EmailModule để sử dụng toàn hệ thống
-    RemarketingModule, // 🚀 2. KHAI BÁO REMARKETING MODULE VÀO ĐÂY
+    EmailModule,
+    RemarketingModule,
+    VideoSpinnerModule, // 🎬 2. ĐĂNG KÝ VÀO IMPORTS CỦA HỆ THỐNG
   ],
   controllers: [
     ProductsController,
@@ -55,7 +57,7 @@ import { LiveStreamService } from './social/livestream.service'; // 🚀 THÊM S
     DashboardController,
     InboxController,
     ShippingController,
-    AuthController
+    AuthController,
   ],
   providers: [
     PrismaService,
@@ -70,7 +72,7 @@ import { LiveStreamService } from './social/livestream.service'; // 🚀 THÊM S
     GoogleStrategy,
     GroupBotService,
     InboxService,
-    LiveStreamService // 🚀 ĐĂNG KÝ LIVESTREAM SERVICE VÀO PROVIDERS
+    LiveStreamService,
   ],
 })
 export class AppModule {}
