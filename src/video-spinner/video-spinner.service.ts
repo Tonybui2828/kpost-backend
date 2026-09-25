@@ -4,13 +4,12 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { SpinVideoDto } from './video-spinner.dto';
 
-// Sử dụng require chuẩn CommonJS để tránh lỗi TS2349 trong TypeScript/NestJS
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ffmpeg = require('fluent-ffmpeg');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const archiver = require('archiver');
 
-// Gán đường dẫn binary ffmpeg nếu có gói installer
+// Gán đường dẫn binary nếu có installer
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
@@ -23,7 +22,7 @@ try {
     ffmpeg.setFfprobePath(ffprobeInstaller.path);
   }
 } catch (err) {
-  Logger.warn('Sử dụng FFmpeg mặc định từ container hệ điều hành Debian/Linux.');
+  Logger.warn('Sử dụng FFmpeg mặc định từ container hệ thống.');
 }
 
 export interface SpunVideoResult {
@@ -47,14 +46,13 @@ export class VideoSpinnerService {
   private readonly uploadBaseDir = path.join(process.cwd(), 'uploads', 'spun-videos');
 
   constructor() {
-    // Đảm bảo thư mục lưu trữ tồn tại
     if (!fs.existsSync(this.uploadBaseDir)) {
       fs.mkdirSync(this.uploadBaseDir, { recursive: true });
     }
   }
 
   /**
-   * Nhân bản 1 video thành N video biến thể
+   * Nhân bản 1 video thành N video biến thể độc nhất
    */
   async spinVideo(
     file: Express.Multer.File,
@@ -70,7 +68,7 @@ export class VideoSpinnerService {
       throw new BadRequestException('Vui lòng tải lên 1 file video hợp lệ!');
     }
 
-    const count = Math.min(Math.max(Number(dto.count) || 5, 1), 20); // Giới hạn 1 - 20 video
+    const count = Math.min(Math.max(Number(dto.count) || 5, 1), 20);
     const isFlip = String(dto.flip) === 'true';
     const isChangeSpeed = String(dto.changeSpeed) !== 'false';
     const isChangeColor = String(dto.changeColor) !== 'false';
@@ -85,61 +83,61 @@ export class VideoSpinnerService {
     const inputPath = file.path;
     const spunVideos: SpunVideoResult[] = [];
 
-    this.logger.log(`[Spin Video] Bắt đầu nhân bản ${count} video từ batch ${batchId}`);
+    // Kiểm tra xem video gốc có âm thanh không để tránh lỗi audio filter
+    const hasAudio = await this.checkHasAudio(inputPath);
+
+    this.logger.log(`[Spin Video] Bắt đầu nhân bản ${count} video từ batch ${batchId} (hasAudio: ${hasAudio})`);
 
     for (let i = 1; i <= count; i++) {
       const outputFileName = `spin_${batchId}_v${i}_${Date.now()}.mp4`;
       const outputPath = path.join(batchDir, outputFileName);
 
-      // 1. Tính toán thông số biến thể ngẫu nhiên cho từng video
+      // Thông số biến thể ngẫu nhiên vi mô
       const speed = isChangeSpeed ? Number((0.985 + Math.random() * 0.03).toFixed(4)) : 1.0;
       const zoom = isMicroZoom ? Number((1.01 + Math.random() * 0.02).toFixed(4)) : 1.0;
       const brightness = isChangeColor ? Number((-0.02 + Math.random() * 0.04).toFixed(3)) : 0;
       const contrast = isChangeColor ? Number((0.98 + Math.random() * 0.04).toFixed(3)) : 1.0;
       const saturation = isChangeColor ? Number((0.97 + Math.random() * 0.06).toFixed(3)) : 1.0;
 
-      // Xây dựng bộ lọc Video Filters
-      const videoFilters: string[] = [];
+      // 1. Tạo chuỗi Video Filters
+      const vFilters: string[] = [];
 
-      // A. Lật gương
       if (isFlip) {
-        videoFilters.push('hflip');
+        vFilters.push('hflip');
       }
 
-      // B. Tốc độ video (setpts)
       if (speed !== 1.0) {
         const ptsMultiplier = (1 / speed).toFixed(4);
-        videoFilters.push(`setpts=${ptsMultiplier}*PTS`);
+        vFilters.push(`setpts=${ptsMultiplier}*PTS`);
       }
 
-      // C. Chỉnh màu (eq)
       if (brightness !== 0 || contrast !== 1.0 || saturation !== 1.0) {
-        videoFilters.push(`eq=contrast=${contrast}:brightness=${brightness}:saturation=${saturation}`);
+        vFilters.push(`eq=contrast=${contrast}:brightness=${brightness}:saturation=${saturation}`);
       }
 
-      // D. Micro Zoom và Crop
       if (zoom > 1.0) {
-        videoFilters.push(
+        vFilters.push(
           `scale=iw*${zoom}:ih*${zoom},crop=iw/${zoom}:ih/${zoom}:(iw-iw/${zoom})/2:(ih-ih/${zoom})/2`
         );
       }
 
-      // E. Thêm Noise vi mô
       if (isAddNoise) {
-        videoFilters.push('noise=alls=1:allf=t');
+        vFilters.push('noise=alls=1:allf=t');
       }
 
-      // Xây dựng bộ lọc Audio Filters
-      const audioFilters: string[] = [];
-      if (speed !== 1.0) {
-        audioFilters.push(`atempo=${speed}`);
-      }
-      if (isChangeAudio) {
-        audioFilters.push('equalizer=f=1000:t=q:w=1:g=0.5');
+      // 2. Tạo chuỗi Audio Filters (chỉ kích hoạt nếu video gốc có âm thanh)
+      const aFilters: string[] = [];
+      if (hasAudio) {
+        if (speed !== 1.0) {
+          aFilters.push(`atempo=${speed}`);
+        }
+        if (isChangeAudio) {
+          aFilters.push('equalizer=f=1000:t=q:w=1:g=0.5');
+        }
       }
 
-      // 2. Chạy FFmpeg render biến thể
-      await this.processSingleVariant(inputPath, outputPath, videoFilters, audioFilters);
+      // 3. Render video biến thể
+      await this.processSingleVariant(inputPath, outputPath, vFilters, aFilters, hasAudio);
 
       const publicUrl = `${serverBaseUrl}/uploads/spun-videos/${batchId}/${outputFileName}`;
       spunVideos.push({
@@ -158,14 +156,14 @@ export class VideoSpinnerService {
       });
     }
 
-    // 3. Đóng gói toàn bộ video thành 1 file ZIP
+    // 4. Tạo file ZIP đóng gói
     const zipFileName = `batch_${batchId}_all_${count}_videos.zip`;
     const zipFilePath = path.join(batchDir, zipFileName);
     await this.createZipFile(spunVideos.map((v) => path.join(batchDir, v.fileName)), zipFilePath);
 
     const zipDownloadUrl = `${serverBaseUrl}/uploads/spun-videos/${batchId}/${zipFileName}`;
 
-    // Xoá file gốc tạm sau khi đã xử lý xong
+    // Xoá file upload tạm ban đầu
     try {
       if (fs.existsSync(inputPath)) {
         fs.unlinkSync(inputPath);
@@ -183,13 +181,32 @@ export class VideoSpinnerService {
   }
 
   /**
-   * Xử lý 1 video bằng ffmpeg
+   * Kiểm tra video có luồng audio không
+   */
+  private checkHasAudio(filePath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      ffmpeg.ffprobe(filePath, (err: any, metadata: any) => {
+        if (err || !metadata || !metadata.streams) {
+          resolve(false);
+          return;
+        }
+        const hasAudioStream = metadata.streams.some(
+          (stream: any) => stream.codec_type === 'audio'
+        );
+        resolve(hasAudioStream);
+      });
+    });
+  }
+
+  /**
+   * Render 1 file video biến thể với FFmpeg
    */
   private processSingleVariant(
     input: string,
     output: string,
     videoFilters: string[],
-    audioFilters: string[]
+    audioFilters: string[],
+    hasAudio: boolean
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       let command = ffmpeg(input);
@@ -198,22 +215,30 @@ export class VideoSpinnerService {
         command = command.videoFilters(videoFilters);
       }
 
-      if (audioFilters.length > 0) {
+      if (hasAudio && audioFilters.length > 0) {
         command = command.audioFilters(audioFilters);
       }
 
-      // Xoá metadata cũ và ghi đè metadata mới
+      // Tách từng tham số riêng biệt trong mảng (sửa lỗi Unrecognized option metadata)
+      const options: string[] = [
+        '-map_metadata', '-1',
+        '-metadata', `title=Video_${uuidv4().slice(0, 8)}`,
+        '-metadata', `comment=Cloned_${Date.now()}`,
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '22',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+      ];
+
+      if (hasAudio) {
+        options.push('-c:a', 'aac', '-b:a', '128k');
+      } else {
+        options.push('-an'); // Tắt audio nếu video gốc không có tiếng
+      }
+
       command
-        .outputOptions([
-          '-map_metadata -1',
-          `-metadata title="Video ${uuidv4()}"`,
-          `-metadata date="${new Date().toISOString()}"`,
-          '-c:v libx264',
-          '-preset veryfast',
-          '-crf 22',
-          '-c:a aac',
-          '-b:a 128k',
-        ])
+        .outputOptions(options)
         .output(output)
         .on('end', () => resolve())
         .on('error', (err: any) => {
@@ -225,7 +250,7 @@ export class VideoSpinnerService {
   }
 
   /**
-   * Nén tất cả video thành file ZIP
+   * Nén file ZIP
    */
   private createZipFile(filePaths: string[], destinationZip: string): Promise<void> {
     return new Promise((resolve, reject) => {
