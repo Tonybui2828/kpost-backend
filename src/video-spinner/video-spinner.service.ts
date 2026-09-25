@@ -6,8 +6,14 @@ import { SpinVideoDto } from './video-spinner.dto';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ffmpeg = require('fluent-ffmpeg');
+
+// Khắc phục tương thích CommonJS / ESModule cho archiver
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const archiver = require('archiver');
+const archiverPkg = require('archiver');
+const createArchiveInstance = (type: string, options: any) => {
+  const fn = typeof archiverPkg === 'function' ? archiverPkg : (archiverPkg.default || archiverPkg);
+  return fn(type, options);
+};
 
 // Gán đường dẫn binary nếu có installer
 try {
@@ -83,7 +89,7 @@ export class VideoSpinnerService {
     const inputPath = file.path;
     const spunVideos: SpunVideoResult[] = [];
 
-    // Kiểm tra xem video gốc có âm thanh không để tránh lỗi audio filter
+    // Kiểm tra xem video gốc có âm thanh không
     const hasAudio = await this.checkHasAudio(inputPath);
 
     this.logger.log(`[Spin Video] Bắt đầu nhân bản ${count} video từ batch ${batchId} (hasAudio: ${hasAudio})`);
@@ -125,7 +131,7 @@ export class VideoSpinnerService {
         vFilters.push('noise=alls=1:allf=t');
       }
 
-      // 2. Tạo chuỗi Audio Filters (chỉ kích hoạt nếu video gốc có âm thanh)
+      // 2. Tạo chuỗi Audio Filters
       const aFilters: string[] = [];
       if (hasAudio) {
         if (speed !== 1.0) {
@@ -156,12 +162,16 @@ export class VideoSpinnerService {
       });
     }
 
-    // 4. Tạo file ZIP đóng gói
-    const zipFileName = `batch_${batchId}_all_${count}_videos.zip`;
-    const zipFilePath = path.join(batchDir, zipFileName);
-    await this.createZipFile(spunVideos.map((v) => path.join(batchDir, v.fileName)), zipFilePath);
-
-    const zipDownloadUrl = `${serverBaseUrl}/uploads/spun-videos/${batchId}/${zipFileName}`;
+    // 4. Tạo file ZIP đóng gói an toàn
+    let zipDownloadUrl: string | undefined = undefined;
+    try {
+      const zipFileName = `batch_${batchId}_all_${count}_videos.zip`;
+      const zipFilePath = path.join(batchDir, zipFileName);
+      await this.createZipFile(spunVideos.map((v) => path.join(batchDir, v.fileName)), zipFilePath);
+      zipDownloadUrl = `${serverBaseUrl}/uploads/spun-videos/${batchId}/${zipFileName}`;
+    } catch (zipErr) {
+      this.logger.warn(`Không thể nén file ZIP: ${zipErr}`);
+    }
 
     // Xoá file upload tạm ban đầu
     try {
@@ -219,7 +229,6 @@ export class VideoSpinnerService {
         command = command.audioFilters(audioFilters);
       }
 
-      // Tách từng tham số riêng biệt trong mảng (sửa lỗi Unrecognized option metadata)
       const options: string[] = [
         '-map_metadata', '-1',
         '-metadata', `title=Video_${uuidv4().slice(0, 8)}`,
@@ -234,7 +243,7 @@ export class VideoSpinnerService {
       if (hasAudio) {
         options.push('-c:a', 'aac', '-b:a', '128k');
       } else {
-        options.push('-an'); // Tắt audio nếu video gốc không có tiếng
+        options.push('-an');
       }
 
       command
@@ -255,7 +264,7 @@ export class VideoSpinnerService {
   private createZipFile(filePaths: string[], destinationZip: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(destinationZip);
-      const archive = archiver('zip', { zlib: { level: 6 } });
+      const archive = createArchiveInstance('zip', { zlib: { level: 6 } });
 
       output.on('close', () => resolve());
       archive.on('error', (err: any) => reject(err));
