@@ -4,7 +4,7 @@ import {
   LayoutDashboard, PenTool, Package, MessageSquare, 
   Settings, Share2, LogOut, LogIn, Clock, MessageCircle, 
   ShoppingBag, Truck, Sparkles, Menu, X, Target, Radio,
-  Flame, Users, ShieldCheck, Film // 👈 1. Thêm icon Film vào đây
+  Flame, Users, ShieldCheck, Film, Wand2 // 👈 1. Đã thêm icon Wand2 cho tính năng AI Video Editor
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,8 +20,18 @@ const menuItems = [
   { name: "Tổng quan", icon: <LayoutDashboard size={20} />, href: "/dashboard" },
   { name: "AI Marketing", icon: <PenTool size={20} />, href: "/" },
   { name: "AI Livestream", icon: <Radio size={20} className="text-red-500 animate-pulse" />, href: "/livestream", badge: "LIVE" },
-  // 🎬 2. THÊM TÍNH NĂNG NHÂN BẢN & LÁCH BẢN QUYỀN VIDEO VÀO ĐÂY:
-  { name: "AI Video Spinner", icon: <Film size={20} className="text-purple-500 animate-pulse" />, href: "/video-spinner", badge: "HOT" },
+  
+  // 🌟 TÍNH NĂNG MỚI: AI VIDEO EDITOR (HỌC HIỂU NỘI DUNG, SỬA THEO MỐC THỜI GIAN, CHÈN LOGO & BANNER)
+  { 
+    name: "AI Video Editor", 
+    icon: <Wand2 size={20} className="text-amber-500 animate-pulse" />, 
+    href: "/ai-video-editor", 
+    badge: "AI PRO" 
+  },
+
+  // 🎬 TÍNH NĂNG NHÂN BẢN & LÁCH BẢN QUYỀN VIDEO
+  { name: "AI Video Spinner", icon: <Film size={20} className="text-purple-500" />, href: "/video-spinner", badge: "HOT" },
+  
   { name: "Quản lý sản phẩm", icon: <Package size={20} />, href: "/products" },
   { name: "Lịch đăng bài", icon: <Clock size={20} />, href: "/schedule" }, 
   { name: "Hộp thư Inbox", icon: <MessageSquare size={20} />, href: "/inbox" },
@@ -59,7 +69,7 @@ export default function Sidebar() {
   const [user, setUser] = useState<any>(null);
   const [plan, setPlan] = useState("GUEST");
   
-  // STATE MỚI ĐỂ ĐIỀU KHIỂN MENU TRÊN MOBILE
+  // STATE ĐIỀU KHIỂN MENU TRÊN MOBILE
   const [isOpen, setIsOpen] = useState(false);
 
   // --- 2. HÀM LẤY THÔNG TIN NGƯỜI DÙNG & GÓI CƯỚC THẬT ---
@@ -196,14 +206,20 @@ export default function Sidebar() {
                 <span className="text-sm font-black uppercase tracking-tight">{item.name}</span>
               </div>
               {item.badge && pathname !== item.href && (
-                <span className="bg-red-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider animate-pulse">
+                <span className={`text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider ${
+                  item.badge === 'AI PRO' 
+                    ? 'bg-amber-500 animate-bounce' 
+                    : item.badge === 'HOT' 
+                    ? 'bg-purple-600 animate-pulse' 
+                    : 'bg-red-500 animate-pulse'
+                }`}>
                   {item.badge}
                 </span>
               )}
             </Link>
           ))}
 
-          {/* 2. CỤM MENU DÀNH CHO ADMIN (HIỂN THỊ KHI LÀ QUẢN TRỊ VIÊN HOẶC ĐANG TRUY CẬP TRANG ADMIN) */}
+          {/* 2. CỤM MENU DÀNH CHO ADMIN */}
           {(isAdmin || pathname.startsWith("/admin")) && (
             <div className="pt-4 mt-4 border-t border-slate-100">
               <div className="px-4 mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
