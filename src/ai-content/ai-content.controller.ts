@@ -18,7 +18,7 @@ export class AiContentController {
     return this.aiContentService.suggestReply(text, workspace);
   }
 
-  // 🌟 MỚI 1: Cổng AI học hiểu toàn bộ nội dung video khi khách tải lên
+  // 🌟 1. Cổng AI học hiểu toàn bộ nội dung video khi khách tải lên
   @Post('analyze-video-deep')
   async analyzeVideoDeep(
     @Body() body: { videoName?: string; duration?: number; keyframes?: any[]; extraContext?: string }
@@ -26,11 +26,17 @@ export class AiContentController {
     return this.aiContentService.analyzeVideoDeep(body);
   }
 
-  // 🌟 MỚI 2: Cổng AI phân tích câu lệnh chỉnh sửa video theo mốc thời gian
+  // 🌟 2. Cổng AI phân tích câu lệnh chỉnh sửa video theo mốc thời gian
   @Post('parse-timeline-prompt')
   async parseTimelinePrompt(
     @Body() body: { userPrompt: string; currentTimeline?: any[]; duration?: number; currentTime?: number }
   ) {
     return this.aiContentService.parseTimelinePrompt(body);
+  }
+
+  // 🌟 3. CỔNG MỚI: AI Whisper bóc băng âm thanh thực tế từ video thành lời thoại tiếng Việt chuẩn 100%
+  @Post('transcribe-video')
+  async transcribeVideo(@Body() body: { audioBase64?: string; videoUrl?: string }) {
+    return this.aiContentService.transcribeAudioWithWhisper(body);
   }
 }

@@ -158,7 +158,7 @@ Chủ đề/Sản phẩm: ${topic}`;
   }
 
   // =========================================================================
-  // 🌟 4. TÍNH NĂNG MỚI: AI HỌC HIỂU NỘI DUNG VIDEO KHI KHÁCH TẢI LÊN
+  // 🌟 4. AI HỌC HIỂU NỘI DUNG VIDEO KHI KHÁCH TẢI LÊN
   // =========================================================================
   async analyzeVideoDeep(data: { videoName?: string; duration?: number; keyframes?: any[]; extraContext?: string }) {
     try {
@@ -187,7 +187,6 @@ Bắt buộc trả về đúng định dạng JSON:
       "timeLabel": "00:00 - 00:${Math.round(duration * 0.25).toString().padStart(2, '0')}",
       "title": "Cảnh Mở Đầu & Hook Giữ Chân Người Xem",
       "description": "Hình ảnh cận cảnh tạo sự tò mò trong 3-5 giây đầu",
-      "dialogue": "Nhạc nền tiết tấu nhanh cuốn hút",
       "suggestion": "Nên tăng tốc 1.25x hoặc chèn logo thương hiệu ở góc"
     },
     {
@@ -197,7 +196,6 @@ Bắt buộc trả về đúng định dạng JSON:
       "timeLabel": "00:${Math.round(duration * 0.25).toString().padStart(2, '0')} - 00:${Math.round(duration * 0.75).toString().padStart(2, '0')}",
       "title": "Trình Diễn Tính Năng / Nội Dung Chính",
       "description": "Trình bày chi tiết sản phẩm, công năng và trải nghiệm",
-      "dialogue": "Lời thoại thuyết minh rõ ràng",
       "suggestion": "Nên chèn banner Flash Sale giảm giá 50% ở đáy video"
     },
     {
@@ -207,7 +205,6 @@ Bắt buộc trả về đúng định dạng JSON:
       "timeLabel": "00:${Math.round(duration * 0.75).toString().padStart(2, '0')} - 00:${Math.round(duration).toString().padStart(2, '0')}",
       "title": "Kết Thúc & Kêu Gọi Hành Động (CTA)",
       "description": "Chốt thông điệp, hướng dẫn đặt hàng hoặc liên hệ",
-      "dialogue": "Kêu gọi đặt hàng ngay hôm nay",
       "suggestion": "Chèn logo KPOST nổi bật và text ĐẶT HÀNG NGAY"
     }
   ],
@@ -228,7 +225,6 @@ Bắt buộc trả về đúng định dạng JSON:
       return { success: true, data: parsedData };
     } catch (error: any) {
       console.error("Lỗi AI analyzeVideoDeep:", error);
-      // Fallback tự động nếu OpenAI bận
       const dur = data.duration || 15;
       return {
         success: true,
@@ -276,7 +272,7 @@ Bắt buộc trả về đúng định dạng JSON:
   }
 
   // =========================================================================
-  // 🌟 5. TÍNH NĂNG MỚI: AI BÓC TÁCH CÂU LỆNH CHỈNH SỬA THEO TRỤC THỜI GIAN
+  // 🌟 5. AI BÓC TÁCH CÂU LỆNH CHỈNH SỬA THEO TRỤC THỜI GIAN
   // =========================================================================
   async parseTimelinePrompt(data: { userPrompt: string; currentTimeline?: any[]; duration?: number; currentTime?: number }) {
     try {
@@ -331,6 +327,82 @@ Hãy bóc tách thành JSON chuẩn sau:
           globalEdits: { aspectRatio: "original", flipHorizontal: false, letterbox: false }
         }
       };
+    }
+  }
+
+  // =========================================================================
+  // 🌟 6. MỚI: AI WHISPER BÓC BĂNG ÂM THANH THỰC TẾ 100% CỦA VIDEO SANG PHỤ ĐỀ
+  // =========================================================================
+  async transcribeAudioWithWhisper(data: { audioBase64?: string; videoUrl?: string }) {
+    try {
+      if (!data.audioBase64 && !data.videoUrl) {
+        return { success: false, message: "Không tìm thấy dữ liệu âm thanh" };
+      }
+
+      if (data.audioBase64) {
+        // Chuyển chuỗi Base64 âm thanh thành Buffer
+        const base64Clean = data.audioBase64.includes(',') 
+          ? data.audioBase64.split(',')[1] 
+          : data.audioBase64;
+        const buffer = Buffer.from(base64Clean, 'base64');
+        
+        // Tạo file ảo gửi sang OpenAI Whisper API
+        const file = await OpenAI.toFile(buffer, 'audio.mp3');
+
+        const transcription: any = await this.openai.audio.transcriptions.create({
+          file: file,
+          model: 'whisper-1',
+          language: 'vi',
+          response_format: 'verbose_json',
+          timestamp_granularities: ['segment'],
+        });
+
+        // Bẻ các câu thoại thực tế thành từng cụm 3-4 từ để hiển thị nhạy bén chuẩn TikTok/CapCut
+        const rawSegments = transcription.segments || [];
+        const cues: any[] = [];
+
+        rawSegments.forEach((seg: any) => {
+          const words = seg.text.trim().split(' ').filter((w: string) => w.length > 0);
+          const duration = seg.end - seg.start;
+          
+          if (words.length <= 4) {
+            cues.push({
+              id: `w_${seg.id}`,
+              startSec: Number(seg.start.toFixed(2)),
+              endSec: Number(seg.end.toFixed(2)),
+              text: seg.text.trim(),
+              words: words,
+            });
+          } else {
+            // Chia nhỏ thành các cụm 3 từ
+            const chunkCount = Math.ceil(words.length / 3);
+            const step = duration / chunkCount;
+            let idx = 0;
+            for (let i = 0; i < words.length; i += 3) {
+              const chunkWords = words.slice(i, i + 3);
+              cues.push({
+                id: `w_${seg.id}_${idx}`,
+                startSec: Number((seg.start + idx * step).toFixed(2)),
+                endSec: Number((seg.start + (idx + 1) * step).toFixed(2)),
+                text: chunkWords.join(' '),
+                words: chunkWords,
+              });
+              idx++;
+            }
+          }
+        });
+
+        return { 
+          success: true, 
+          cues: cues, 
+          fullText: transcription.text 
+        };
+      }
+
+      return { success: false, message: "Chưa có file âm thanh để bóc băng" };
+    } catch (error: any) {
+      console.error("Lỗi Whisper AI transcribe:", error);
+      return { success: false, error: error.message || "Lỗi bóc băng âm thanh" };
     }
   }
 }
