@@ -331,133 +331,144 @@ Hãy bóc tách thành JSON chuẩn sau:
   }
 
   // =========================================================================
-  // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH THỰC TẾ 100% CỦA VIDEO SANG PHỤ ĐỀ
-  // (ĐÃ SỬA: TRIỆT TIÊU LỖI LẶP TỪ, PHỦ KÍN MỐC THỜI GIAN ĐẾN HẾT VIDEO)
+  // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH CHUẨN XÁC 100% CẢ VIDEO (KHÔNG BỊ LẶP 30S)
+  // (HỖ TRỢ CẢ FILE UPLOAD GỐC LẪN BASE64, TỰ ĐỘNG BÓC SUỐT TOÀN BỘ VIDEO)
   // =========================================================================
-  async transcribeAudioWithWhisper(data: { audioBase64?: string; videoUrl?: string; duration?: number }) {
+  async transcribeAudioWithWhisper(data: { fileBuffer?: Buffer; fileName?: string; audioBase64?: string; videoUrl?: string; duration?: number }) {
     try {
-      if (!data.audioBase64 && !data.videoUrl) {
-        return { success: false, message: "Không tìm thấy dữ liệu âm thanh" };
+      if (!data.fileBuffer && !data.audioBase64 && !data.videoUrl) {
+        return { success: false, message: "Không tìm thấy dữ liệu âm thanh/video" };
       }
 
-      if (data.audioBase64) {
-        const isWav = data.audioBase64.includes('audio/wav') || !data.audioBase64.includes('audio/mp3');
-        const fileName = isWav ? 'audio.wav' : 'audio.mp3';
+      // Lấy Buffer từ File Upload (FormData) hoặc Base64
+      let buffer: Buffer | null = null;
+      let targetName = data.fileName || 'video.mp4';
 
+      if (data.fileBuffer) {
+        buffer = data.fileBuffer;
+      } else if (data.audioBase64) {
+        const isWav = data.audioBase64.includes('audio/wav') || !data.audioBase64.includes('audio/mp3');
+        targetName = isWav ? 'audio.wav' : 'audio.mp3';
         const base64Clean = data.audioBase64.includes(',') 
           ? data.audioBase64.split(',')[1] 
           : data.audioBase64;
-        const buffer = Buffer.from(base64Clean, 'base64');
+        buffer = Buffer.from(base64Clean, 'base64');
+      }
+
+      if (!buffer) {
+        return { success: false, message: "Không thể đọc dữ liệu file âm thanh" };
+      }
+
+      // Tạo file gửi thẳng vào OpenAI Whisper API
+      const ext = targetName.split('.').pop() || 'mp4';
+      const file = await OpenAI.toFile(buffer, `whisper_input_${Date.now()}.${ext}`);
+
+      console.log(`--- 🎤 Đang gửi file (${(buffer.length / 1024 / 1024).toFixed(2)} MB) sang OpenAI Whisper... ---`);
+
+      // 🌟 CẤU HÌNH ĐẶC TRỊ CHỐNG ẢO GIÁC & LẶP CÂU 30S
+      const transcription: any = await this.openai.audio.transcriptions.create({
+        file: file,
+        model: 'whisper-1',
+        language: 'vi',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word', 'segment'],
+        temperature: 0, // Cố định 0 để loại bỏ hoàn toàn việc lặp lại câu trước đó
+        prompt: "hướng dẫn sử dụng máy hút mùi kính cong, phím bấm cảm ứng, vẫy tay, tốc độ gió, công suất, lưới lọc than hoạt tính.", // Dẫn hướng từ vựng chính xác
+      });
+
+      console.log(`--- ✅ Whisper đã bóc băng xong, độ dài text: ${transcription.text?.length || 0} ký tự ---`);
+
+      const cues: any[] = [];
+      const CHUNK_SIZE = 3; // 3 từ mỗi cụm chuẩn TikTok 9:16
+
+      // 🌟 ƯU TIÊN 1: Lấy chi tiết từng từ (Word-level timestamps) nếu Whisper trả về
+      if (transcription.words && Array.isArray(transcription.words) && transcription.words.length > 0) {
+        const validWords = transcription.words.filter((w: any) => w.word && w.word.trim().length > 0);
         
-        // Tạo file ảo gửi thẳng vào OpenAI Whisper API
-        const file = await OpenAI.toFile(buffer, fileName);
+        for (let i = 0; i < validWords.length; i += CHUNK_SIZE) {
+          const group = validWords.slice(i, i + CHUNK_SIZE);
+          const startSec = Number(group[0].start.toFixed(2));
+          const lastEnd = Number(group[group.length - 1].end.toFixed(2));
+          const endSec = Number(Math.max(lastEnd, startSec + 1.2).toFixed(2));
+          const text = group.map((w: any) => w.word.trim()).join(' ');
 
-        // 🌟 CẤU HÌNH ĐẶC TRỊ CHỐNG ẢO GIÁC & LẶP CÂU KHI GẶP TIẾNG ỒN MÁY HÚT MÙI
-        const transcription: any = await this.openai.audio.transcriptions.create({
-          file: file,
-          model: 'whisper-1',
-          language: 'vi',
-          response_format: 'verbose_json',
-          timestamp_granularities: ['word', 'segment'],
-          temperature: 0, // Cố định 0 để ngăn chặn tuyệt đối việc đoán bừa hay lặp lại cụm từ trước
-          prompt: "Video hướng dẫn sử dụng máy hút mùi kính cong, thiết bị nhà bếp, bật tắt, cảm ứng vẫy tay, phím bấm, tốc độ gió, lưới lọc.", // Hướng dẫn từ vựng chuẩn cho Whisper
-        });
+          const mins = Math.floor(startSec / 60);
+          const secs = Math.floor(startSec % 60);
+          const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
-        const cues: any[] = [];
-        const CHUNK_SIZE = 3; // 3 từ mỗi cụm chuẩn TikTok 9:16
+          cues.push({
+            id: `cue_${cues.length}`,
+            startSec,
+            endSec,
+            timeLabel,
+            text,
+            words: group.map((w: any) => ({
+              word: w.word.trim(),
+              startSec: Number(w.start.toFixed(2)),
+              endSec: Number(w.end.toFixed(2)),
+            }))
+          });
+        }
+      } 
+      // 🌟 ƯU TIÊN 2: Bóc theo các phân đoạn (segments) trải dài toàn bộ thời lượng video
+      else if (transcription.segments && Array.isArray(transcription.segments)) {
+        const rawSegments = transcription.segments || [];
 
-        // 🌟 ƯU TIÊN 1: Lấy chi tiết từng từ (Word-level timestamps) nếu Whisper trả về
-        if (transcription.words && Array.isArray(transcription.words) && transcription.words.length > 0) {
-          const validWords = transcription.words.filter((w: any) => w.word && w.word.trim().length > 0);
-          
-          for (let i = 0; i < validWords.length; i += CHUNK_SIZE) {
-            const group = validWords.slice(i, i + CHUNK_SIZE);
-            const startSec = Number(group[0].start.toFixed(2));
-            const lastEnd = Number(group[group.length - 1].end.toFixed(2));
-            const endSec = Number(Math.max(lastEnd, startSec + 1.2).toFixed(2));
-            const text = group.map((w: any) => w.word.trim()).join(' ');
+        rawSegments.forEach((seg: any) => {
+          const rawText = (seg.text || '').trim();
+          if (!rawText) return;
 
-            const mins = Math.floor(startSec / 60);
-            const secs = Math.floor(startSec % 60);
+          const words = rawText.split(/\s+/).filter((w: string) => w.length > 0);
+          if (words.length === 0) return;
+
+          const duration = Math.max(0.6, seg.end - seg.start);
+          const chunkCount = Math.ceil(words.length / CHUNK_SIZE);
+          const step = duration / chunkCount;
+
+          for (let i = 0; i < words.length; i += CHUNK_SIZE) {
+            const chunkWords = words.slice(i, i + CHUNK_SIZE);
+            const chunkIdx = i / CHUNK_SIZE;
+            const chunkStart = Number((seg.start + chunkIdx * step).toFixed(2));
+            const chunkEnd = Number(Math.max(seg.start + (chunkIdx + 1) * step, chunkStart + 1.2).toFixed(2));
+
+            const mins = Math.floor(chunkStart / 60);
+            const secs = Math.floor(chunkStart % 60);
             const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
             cues.push({
               id: `cue_${cues.length}`,
-              startSec,
-              endSec,
+              startSec: chunkStart,
+              endSec: chunkEnd,
               timeLabel,
-              text,
-              words: group.map((w: any) => ({
-                word: w.word.trim(),
-                startSec: Number(w.start.toFixed(2)),
-                endSec: Number(w.end.toFixed(2)),
-              }))
+              text: chunkWords.join(' '),
+              words: chunkWords.map((w: string, wIdx: number) => ({
+                word: w,
+                startSec: Number((chunkStart + (wIdx / chunkWords.length) * step).toFixed(2)),
+                endSec: Number((chunkStart + ((wIdx + 1) / chunkWords.length) * step).toFixed(2)),
+              })),
             });
           }
-        } 
-        // 🌟 ƯU TIÊN 2: Bóc theo các phân đoạn (segments) trải dài toàn bộ thời lượng video
-        else if (transcription.segments && Array.isArray(transcription.segments)) {
-          const rawSegments = transcription.segments || [];
-
-          rawSegments.forEach((seg: any) => {
-            const rawText = (seg.text || '').trim();
-            if (!rawText) return;
-
-            const words = rawText.split(/\s+/).filter((w: string) => w.length > 0);
-            if (words.length === 0) return;
-
-            const duration = Math.max(0.6, seg.end - seg.start);
-            const chunkCount = Math.ceil(words.length / CHUNK_SIZE);
-            const step = duration / chunkCount;
-
-            for (let i = 0; i < words.length; i += CHUNK_SIZE) {
-              const chunkWords = words.slice(i, i + CHUNK_SIZE);
-              const chunkIdx = i / CHUNK_SIZE;
-              const chunkStart = Number((seg.start + chunkIdx * step).toFixed(2));
-              // Kéo dài tối thiểu 1.2s để người xem kịp đọc
-              const chunkEnd = Number(Math.max(seg.start + (chunkIdx + 1) * step, chunkStart + 1.2).toFixed(2));
-
-              const mins = Math.floor(chunkStart / 60);
-              const secs = Math.floor(chunkStart % 60);
-              const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-
-              cues.push({
-                id: `cue_${cues.length}`,
-                startSec: chunkStart,
-                endSec: chunkEnd,
-                timeLabel,
-                text: chunkWords.join(' '),
-                words: chunkWords.map((w: string, wIdx: number) => ({
-                  word: w,
-                  startSec: Number((chunkStart + (wIdx / chunkWords.length) * step).toFixed(2)),
-                  endSec: Number((chunkStart + ((wIdx + 1) / chunkWords.length) * step).toFixed(2)),
-                })),
-              });
-            }
-          });
-        }
-
-        // 🌟 TỐI ƯU HÓA: Nối liền các câu liên tiếp nếu khoảng cách < 1.2s để sub không bị giật hay chớp tắt
-        for (let k = 0; k < cues.length - 1; k++) {
-          if (cues[k + 1].startSec > cues[k].endSec && cues[k + 1].startSec - cues[k].endSec < 1.2) {
-            cues[k].endSec = cues[k + 1].startSec;
-          }
-        }
-
-        return { 
-          success: true, 
-          cues: cues, 
-          data: {
-            cues: cues,
-            fullText: transcription.text || '',
-            totalCues: cues.length,
-            duration: transcription.duration || data.duration || 0,
-          },
-          fullText: transcription.text 
-        };
+        });
       }
 
-      return { success: false, message: "Chưa có file âm thanh để bóc băng" };
+      // 🌟 Nối liền các câu liên tiếp nếu khoảng cách < 1.2s để phụ đề hiển thị liên tục, không bị chớp tắt
+      for (let k = 0; k < cues.length - 1; k++) {
+        if (cues[k + 1].startSec > cues[k].endSec && cues[k + 1].startSec - cues[k].endSec < 1.2) {
+          cues[k].endSec = cues[k + 1].startSec;
+        }
+      }
+
+      return { 
+        success: true, 
+        cues: cues, 
+        data: {
+          cues: cues,
+          fullText: transcription.text || '',
+          totalCues: cues.length,
+          duration: transcription.duration || data.duration || 0,
+        },
+        fullText: transcription.text 
+      };
     } catch (error: any) {
       console.error("Lỗi Whisper AI transcribe:", error);
       return { success: false, error: error.message || "Lỗi bóc băng âm thanh" };
