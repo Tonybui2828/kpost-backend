@@ -332,16 +332,16 @@ Hãy bóc tách thành JSON chuẩn sau:
 
   // =========================================================================
   // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH THỰC TẾ 100% CỦA VIDEO SANG PHỤ ĐỀ
+  // (ĐÃ SỬA: BÓC ĐẦY ĐỦ TOÀN BỘ VIDEO TỪ ĐẦU ĐẾN CUỐI, KHÔNG BỊ DỪNG Ở 15S)
   // =========================================================================
-  async transcribeAudioWithWhisper(data: { audioBase64?: string; videoUrl?: string }) {
+  async transcribeAudioWithWhisper(data: { audioBase64?: string; videoUrl?: string; duration?: number }) {
     try {
       if (!data.audioBase64 && !data.videoUrl) {
         return { success: false, message: "Không tìm thấy dữ liệu âm thanh" };
       }
 
       if (data.audioBase64) {
-        // Tách header data:audio/... nếu có
-        const isWav = data.audioBase64.includes('audio/wav');
+        const isWav = data.audioBase64.includes('audio/wav') || !data.audioBase64.includes('audio/mp3');
         const fileName = isWav ? 'audio.wav' : 'audio.mp3';
 
         const base64Clean = data.audioBase64.includes(',') 
@@ -349,7 +349,7 @@ Hãy bóc tách thành JSON chuẩn sau:
           : data.audioBase64;
         const buffer = Buffer.from(base64Clean, 'base64');
         
-        // 🌟 TẠO ĐÚNG ĐỊNH DẠNG FILE WAV ĐỂ WHISPER NHẬN DIỆN CHUẨN XÁC
+        // Tạo file ảo gửi thẳng vào OpenAI Whisper API
         const file = await OpenAI.toFile(buffer, fileName);
 
         const transcription: any = await this.openai.audio.transcriptions.create({
@@ -360,44 +360,77 @@ Hãy bóc tách thành JSON chuẩn sau:
           timestamp_granularities: ['segment'],
         });
 
-        // Bẻ các câu thoại thực tế từ Whisper thành từng cụm 3 từ ngắn gọn
+        // Bóc toàn bộ các phân đoạn (segments) trải dài toàn bộ thời lượng video
         const rawSegments = transcription.segments || [];
         const cues: any[] = [];
 
         rawSegments.forEach((seg: any) => {
-          const words = seg.text.trim().split(' ').filter((w: string) => w.length > 0);
-          const duration = Math.max(0.2, seg.end - seg.start);
+          const words = seg.text.trim().split(/\s+/).filter((w: string) => w.length > 0);
+          if (words.length === 0) return;
+
+          const duration = Math.max(0.5, seg.end - seg.start);
           
           if (words.length <= 4) {
+            const startSec = Number(seg.start.toFixed(2));
+            const endSec = Number(Math.max(seg.end, startSec + 1.2).toFixed(2));
+            const mins = Math.floor(startSec / 60);
+            const secs = Math.floor(startSec % 60);
+            const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
             cues.push({
-              id: `w_${seg.id}`,
-              startSec: Number(seg.start.toFixed(2)),
-              endSec: Number(seg.end.toFixed(2)),
+              id: `cue_${cues.length}`,
+              startSec,
+              endSec,
+              timeLabel,
               text: seg.text.trim(),
-              words: words,
+              words: words.map((w: string, wIdx: number) => ({
+                word: w,
+                startSec: Number((startSec + (wIdx / words.length) * duration).toFixed(2)),
+                endSec: Number((startSec + ((wIdx + 1) / words.length) * duration).toFixed(2)),
+              })),
             });
           } else {
-            // Chia nhỏ thành các cụm 3 từ
+            // Chia nhỏ thành các cụm 3 từ ngắn gọn (chuẩn TikTok 9:16)
             const chunkCount = Math.ceil(words.length / 3);
             const step = duration / chunkCount;
             let idx = 0;
+
             for (let i = 0; i < words.length; i += 3) {
               const chunkWords = words.slice(i, i + 3);
+              const chunkStart = Number((seg.start + idx * step).toFixed(2));
+              const chunkEnd = Number(Math.max(seg.start + (idx + 1) * step, chunkStart + 1.2).toFixed(2));
+
+              const mins = Math.floor(chunkStart / 60);
+              const secs = Math.floor(chunkStart % 60);
+              const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
               cues.push({
-                id: `w_${seg.id}_${idx}`,
-                startSec: Number((seg.start + idx * step).toFixed(2)),
-                endSec: Number((seg.start + (idx + 1) * step).toFixed(2)),
+                id: `cue_${cues.length}`,
+                startSec: chunkStart,
+                endSec: chunkEnd,
+                timeLabel,
                 text: chunkWords.join(' '),
-                words: chunkWords,
+                words: chunkWords.map((w: string, wIdx: number) => ({
+                  word: w,
+                  startSec: Number((chunkStart + (wIdx / chunkWords.length) * step).toFixed(2)),
+                  endSec: Number((chunkStart + ((wIdx + 1) / chunkWords.length) * step).toFixed(2)),
+                })),
               });
               idx++;
             }
           }
         });
 
+        // Trả về cả cues và data.cues để tương thích tuyệt đối với mọi cấu hình gọi của Frontend
         return { 
           success: true, 
           cues: cues, 
+          data: {
+            cues: cues,
+            fullText: transcription.text || '',
+            totalCues: cues.length,
+            duration: transcription.duration || data.duration || 0,
+          },
           fullText: transcription.text 
         };
       }
