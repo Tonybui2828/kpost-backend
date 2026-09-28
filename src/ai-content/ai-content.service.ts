@@ -331,7 +331,7 @@ Hãy bóc tách thành JSON chuẩn sau:
   }
 
   // =========================================================================
-  // 🌟 6. MỚI: AI WHISPER BÓC BĂNG ÂM THANH THỰC TẾ 100% CỦA VIDEO SANG PHỤ ĐỀ
+  // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH THỰC TẾ 100% CỦA VIDEO SANG PHỤ ĐỀ
   // =========================================================================
   async transcribeAudioWithWhisper(data: { audioBase64?: string; videoUrl?: string }) {
     try {
@@ -340,14 +340,17 @@ Hãy bóc tách thành JSON chuẩn sau:
       }
 
       if (data.audioBase64) {
-        // Chuyển chuỗi Base64 âm thanh thành Buffer
+        // Tách header data:audio/... nếu có
+        const isWav = data.audioBase64.includes('audio/wav');
+        const fileName = isWav ? 'audio.wav' : 'audio.mp3';
+
         const base64Clean = data.audioBase64.includes(',') 
           ? data.audioBase64.split(',')[1] 
           : data.audioBase64;
         const buffer = Buffer.from(base64Clean, 'base64');
         
-        // Tạo file ảo gửi sang OpenAI Whisper API
-        const file = await OpenAI.toFile(buffer, 'audio.mp3');
+        // 🌟 TẠO ĐÚNG ĐỊNH DẠNG FILE WAV ĐỂ WHISPER NHẬN DIỆN CHUẨN XÁC
+        const file = await OpenAI.toFile(buffer, fileName);
 
         const transcription: any = await this.openai.audio.transcriptions.create({
           file: file,
@@ -357,13 +360,13 @@ Hãy bóc tách thành JSON chuẩn sau:
           timestamp_granularities: ['segment'],
         });
 
-        // Bẻ các câu thoại thực tế thành từng cụm 3-4 từ để hiển thị nhạy bén chuẩn TikTok/CapCut
+        // Bẻ các câu thoại thực tế từ Whisper thành từng cụm 3 từ ngắn gọn
         const rawSegments = transcription.segments || [];
         const cues: any[] = [];
 
         rawSegments.forEach((seg: any) => {
           const words = seg.text.trim().split(' ').filter((w: string) => w.length > 0);
-          const duration = seg.end - seg.start;
+          const duration = Math.max(0.2, seg.end - seg.start);
           
           if (words.length <= 4) {
             cues.push({
