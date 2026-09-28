@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
 import { createClient } from '@supabase/supabase-js';
@@ -14,6 +14,57 @@ export class AiContentService {
   );
 
   constructor(private prisma: PrismaService) {}
+
+  // =========================================================================
+  // 🌟 HÀM KIỂM SOÁT BẢN QUYỀN GÓI: HẾT HẠN LẬP TỨC VỀ FREE VÀ CHẶN MỌI TÍNH NĂNG
+  // =========================================================================
+  async checkPlanPermission(workspaceId?: string, userId?: string) {
+    if (!workspaceId && !userId) return;
+
+    let workspace: any = null;
+
+    if (workspaceId) {
+      workspace = await this.prisma.workspace.findUnique({
+        where: { id: workspaceId },
+      });
+    }
+
+    if (!workspace && userId) {
+      const member = await this.prisma.workspaceMember.findFirst({
+        where: { userId },
+        include: { workspace: true },
+      });
+      workspace = member?.workspace || (await this.prisma.workspace.findFirst({ where: { ownerId: userId } }));
+    }
+
+    if (!workspace) {
+      throw new ForbiddenException("Không tìm thấy không gian làm việc. Vui lòng thử lại!");
+    }
+
+    const now = new Date();
+
+    // 1. TỰ ĐỘNG HẠ VỀ FREE NGAY LẬP TỨC NẾU ĐÃ QUÁ HẠN PLAN EXPIRY
+    if (workspace.plan !== 'FREE' && workspace.planExpiry && new Date(workspace.planExpiry) < now) {
+      await this.prisma.workspace.update({
+        where: { id: workspace.id },
+        data: {
+          plan: 'FREE',
+          planExpiry: null,
+        },
+      });
+      workspace.plan = 'FREE';
+      workspace.planExpiry = null;
+    }
+
+    // 2. NẾU LÀ GÓI FREE: CHẶN TOÀN BỘ TÍNH NĂNG TRÊN KPOST
+    if (workspace.plan === 'FREE') {
+      throw new ForbiddenException(
+        "Gói dùng thử của bạn đã hết hạn. Vui lòng liên hệ Admin hoặc nâng cấp gói PRO / DIAMOND để tiếp tục sử dụng các tính năng trên KPOST!"
+      );
+    }
+
+    return workspace;
+  }
 
   // ==========================================
   // 1. AI ADVISOR - PHÂN TÍCH TĂNG TRƯỞNG
@@ -36,6 +87,9 @@ export class AiContentService {
   // 2. AI AUTOPILOT - TRỢ LÝ CHỐT ĐƠN (NHÂN CÁCH SALES CAO CẤP)
   // ==========================================
   async suggestReply(msg: string, wsId: string) {
+    // 🌟 Kiểm tra hạn dùng trước khi trả lời
+    await this.checkPlanPermission(wsId);
+
     try {
       const products = await this.prisma.product.findMany({
         where: { workspaceId: wsId },
@@ -85,7 +139,8 @@ ${productContext}
       });
 
       return res.choices[0].message.content;
-    } catch (error) {
+    } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       return "Dạ em chào Anh/Chị, dạ mình đang quan tâm đến sản phẩm nào bên em ạ? 😍";
     }
   }
@@ -104,7 +159,8 @@ ${productContext}
     return res.choices[0].message.content || userPrompt;
   }
 
-  async editImage(imageUrl: string, prompt: string) {
+  async editImage(imageUrl: string, prompt: string, workspaceId?: string) {
+    if (workspaceId) await this.checkPlanPermission(workspaceId);
     try {
       const technicalPrompt = await this.getOptimizedPrompt(prompt);
       const responseImg = await axios.get(imageUrl, { responseType: 'arraybuffer' });
@@ -116,7 +172,8 @@ ${productContext}
     } catch (error: any) { throw new Error(error.message); }
   }
 
-  async generateImage(prompt: string) {
+  async generateImage(prompt: string, workspaceId?: string) {
+    if (workspaceId) await this.checkPlanPermission(workspaceId);
     try {
       const technicalPrompt = await this.getOptimizedPrompt(prompt);
       const res = await this.openai.images.generate({ model: "dall-e-3", prompt: technicalPrompt, n: 1, size: "1024x1024" });
@@ -125,6 +182,9 @@ ${productContext}
   }
 
   async generatePost(topic: string, userId: string, workspaceId: string) {
+    // 🌟 Kiểm tra hạn dùng trước khi tạo bài viết
+    await this.checkPlanPermission(workspaceId, userId);
+
     try {
       const prompt = `Viết một bài đăng bán hàng hoặc marketing thật hấp dẫn cho mạng xã hội (Facebook, Zalo) dựa trên chủ đề/thông tin sản phẩm sau. Bài viết cần có:
 1. Tiêu đề thu hút (viết hoa, có icon).
@@ -141,7 +201,8 @@ Chủ đề/Sản phẩm: ${topic}`;
       
       const generatedContent = res.choices[0].message.content || '';
       return { content: generatedContent };
-    } catch (error) {
+    } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       console.error("Lỗi AI generatePost:", error);
       throw new Error("AI đang bận hoặc OpenAI API key của bạn bị lỗi. Vui lòng thử lại sau.");
     }
@@ -160,7 +221,9 @@ Chủ đề/Sản phẩm: ${topic}`;
   // =========================================================================
   // 🌟 4. AI HỌC HIỂU NỘI DUNG VIDEO KHI KHÁCH TẢI LÊN
   // =========================================================================
-  async analyzeVideoDeep(data: { videoName?: string; duration?: number; keyframes?: any[]; extraContext?: string }) {
+  async analyzeVideoDeep(data: { videoName?: string; duration?: number; keyframes?: any[]; extraContext?: string; workspaceId?: string }) {
+    if (data.workspaceId) await this.checkPlanPermission(data.workspaceId);
+
     try {
       const duration = data.duration || 15;
       const prompt = `Bạn là Giám đốc Sáng tạo và Chuyên gia Dựng phim AI (AI Video Intelligence Engine).
@@ -224,6 +287,7 @@ Bắt buộc trả về đúng định dạng JSON:
       const parsedData = JSON.parse(res.choices[0].message.content || '{}');
       return { success: true, data: parsedData };
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       console.error("Lỗi AI analyzeVideoDeep:", error);
       const dur = data.duration || 15;
       return {
@@ -274,7 +338,9 @@ Bắt buộc trả về đúng định dạng JSON:
   // =========================================================================
   // 🌟 5. AI BÓC TÁCH CÂU LỆNH CHỈNH SỬA THEO TRỤC THỜI GIAN
   // =========================================================================
-  async parseTimelinePrompt(data: { userPrompt: string; currentTimeline?: any[]; duration?: number; currentTime?: number }) {
+  async parseTimelinePrompt(data: { userPrompt: string; currentTimeline?: any[]; duration?: number; currentTime?: number; workspaceId?: string }) {
+    if (data.workspaceId) await this.checkPlanPermission(data.workspaceId);
+
     try {
       const prompt = `Bạn là Trợ lý Dựng phim AI chuyên sâu theo trục thời gian (Timeline-Aware Video Editor Assistant).
 Khách hàng sẽ miêu tả mong muốn chỉnh sửa theo các mốc thời gian (ví dụ: "ở giây 05 đến 12 cắt bỏ", "từ phút 00:03 chèn banner giảm giá 50%", "đoạn từ 00:05 đến 00:15 tăng tốc 1.3x và chỉnh màu vintage", "chèn logo thương hiệu ở góc trên bên phải").
@@ -318,6 +384,7 @@ Hãy bóc tách thành JSON chuẩn sau:
       const parsedData = JSON.parse(res.choices[0].message.content || '{}');
       return { success: true, data: parsedData };
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       console.error("Lỗi AI parseTimelinePrompt:", error);
       return {
         success: true,
@@ -332,9 +399,14 @@ Hãy bóc tách thành JSON chuẩn sau:
 
   // =========================================================================
   // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH CHUẨN XÁC 100% CẢ VIDEO (KHÔNG BỊ LẶP 30S)
-  // (HỖ TRỢ CẢ FILE UPLOAD GỐC LẪN BASE64, TỰ ĐỘNG BÓC SUỐT TOÀN BỘ VIDEO)
+  // (KIỂM TRA GÓI BẢN QUYỀN TRƯỚC KHI BÓC BĂNG)
   // =========================================================================
-  async transcribeAudioWithWhisper(data: { fileBuffer?: Buffer; fileName?: string; audioBase64?: string; videoUrl?: string; duration?: number }) {
+  async transcribeAudioWithWhisper(data: { fileBuffer?: Buffer; fileName?: string; audioBase64?: string; videoUrl?: string; duration?: number; workspaceId?: string }) {
+    // 🌟 Kiểm tra hạn dùng trước khi bóc băng âm thanh
+    if (data.workspaceId) {
+      await this.checkPlanPermission(data.workspaceId);
+    }
+
     try {
       if (!data.fileBuffer && !data.audioBase64 && !data.videoUrl) {
         return { success: false, message: "Không tìm thấy dữ liệu âm thanh/video" };
@@ -373,7 +445,7 @@ Hãy bóc tách thành JSON chuẩn sau:
         response_format: 'verbose_json',
         timestamp_granularities: ['word', 'segment'],
         temperature: 0, // Cố định 0 để loại bỏ hoàn toàn việc lặp lại câu trước đó
-        prompt: "hướng dẫn sử dụng máy hút mùi kính cong, phím bấm cảm ứng, vẫy tay, tốc độ gió, công suất, lưới lọc than hoạt tính.", // Dẫn hướng từ vựng chính xác
+        prompt: "hướng dẫn sử dụng máy hút mùi kính cong, phím bấm cảm ứng, vẫy tay, tốc độ gió, công suất, lưới lọc than hoạt tính.",
       });
 
       console.log(`--- ✅ Whisper đã bóc băng xong, độ dài text: ${transcription.text?.length || 0} ký tự ---`);
@@ -437,8 +509,8 @@ Hãy bóc tách thành JSON chuẩn sau:
 
             cues.push({
               id: `cue_${cues.length}`,
-              startSec: chunkStart,
-              endSec: chunkEnd,
+              startSec,
+              endSec,
               timeLabel,
               text: chunkWords.join(' '),
               words: chunkWords.map((w: string, wIdx: number) => ({
@@ -470,6 +542,7 @@ Hãy bóc tách thành JSON chuẩn sau:
         fullText: transcription.text 
       };
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       console.error("Lỗi Whisper AI transcribe:", error);
       return { success: false, error: error.message || "Lỗi bóc băng âm thanh" };
     }
