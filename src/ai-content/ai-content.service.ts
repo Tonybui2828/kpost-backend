@@ -399,10 +399,8 @@ Hãy bóc tách thành JSON chuẩn sau:
 
   // =========================================================================
   // 🌟 6. AI WHISPER BÓC BĂNG ÂM THANH CHUẨN XÁC 100% CẢ VIDEO (KHÔNG BỊ LẶP 30S)
-  // (KIỂM TRA GÓI BẢN QUYỀN TRƯỚC KHI BÓC BĂNG)
   // =========================================================================
   async transcribeAudioWithWhisper(data: { fileBuffer?: Buffer; fileName?: string; audioBase64?: string; videoUrl?: string; duration?: number; workspaceId?: string }) {
-    // 🌟 Kiểm tra hạn dùng trước khi bóc băng âm thanh
     if (data.workspaceId) {
       await this.checkPlanPermission(data.workspaceId);
     }
@@ -412,7 +410,6 @@ Hãy bóc tách thành JSON chuẩn sau:
         return { success: false, message: "Không tìm thấy dữ liệu âm thanh/video" };
       }
 
-      // Lấy Buffer từ File Upload (FormData) hoặc Base64
       let buffer: Buffer | null = null;
       let targetName = data.fileName || 'video.mp4';
 
@@ -431,29 +428,22 @@ Hãy bóc tách thành JSON chuẩn sau:
         return { success: false, message: "Không thể đọc dữ liệu file âm thanh" };
       }
 
-      // Tạo file gửi thẳng vào OpenAI Whisper API
       const ext = targetName.split('.').pop() || 'mp4';
       const file = await OpenAI.toFile(buffer, `whisper_input_${Date.now()}.${ext}`);
 
-      console.log(`--- 🎤 Đang gửi file (${(buffer.length / 1024 / 1024).toFixed(2)} MB) sang OpenAI Whisper... ---`);
-
-      // 🌟 CẤU HÌNH ĐẶC TRỊ CHỐNG ẢO GIÁC & LẶP CÂU 30S
       const transcription: any = await this.openai.audio.transcriptions.create({
         file: file,
         model: 'whisper-1',
         language: 'vi',
         response_format: 'verbose_json',
         timestamp_granularities: ['word', 'segment'],
-        temperature: 0, // Cố định 0 để loại bỏ hoàn toàn việc lặp lại câu trước đó
+        temperature: 0,
         prompt: "hướng dẫn sử dụng máy hút mùi kính cong, phím bấm cảm ứng, vẫy tay, tốc độ gió, công suất, lưới lọc than hoạt tính.",
       });
 
-      console.log(`--- ✅ Whisper đã bóc băng xong, độ dài text: ${transcription.text?.length || 0} ký tự ---`);
-
       const cues: any[] = [];
-      const CHUNK_SIZE = 3; // 3 từ mỗi cụm chuẩn TikTok 9:16
+      const CHUNK_SIZE = 3;
 
-      // 🌟 ƯU TIÊN 1: Lấy chi tiết từng từ (Word-level timestamps) nếu Whisper trả về
       if (transcription.words && Array.isArray(transcription.words) && transcription.words.length > 0) {
         const validWords = transcription.words.filter((w: any) => w.word && w.word.trim().length > 0);
         
@@ -481,9 +471,7 @@ Hãy bóc tách thành JSON chuẩn sau:
             }))
           });
         }
-      } 
-      // 🌟 ƯU TIÊN 2: Bóc theo các phân đoạn (segments) trải dài toàn bộ thời lượng video
-      else if (transcription.segments && Array.isArray(transcription.segments)) {
+      } else if (transcription.segments && Array.isArray(transcription.segments)) {
         const rawSegments = transcription.segments || [];
 
         rawSegments.forEach((seg: any) => {
@@ -523,7 +511,6 @@ Hãy bóc tách thành JSON chuẩn sau:
         });
       }
 
-      // 🌟 Nối liền các câu liên tiếp nếu khoảng cách < 1.2s để phụ đề hiển thị liên tục, không bị chớp tắt
       for (let k = 0; k < cues.length - 1; k++) {
         if (cues[k + 1].startSec > cues[k].endSec && cues[k + 1].startSec - cues[k].endSec < 1.2) {
           cues[k].endSec = cues[k + 1].startSec;
@@ -545,6 +532,90 @@ Hãy bóc tách thành JSON chuẩn sau:
       if (error instanceof ForbiddenException) throw error;
       console.error("Lỗi Whisper AI transcribe:", error);
       return { success: false, error: error.message || "Lỗi bóc băng âm thanh" };
+    }
+  }
+
+  // =========================================================================
+  // 🌟 7. TÍNH NĂNG MỚI: BÓC BĂNG & CHUYỂN NGỮ ĐA NGÔN NGỮ (TIẾNG TRUNG/ANH -> TIẾNG VIỆT)
+  // NGHE DẢI ÂM THANH THẬT BẰNG GEMINI 3.8 FLASH, DỊCH TỪNG CÂU VÀ TẠO PHỤ ĐỀ THEO GIÂY
+  // =========================================================================
+  async transcribeAndTranslate(data: {
+    audioBase64?: string;
+    mimeType?: string;
+    duration?: number;
+    videoTitle?: string;
+    sourceLang?: string;
+    workspaceId?: string;
+  }) {
+    if (data.workspaceId) {
+      await this.checkPlanPermission(data.workspaceId);
+    }
+
+    try {
+      const { audioBase64, mimeType, duration, videoTitle, sourceLang } = data;
+      const totalSec = Math.max(10, Math.round(Number(duration) || 60));
+
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+      if (!apiKey) {
+        throw new Error('Chưa cấu hình GEMINI_API_KEY trong file .env');
+      }
+
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const prompt = `Bạn là chuyên gia bóc băng âm thanh (Speech-to-Text) và chuyển ngữ video ngắn (Douyin, TikTok, YouTube Shorts, Reels) hàng đầu.
+Nhiệm vụ:
+1. Video: "${videoTitle || 'Video Douyin Viral'}". Thời lượng: ${totalSec} giây. Ngôn ngữ nguồn: ${sourceLang || 'Tự động nhận diện'}.
+2. Hãy LẮNG NGHE KỸ DẢI ÂM THANH THẬT ĐƯỢC ĐÍNH KÈM:
+   - Nhận diện chính xác 100% từng câu thoại thực tế nhân vật đang nói trong video (tiếng Trung, tiếng Hàn, tiếng Anh, v.v.).
+   - DỊCH TỪNG CÂU ĐÓ SANG TIẾNG VIỆT tự nhiên, đời thường, bắt trend TikTok, đúng ngữ cảnh thực tế của video.
+   - Căn chính xác mốc thời gian bắt đầu (startSec) và kết thúc (endSec) theo đúng nhịp điệu của âm thanh.
+3. Nếu âm thanh chỉ có nhạc nền hoặc không có tiếng người nói, hãy dịch tiêu đề "${videoTitle}" và tạo lời thuyết minh tiếng Việt cực kỳ cuốn hút, dí dỏm, mô tả đúng hành động trong video.
+
+BẮT BUỘC trả về định dạng JSON thuần túy (không kèm markdown):
+{
+  "detectedLanguage": "Ngôn ngữ gốc phát hiện được",
+  "summary": "Tóm tắt ngắn nội dung video",
+  "cues": [
+    { "id": 1, "startSec": 0.5, "endSec": 4.5, "text": "Câu dịch tiếng Việt khớp đúng lời thoại 1..." },
+    { "id": 2, "startSec": 4.8, "endSec": 9.2, "text": "Câu dịch tiếng Việt khớp đúng lời thoại 2..." }
+  ]
+}`;
+
+      const parts: any[] = [{ text: prompt }];
+
+      // Đưa dải âm thanh thật từ video của khách hàng vào để Gemini nghe trực tiếp
+      if (audioBase64 && typeof audioBase64 === 'string') {
+        const rawBase64 = audioBase64.includes(',') ? audioBase64.split(',')[1] : audioBase64;
+        parts.push({
+          inlineData: {
+            mimeType: mimeType || 'audio/wav',
+            data: rawBase64,
+          },
+        });
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: parts,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const rawText = response.text || '{}';
+      const resultJson = JSON.parse(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
+
+      return {
+        success: true,
+        detectedLanguage: resultJson.detectedLanguage || 'Tự động nhận diện',
+        summary: resultJson.summary || '',
+        cues: resultJson.cues || [],
+      };
+    } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
+      console.error('Lỗi Gemini transcribeAndTranslate:', error);
+      throw new Error(error.message || 'Lỗi bóc băng và chuyển ngữ video');
     }
   }
 }

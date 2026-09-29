@@ -47,4 +47,34 @@ export class AiContentController {
       duration: body?.duration,
     });
   }
+
+  // 🌟 1. CỔNG BÓC BĂNG & CHUYỂN NGỮ ĐA NGÔN NGỮ (TIẾNG TRUNG/ANH -> TIẾNG VIỆT) BẰNG GEMINI 3.8 FLASH
+  @Post('transcribe-and-translate')
+  async transcribeAndTranslate(
+    @Body() body: {
+      audioBase64?: string;
+      mimeType?: string;
+      duration?: number;
+      videoTitle?: string;
+      sourceLang?: string;
+      workspaceId?: string;
+    }
+  ) {
+    return this.aiContentService.transcribeAndTranslate(body);
+  }
+
+  // 🌟 2. CỔNG DỰ PHÒNG TRỰC TIẾP CHO FRONTEND GỌI /api/transcribe-and-translate
+  @Post('/api/transcribe-and-translate')
+  async transcribeAndTranslateDirect(
+    @Body() body: {
+      audioBase64?: string;
+      mimeType?: string;
+      duration?: number;
+      videoTitle?: string;
+      sourceLang?: string;
+      workspaceId?: string;
+    }
+  ) {
+    return this.aiContentService.transcribeAndTranslate(body);
+  }
 }

@@ -5,8 +5,40 @@ import { PrismaService } from '../prisma.service';
 export class AdminService {
   constructor(private prisma: PrismaService) {}
 
+  // =========================================================================
+  // 🌟 HÀM TỰ ĐỘNG QUÉT & HẠ TOÀN BỘ GÓI ĐÃ HẾT HẠN VỀ FREE TRONG DATABASE
+  // =========================================================================
+  async autoDowngradeExpiredWorkspaces() {
+    try {
+      const now = new Date();
+      // Quét tất cả Workspace không phải FREE nhưng đã quá hạn planExpiry
+      const result = await this.prisma.workspace.updateMany({
+        where: {
+          plan: { not: 'FREE' },
+          planExpiry: {
+            not: null,
+            lt: now, // Hạn nhỏ hơn thời gian hiện tại => ĐÃ HẾT HẠN
+          },
+        },
+        data: {
+          plan: 'FREE',
+          planExpiry: null, // Về FREE thì không còn ngày hết hạn
+        },
+      });
+
+      if (result.count > 0) {
+        console.log(`[AUTO-EXPIRE] Đã tự động hạ ${result.count} tài khoản hết hạn về gói FREE.`);
+      }
+    } catch (e) {
+      console.error("[AUTO-EXPIRE] Lỗi khi quét hạ gói:", e);
+    }
+  }
+
   // 1. LẤY THỐNG KÊ TỔNG QUAN (Doanh thu, Tăng trưởng, Khách hàng)
   async getDashboardStats() {
+    // Luôn quét hạ gói trước khi lấy thống kê
+    await this.autoDowngradeExpiredWorkspaces();
+
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const firstDayOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -60,7 +92,7 @@ export class AdminService {
     return this.prisma.systemSetting.upsert({
       where: { id: 'global' },
       update: {},
-      create: { id: 'global', websiteName: 'Dropbuy SaaS' }
+      create: { id: 'global', websiteName: 'KPost SaaS' }
     });
   }
 
@@ -89,14 +121,34 @@ export class AdminService {
   // ==========================================
 
   // Lấy danh sách user kèm thông tin gói cước (plan) và ngày hết hạn
+  // (TỰ ĐỘNG HẠ VỀ FREE NGAY LẬP TỨC NẾU ĐÃ HẾT HẠN)
   async getAllUsers() {
+    // 🌟 Bước 1: Quét và cập nhật database ngay
+    await this.autoDowngradeExpiredWorkspaces();
+
+    // 🌟 Bước 2: Lấy danh sách đã được hạ chuẩn xác
     const users = await this.prisma.user.findMany({
-      include: { workspaces: { include: { workspace: true } } },
+      include: { 
+        workspaces: { 
+          include: { workspace: true } 
+        } 
+      },
       orderBy: { createdAt: 'desc' }
     });
 
+    const now = new Date();
+
     return users.map(user => {
       const workspace = user.workspaces[0]?.workspace;
+      let userPlan = workspace?.plan || 'FREE';
+      let userPlanExpire = workspace?.planExpiry || null;
+
+      // Kiểm tra lần cuối: Nếu vẫn còn hạn cũ đã trôi qua thì ép về FREE
+      if (userPlan !== 'FREE' && userPlanExpire && new Date(userPlanExpire) < now) {
+        userPlan = 'FREE';
+        userPlanExpire = null;
+      }
+
       return {
         id: user.id,
         name: user.name,
@@ -104,8 +156,8 @@ export class AdminService {
         image: user.image,
         status: user.status || 'active',
         vouchers: user.vouchers || [],
-        plan: workspace?.plan || (user as any).plan || 'FREE',
-        planExpire: workspace?.planExpiry || (user as any).planExpire || null,
+        plan: userPlan,
+        planExpire: userPlanExpire,
         createdAt: user.createdAt,
       };
     });
@@ -127,9 +179,10 @@ export class AdminService {
       : await this.prisma.workspace.findFirst({ where: { ownerId: userId } });
 
     let newExpireDate: Date | null = null;
-    const planUpper = plan ? plan.toUpperCase() : 'PRO';
+    const planUpper = plan ? plan.toUpperCase() : 'FREE';
 
     if (planUpper === 'FREE') {
+      // 🌟 Nếu hạ về FREE: Hạn dùng lập tức về null (không giới hạn thời gian cho gói FREE)
       newExpireDate = null;
     } else if (customExpireDate) {
       // 1. Nếu Admin chọn một ngày cụ thể trên lịch
@@ -143,42 +196,40 @@ export class AdminService {
       newExpireDate = new Date(currentDate);
       newExpireDate.setDate(currentDate.getDate() + Number(extraDays));
     } else {
-      newExpireDate = workspace?.planExpiry || new Date();
+      // Mặc định cho dùng thử 3 ngày nếu không truyền ngày
+      newExpireDate = new Date();
+      newExpireDate.setDate(newExpireDate.getDate() + 3);
     }
 
-    // Cập nhật bảng Workspace nếu có
+    // Nếu ngày tính ra đã nằm trong quá khứ => Tự động coi là về FREE luôn
+    let finalPlan = planUpper;
+    if (newExpireDate && newExpireDate < new Date()) {
+      finalPlan = 'FREE';
+      newExpireDate = null;
+    }
+
+    // Cập nhật bảng Workspace
     if (workspace) {
       await this.prisma.workspace.update({
         where: { id: workspace.id },
         data: {
-          plan: planUpper,
+          plan: finalPlan,
           planExpiry: newExpireDate 
         }
       });
     }
 
-    // Cập nhật đồng bộ vào bảng User nếu bảng User có các trường này
-    try {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          plan: planUpper,
-          planExpire: newExpireDate
-        } as any
-      });
-    } catch (e) {
-      // Bỏ qua nếu schema User không lưu trực tiếp plan
-    }
-
-    const actionText = typeof extraDays === 'number' && extraDays < 0 
-      ? `giảm ${Math.abs(extraDays)} ngày` 
-      : customExpireDate 
-        ? `đặt hạn đến ${newExpireDate?.toLocaleDateString('vi-VN')}` 
-        : `thêm ${extraDays || 0} ngày`;
+    const actionText = finalPlan === 'FREE'
+      ? `đã chuyển về gói FREE (hết quyền dùng thử)`
+      : typeof extraDays === 'number' && extraDays < 0 
+        ? `giảm ${Math.abs(extraDays)} ngày (hạn đến ${newExpireDate?.toLocaleDateString('vi-VN')})` 
+        : customExpireDate 
+          ? `đặt hạn đến ${newExpireDate?.toLocaleDateString('vi-VN')}` 
+          : `thêm ${extraDays || 0} ngày (hạn đến ${newExpireDate?.toLocaleDateString('vi-VN')})`;
 
     return { 
       success: true, 
-      message: `Đã cập nhật gói ${planUpper} (${actionText}) thành công.` 
+      message: `Đã cập nhật gói ${finalPlan} (${actionText}) thành công.` 
     };
   }
 
@@ -296,7 +347,7 @@ export class AdminService {
   }
 
   // ==========================================
-  // 6. QUẢN LÝ CHIẾN DỊCH FLASHSALE VÀ POPUP TRANG CHỦ (MỚI)
+  // 6. QUẢN LÝ CHIẾN DỊCH FLASHSALE VÀ POPUP TRANG CHỦ
   // ==========================================
   async getMarketingCampaigns() {
     let setting = await this.prisma.systemSetting.findUnique({
