@@ -87,7 +87,6 @@ export class AiContentService {
   // 2. AI AUTOPILOT - TRỢ LÝ CHỐT ĐƠN (NHÂN CÁCH SALES CAO CẤP)
   // ==========================================
   async suggestReply(msg: string, wsId: string) {
-    // 🌟 Kiểm tra hạn dùng trước khi trả lời
     await this.checkPlanPermission(wsId);
 
     try {
@@ -182,7 +181,6 @@ ${productContext}
   }
 
   async generatePost(topic: string, userId: string, workspaceId: string) {
-    // 🌟 Kiểm tra hạn dùng trước khi tạo bài viết
     await this.checkPlanPermission(workspaceId, userId);
 
     try {
@@ -488,11 +486,11 @@ Hãy bóc tách thành JSON chuẩn sau:
           for (let i = 0; i < words.length; i += CHUNK_SIZE) {
             const chunkWords = words.slice(i, i + CHUNK_SIZE);
             const chunkIdx = i / CHUNK_SIZE;
-            const chunkStart = Number((seg.start + chunkIdx * step).toFixed(2));
-            const chunkEnd = Number(Math.max(seg.start + (chunkIdx + 1) * step, chunkStart + 1.2).toFixed(2));
+            const startSec = Number((seg.start + chunkIdx * step).toFixed(2));
+            const endSec = Number(Math.max(seg.start + (chunkIdx + 1) * step, startSec + 1.2).toFixed(2));
 
-            const mins = Math.floor(chunkStart / 60);
-            const secs = Math.floor(chunkStart % 60);
+            const mins = Math.floor(startSec / 60);
+            const secs = Math.floor(startSec % 60);
             const timeLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
             cues.push({
@@ -503,8 +501,8 @@ Hãy bóc tách thành JSON chuẩn sau:
               text: chunkWords.join(' '),
               words: chunkWords.map((w: string, wIdx: number) => ({
                 word: w,
-                startSec: Number((chunkStart + (wIdx / chunkWords.length) * step).toFixed(2)),
-                endSec: Number((chunkStart + ((wIdx + 1) / chunkWords.length) * step).toFixed(2)),
+                startSec: Number((startSec + (wIdx / chunkWords.length) * step).toFixed(2)),
+                endSec: Number((startSec + ((wIdx + 1) / chunkWords.length) * step).toFixed(2)),
               })),
             });
           }
