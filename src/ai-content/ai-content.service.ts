@@ -594,7 +594,7 @@ BẮT BUỘC trả về định dạng JSON thuần túy (không kèm markdown):
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: 'gemini-2.5-flash',
         contents: parts,
         config: {
           responseMimeType: 'application/json',
