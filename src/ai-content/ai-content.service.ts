@@ -535,7 +535,8 @@ Hãy bóc tách thành JSON chuẩn sau:
 
   // =========================================================================
   // 🌟 7. TÍNH NĂNG MỚI: BÓC BĂNG & CHUYỂN NGỮ ĐA NGÔN NGỮ (TIẾNG TRUNG/ANH -> TIẾNG VIỆT)
-  // NGHE DẢI ÂM THANH THẬT BẰNG GEMINI 3.8 FLASH, DỊCH TỪNG CÂU VÀ TẠO PHỤ ĐỀ THEO GIÂY
+  // ƯU TIÊN GROQ WHISPER LARGE V3 & LLAMA 3.3 70B (SIÊU TỐC, 100% MIỄN PHÍ, BẢO MẬT SERVER)
+  // DỰ PHÒNG GOOGLE GEMINI NẾU GROQ TẠM GIÁN ĐOẠN
   // =========================================================================
   async transcribeAndTranslate(data: {
     audioBase64?: string;
@@ -543,6 +544,9 @@ Hãy bóc tách thành JSON chuẩn sau:
     duration?: number;
     videoTitle?: string;
     sourceLang?: string;
+    startOffset?: number;
+    chunkIndex?: number;
+    totalChunks?: number;
     workspaceId?: string;
   }) {
     if (data.workspaceId) {
@@ -550,39 +554,195 @@ Hãy bóc tách thành JSON chuẩn sau:
     }
 
     try {
-      const { audioBase64, mimeType, duration, videoTitle, sourceLang } = data;
-      const totalSec = Math.max(10, Math.round(Number(duration) || 60));
+      const {
+        audioBase64,
+        mimeType,
+        duration,
+        videoTitle,
+        startOffset = 0,
+        chunkIndex = 1,
+        totalChunks = 1,
+      } = data;
 
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
-      if (!apiKey) {
-        throw new Error('Chưa cấu hình GEMINI_API_KEY trong file .env');
+      const totalSec = Math.max(3, Math.round(Number(duration) || 30));
+      const offset = Math.max(0, Number(startOffset) || 0);
+
+      // =====================================================================
+      // 🌟 ĐỘNG CƠ 1: GROQ WHISPER LARGE V3 + LLAMA 3.3 70B (ƯU TIÊN SỐ 1 - 0 ĐỒNG)
+      // =====================================================================
+      const groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY || '';
+      if (groqKey && audioBase64) {
+        try {
+          console.log(`[Groq Whisper] Đang bóc băng phân đoạn ${chunkIndex}/${totalChunks} (mốc ${offset}s)...`);
+          const rawAudio = audioBase64.includes(',') ? audioBase64.split(',')[1] : audioBase64;
+          const audioBuffer = Buffer.from(rawAudio, 'base64');
+
+          const formData = new FormData();
+          const fileBlob = new Blob([audioBuffer], { type: mimeType || 'audio/wav' });
+          formData.append('file', fileBlob, 'audio.wav');
+          formData.append('model', 'whisper-large-v3');
+          formData.append('response_format', 'verbose_json');
+          formData.append('temperature', '0');
+
+          const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${groqKey}` },
+            body: formData,
+          });
+
+          if (groqResp.ok) {
+            const whisperData = await groqResp.json();
+            const detectedLang = whisperData.language || 'auto';
+            const segments = whisperData.segments || [];
+
+            if (segments.length === 0 && !whisperData.text?.trim()) {
+              return { success: true, detectedLanguage: detectedLang, summary: '', cues: [] };
+            }
+
+            const rawItems = segments.length > 0
+              ? segments.map((s: any, idx: number) => ({
+                  id: idx + 1,
+                  startSec: Number(Number(s.start || 0).toFixed(1)),
+                  endSec: Number(Number(s.end || (s.start + 2.5)).toFixed(1)),
+                  text: String(s.text || '').trim(),
+                }))
+              : [{ id: 1, startSec: 0.0, endSec: totalSec, text: String(whisperData.text || '').trim() }];
+
+            const validItems = rawItems.filter((it: any) => it.text.length > 0);
+
+            // Nếu ngôn ngữ gốc ĐÃ LÀ TIẾNG VIỆT ('vi' hoặc 'vietnamese'):
+            if (detectedLang.toLowerCase() === 'vi' || detectedLang.toLowerCase() === 'vietnamese') {
+              const finalCues = validItems.map((it: any) => ({
+                id: `groq_${offset}_${it.id}`,
+                startSec: Number((it.startSec + offset).toFixed(1)),
+                endSec: Number((Math.max(it.startSec + 0.8, it.endSec) + offset).toFixed(1)),
+                text: it.text,
+              }));
+              return {
+                success: true,
+                chunkIndex,
+                totalChunks,
+                startOffset: offset,
+                detectedLanguage: 'Tiếng Việt',
+                summary: '',
+                cues: finalCues,
+              };
+            }
+
+            // Dịch sang tiếng Việt bằng Groq Llama 3.3 70B (Siêu tốc ~250 tokens/s, 100% miễn phí)
+            const translatePrompt = `Bạn là chuyên gia dịch thuật phụ đề video và phim ảnh sang tiếng Việt xuất sắc.
+NHIỆM VỤ: Dịch toàn bộ các câu sau sang tiếng Việt chuẩn ngữ cảnh, tự nhiên, lôi cuốn theo phong cách video mạng xã hội (TikTok, Douyin, YouTube).
+QUY TẮC BẮT BUỘC:
+1. Giữ nguyên cấu trúc startSec và endSec của từng câu.
+2. Dịch thoát nghĩa, ngắn gọn, súc tích (3 đến 7 từ mỗi câu nếu có thể để khớp nhịp đọc MC).
+3. Tuyệt đối trả về đúng JSON định dạng:
+{
+  "cues": [
+    { "id": 1, "startSec": 0.5, "endSec": 3.2, "text": "Câu dịch tiếng Việt thứ nhất" }
+  ]
+}
+
+Danh sách câu cần dịch:
+${JSON.stringify(validItems)}`;
+
+            const transResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${groqKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: [
+                  { role: 'system', content: 'Bạn là chuyên gia dịch phụ đề video sang tiếng Việt. Chỉ trả về JSON duy nhất.' },
+                  { role: 'user', content: translatePrompt },
+                ],
+                response_format: { type: 'json_object' },
+                temperature: 0.2,
+              }),
+            });
+
+            if (transResp.ok) {
+              const transData = await transResp.json();
+              const content = transData.choices?.[0]?.message?.content || '{}';
+              try {
+                const parsed = JSON.parse(content);
+                if (parsed && Array.isArray(parsed.cues) && parsed.cues.length > 0) {
+                  const finalCues = parsed.cues.map((c: any, i: number) => {
+                    const rawStart = Number(c.startSec !== undefined ? c.startSec : (validItems[i]?.startSec || 0));
+                    const rawEnd = Number(c.endSec !== undefined ? c.endSec : (validItems[i]?.endSec || (rawStart + 2.5)));
+                    return {
+                      id: `groq_${offset}_${c.id || i + 1}`,
+                      startSec: Number((rawStart + offset).toFixed(1)),
+                      endSec: Number((Math.max(rawStart + 0.8, rawEnd) + offset).toFixed(1)),
+                      text: String(c.text || validItems[i]?.text || '').trim(),
+                    };
+                  });
+                  return {
+                    success: true,
+                    chunkIndex,
+                    totalChunks,
+                    startOffset: offset,
+                    detectedLanguage: detectedLang,
+                    summary: '',
+                    cues: finalCues,
+                  };
+                }
+              } catch (parseErr) {
+                console.warn('[Groq JSON Parse Error]:', parseErr);
+              }
+            }
+
+            // Dự phòng câu gốc nếu dịch Llama tạm lỗi
+            const fallbackCues = validItems.map((it: any) => ({
+              id: `groq_${offset}_${it.id}`,
+              startSec: Number((it.startSec + offset).toFixed(1)),
+              endSec: Number((Math.max(it.startSec + 0.8, it.endSec) + offset).toFixed(1)),
+              text: it.text,
+            }));
+            return {
+              success: true,
+              chunkIndex,
+              totalChunks,
+              startOffset: offset,
+              detectedLanguage: detectedLang,
+              summary: '',
+              cues: fallbackCues,
+            };
+          }
+        } catch (groqErr) {
+          console.warn('[Groq Whisper failed, fallback to Gemini]:', groqErr);
+        }
       }
 
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
+      // =====================================================================
+      // 🌟 ĐỘNG CƠ 2: DỰ PHÒNG QUA GOOGLE GEMINI NẾU CHƯA CÓ GROQ
+      // =====================================================================
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+      if (!apiKey && !groqKey) {
+        throw new Error('Chưa cấu hình GROQ_API_KEY hoặc GEMINI_API_KEY trên Coolify');
+      }
 
-      const prompt = `Bạn là chuyên gia bóc băng âm thanh (Speech-to-Text) và chuyển ngữ video ngắn (Douyin, TikTok, YouTube Shorts, Reels) hàng đầu.
-Nhiệm vụ:
-1. Video: "${videoTitle || 'Video Douyin Viral'}". Thời lượng: ${totalSec} giây. Ngôn ngữ nguồn: ${sourceLang || 'Tự động nhận diện'}.
-2. Hãy LẮNG NGHE KỸ DẢI ÂM THANH THẬT ĐƯỢC ĐÍNH KÈM:
-   - Nhận diện chính xác 100% từng câu thoại thực tế nhân vật đang nói trong video (tiếng Trung, tiếng Hàn, tiếng Anh, v.v.).
-   - DỊCH TỪNG CÂU ĐÓ SANG TIẾNG VIỆT tự nhiên, đời thường, bắt trend TikTok, đúng ngữ cảnh thực tế của video.
-   - Căn chính xác mốc thời gian bắt đầu (startSec) và kết thúc (endSec) theo đúng nhịp điệu của âm thanh.
-3. Nếu âm thanh chỉ có nhạc nền hoặc không có tiếng người nói, hãy dịch tiêu đề "${videoTitle}" và tạo lời thuyết minh tiếng Việt cực kỳ cuốn hút, dí dỏm, mô tả đúng hành động trong video.
+      const modelsToTry = [
+        'gemini-3.5-transcribe',
+        'gemini-3.1-flash-lite',
+        'gemini-3.8-flash',
+        'gemini-flash-latest'
+      ];
 
-BẮT BUỘC trả về định dạng JSON thuần túy (không kèm markdown):
+      const prompt = `Bạn là chuyên gia bóc băng âm thanh và dịch phụ đề video sang tiếng Việt.
+Phân đoạn video dài ${totalSec} giây.
+Nhiệm vụ: Lắng nghe âm thanh đính kèm, nhận diện lời thoại nhân vật và dịch chuẩn xác sang tiếng Việt.
+Trả về định dạng JSON thuần túy:
 {
-  "detectedLanguage": "Ngôn ngữ gốc phát hiện được",
-  "summary": "Tóm tắt ngắn nội dung video",
+  "detectedLanguage": "Ngôn ngữ gốc",
+  "summary": "",
   "cues": [
-    { "id": 1, "startSec": 0.5, "endSec": 4.5, "text": "Câu dịch tiếng Việt khớp đúng lời thoại 1..." },
-    { "id": 2, "startSec": 4.8, "endSec": 9.2, "text": "Câu dịch tiếng Việt khớp đúng lời thoại 2..." }
+    { "id": 1, "startSec": 0.5, "endSec": 3.0, "text": "Câu dịch tiếng Việt..." }
   ]
 }`;
 
       const parts: any[] = [{ text: prompt }];
-
-      // Đưa dải âm thanh thật từ video của khách hàng vào để Gemini nghe trực tiếp
       if (audioBase64 && typeof audioBase64 === 'string') {
         const rawBase64 = audioBase64.includes(',') ? audioBase64.split(',')[1] : audioBase64;
         parts.push({
@@ -593,26 +753,85 @@ BẮT BUỘC trả về định dạng JSON thuần túy (không kèm markdown):
         });
       }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: parts,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      let resultJson: any = null;
 
-      const rawText = response.text || '{}';
-      const resultJson = JSON.parse(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
+      // 1. Thử qua SDK
+      try {
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey });
+        for (const model of modelsToTry) {
+          try {
+            const resp = await ai.models.generateContent({
+              model,
+              contents: parts,
+              config: { responseMimeType: 'application/json', temperature: 0.2 },
+            });
+            const rawText = (resp.text || '').replace(/```json/g, '').replace(/```/g, '').trim();
+            if (rawText) {
+              const parsed = JSON.parse(rawText);
+              if (parsed && Array.isArray(parsed.cues)) {
+                resultJson = parsed;
+                break;
+              }
+            }
+          } catch (mErr) {
+            console.warn(`[Gemini SDK ${model} failed]:`, mErr);
+          }
+        }
+      } catch (sdkErr) {}
+
+      // 2. Thử qua REST nếu SDK chưa trả về
+      if (!resultJson) {
+        for (const model of modelsToTry) {
+          try {
+            const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const restResp = await fetch(restUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts }],
+                generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+              }),
+            });
+            if (restResp.ok) {
+              const data = await restResp.json();
+              const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+              if (cleaned) {
+                const parsed = JSON.parse(cleaned);
+                if (parsed && Array.isArray(parsed.cues)) {
+                  resultJson = parsed;
+                  break;
+                }
+              }
+            }
+          } catch (restErr) {}
+        }
+      }
+
+      if (!resultJson) {
+        throw new Error('Không thể xử lý âm thanh trong phân đoạn này.');
+      }
+
+      const finalCues = (resultJson.cues || []).map((c: any) => ({
+        id: c.id ? `gemini_${offset}_${c.id}` : `gemini_${offset}_${Math.random()}`,
+        startSec: Number((Number(c.startSec || 0) + offset).toFixed(1)),
+        endSec: Number((Number(c.endSec || (c.startSec + 2.5)) + offset).toFixed(1)),
+        text: String(c.text || '').trim(),
+      }));
 
       return {
         success: true,
+        chunkIndex,
+        totalChunks,
+        startOffset: offset,
         detectedLanguage: resultJson.detectedLanguage || 'Tự động nhận diện',
         summary: resultJson.summary || '',
-        cues: resultJson.cues || [],
+        cues: finalCues,
       };
     } catch (error: any) {
       if (error instanceof ForbiddenException) throw error;
-      console.error('Lỗi Gemini transcribeAndTranslate:', error);
+      console.error('Lỗi transcribeAndTranslate:', error);
       throw new Error(error.message || 'Lỗi bóc băng và chuyển ngữ video');
     }
   }
