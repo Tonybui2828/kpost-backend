@@ -629,77 +629,95 @@ Hãy bóc tách thành JSON chuẩn sau:
               };
             }
 
-            // Dịch sang tiếng Việt bằng Groq Llama 3.3 70B (Siêu tốc ~250 tokens/s, 100% miễn phí)
-            const translatePrompt = `Bạn là chuyên gia dịch thuật phụ đề video và phim ảnh sang tiếng Việt xuất sắc.
-NHIỆM VỤ: Dịch toàn bộ các câu sau sang tiếng Việt chuẩn ngữ cảnh, tự nhiên, lôi cuốn theo phong cách video mạng xã hội (TikTok, Douyin, YouTube).
-QUY TẮC BẮT BUỘC:
-1. Giữ nguyên cấu trúc startSec và endSec của từng câu.
-2. Dịch thoát nghĩa, ngắn gọn, súc tích (3 đến 7 từ mỗi câu nếu có thể để khớp nhịp đọc MC).
-3. Tuyệt đối trả về đúng JSON định dạng:
-{
-  "cues": [
-    { "id": 1, "startSec": 0.5, "endSec": 3.2, "text": "Câu dịch tiếng Việt thứ nhất" }
-  ]
-}
+            // 2. Dịch toàn bộ danh sách câu sang tiếng Việt (Đảm bảo 100% tiếng Việt, không để lọt tiếng Trung)
+            const rawTexts = validItems.map((it: any) => it.text);
+            let translatedTexts: string[] = [];
 
-Danh sách câu cần dịch:
-${JSON.stringify(validItems)}`;
+            // Bước 2.1: Dịch bằng Groq Llama 3.3 70B theo danh sách chuỗi (siêu nhẹ, không tốn token, không bị truncate JSON)
+            try {
+              const translatePrompt = `Dịch toàn bộ danh sách các câu sau sang tiếng Việt tự nhiên, phù hợp làm phụ đề và lồng tiếng video:
+${JSON.stringify(rawTexts)}
 
-            const transResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${groqKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
-                messages: [
-                  { role: 'system', content: 'Bạn là chuyên gia dịch phụ đề video sang tiếng Việt. Chỉ trả về JSON duy nhất.' },
-                  { role: 'user', content: translatePrompt },
-                ],
-                response_format: { type: 'json_object' },
-                temperature: 0.2,
-              }),
-            });
+QUY TẮC:
+- Trả về đúng JSON duy nhất với key "translations" chứa mảng chuỗi tiếng Việt theo đúng thứ tự:
+{ "translations": ["Câu 1 tiếng Việt", "Câu 2 tiếng Việt"] }`;
 
-            if (transResp.ok) {
-              const transData = await transResp.json();
-              const content = transData.choices?.[0]?.message?.content || '{}';
-              try {
+              const transResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${groqKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'llama-3.3-70b-versatile',
+                  messages: [
+                    { role: 'system', content: 'Bạn là chuyên gia dịch phụ đề video sang tiếng Việt. Chỉ trả về JSON duy nhất với key "translations".' },
+                    { role: 'user', content: translatePrompt },
+                  ],
+                  response_format: { type: 'json_object' },
+                  max_completion_tokens: 8192,
+                  temperature: 0.2,
+                }),
+              });
+
+              if (transResp.ok) {
+                const transData = await transResp.json();
+                const content = transData.choices?.[0]?.message?.content || '{}';
                 const parsed = JSON.parse(content);
-                if (parsed && Array.isArray(parsed.cues) && parsed.cues.length > 0) {
-                  const finalCues = parsed.cues.map((c: any, i: number) => {
-                    const rawStart = Number(c.startSec !== undefined ? c.startSec : (validItems[i]?.startSec || 0));
-                    const rawEnd = Number(c.endSec !== undefined ? c.endSec : (validItems[i]?.endSec || (rawStart + 2.5)));
-                    return {
-                      id: `groq_${offset}_${c.id || i + 1}`,
-                      startSec: Number((rawStart + offset).toFixed(1)),
-                      endSec: Number((Math.max(rawStart + 0.8, rawEnd) + offset).toFixed(1)),
-                      text: String(c.text || validItems[i]?.text || '').trim(),
-                    };
-                  });
-                  return {
-                    success: true,
-                    chunkIndex,
-                    totalChunks,
-                    startOffset: offset,
-                    detectedLanguage: detectedLang,
-                    summary: '',
-                    cues: finalCues,
-                  };
+                if (parsed && Array.isArray(parsed.translations) && parsed.translations.length === rawTexts.length) {
+                  const hasChinese = parsed.translations.some((t: string) => /[\u4e00-\u9fa5]/.test(t));
+                  if (!hasChinese) {
+                    translatedTexts = parsed.translations.map((t: any) => String(t || '').trim());
+                  }
                 }
-              } catch (parseErr) {
-                console.warn('[Groq JSON Parse Error]:', parseErr);
+              }
+            } catch (llamaErr) {
+              console.warn('[Groq Llama Translate Error]:', llamaErr);
+            }
+
+            // Bước 2.2: DỰ PHÒNG 100% BẰNG GOOGLE TRANSLATE (Nếu Llama lỗi hoặc còn sót tiếng Trung)
+            if (translatedTexts.length !== rawTexts.length || translatedTexts.some((t) => /[\u4e00-\u9fa5]/.test(t))) {
+              try {
+                console.log('[Translation Safety Net] Đang dịch sang tiếng Việt qua Google Translate API...');
+                const gResults: string[] = [];
+                const BATCH_SIZE = 25;
+                for (let i = 0; i < rawTexts.length; i += BATCH_SIZE) {
+                  const batch = rawTexts.slice(i, i + BATCH_SIZE);
+                  const combined = batch.join('\n');
+                  const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dt=t&q=${encodeURIComponent(combined)}`;
+                  const gResp = await fetch(gUrl);
+                  if (gResp.ok) {
+                    const gData = await gResp.json();
+                    if (Array.isArray(gData[0])) {
+                      const translatedCombined = gData[0].map((item: any) => item[0]).join('');
+                      const splitLines = translatedCombined.split('\n');
+                      for (let j = 0; j < batch.length; j++) {
+                        gResults.push(splitLines[j]?.trim() || batch[j]);
+                      }
+                      continue;
+                    }
+                  }
+                  gResults.push(...batch);
+                }
+                if (gResults.length === rawTexts.length) {
+                  translatedTexts = gResults;
+                }
+              } catch (gErr) {
+                console.warn('[Google Translate Safety Net Error]:', gErr);
               }
             }
 
-            // Dự phòng câu gốc nếu dịch Llama tạm lỗi
-            const fallbackCues = validItems.map((it: any) => ({
-              id: `groq_${offset}_${it.id}`,
-              startSec: Number((it.startSec + offset).toFixed(1)),
-              endSec: Number((Math.max(it.startSec + 0.8, it.endSec) + offset).toFixed(1)),
-              text: it.text,
-            }));
+            // Ghép câu tiếng Việt vào mốc thời gian của Whisper
+            const finalCues = validItems.map((it: any, idx: number) => {
+              const vietnameseText = (translatedTexts[idx] || it.text).trim();
+              return {
+                id: `groq_${offset}_${it.id}`,
+                startSec: Number((it.startSec + offset).toFixed(1)),
+                endSec: Number((Math.max(it.startSec + 0.8, it.endSec) + offset).toFixed(1)),
+                text: vietnameseText,
+              };
+            });
+
             return {
               success: true,
               chunkIndex,
@@ -707,7 +725,7 @@ ${JSON.stringify(validItems)}`;
               startOffset: offset,
               detectedLanguage: detectedLang,
               summary: '',
-              cues: fallbackCues,
+              cues: finalCues,
             };
           }
         } catch (groqErr) {
